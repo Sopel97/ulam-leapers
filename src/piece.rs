@@ -1,9 +1,7 @@
 ﻿use crate::grid::{GridPoint, GridVector};
 use std::collections::HashSet;
 
-struct PieceColor(u8);
-
-struct LeaperAttacks {
+pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,
 }
 

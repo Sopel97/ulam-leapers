@@ -1,6 +1,7 @@
-﻿mod coords;
-mod grid;
-mod collections {
-    mod sliding_window;
+﻿pub mod coords;
+pub mod grid;
+pub mod collections {
+    pub mod sliding_window;
 }
-mod piece;
+pub mod piece;
+pub mod simulation;

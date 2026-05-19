@@ -9,7 +9,7 @@ use std::ops::{Index, IndexMut};
 /// In other words, any immutable index is valid.
 /// However, trying to index mutably below the origin will cause a panic.
 /// Note that this collection is not sparse - there are no holes between valid elements.
-struct SlidingWindow<T> {
+pub struct SlidingWindow<T> {
     chunk_size_pow2: usize,
     chunk_index_mask: isize,
     origin: isize,
