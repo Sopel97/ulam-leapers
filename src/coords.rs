@@ -1,12 +1,13 @@
 ﻿use std::cmp::max;
 use std::ops::*;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct Point2D<T> {
     pub x: T,
     pub y: T,
 }
 
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct Vector2D<T> {
     pub x: T,
     pub y: T,
@@ -26,7 +27,7 @@ impl<T> Vector2D<T> {
     }
 }
 
-impl<T> Add<Vector2D<T>> for Point2D<T>
+impl<T: Copy> Add<Vector2D<T>> for Point2D<T>
 where
     T: Add<T, Output = T>,
 {
@@ -40,7 +41,7 @@ where
     }
 }
 
-impl<T> Sub<Vector2D<T>> for Point2D<T>
+impl<T: Copy> Sub<Vector2D<T>> for Point2D<T>
 where
     T: Sub<T, Output = T>,
 {

@@ -2,8 +2,8 @@
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
-type GridPoint = Point2D<i32>;
-type GridVector = Vector2D<i32>;
+pub type GridPoint = Point2D<i32>;
+pub type GridVector = Vector2D<i32>;
 
 #[derive(Hash, Eq, PartialEq)]
 pub struct ChunkOrigin(GridPoint);
