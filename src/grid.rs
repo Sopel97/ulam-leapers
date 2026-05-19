@@ -19,15 +19,15 @@ pub struct Chunk<T> {
     cells: Vec<T>,
 }
 
-impl<T: Default + Clone> Chunk<T> {
+impl<T: Default> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
         let mut cells = Vec::new();
-        cells.resize((bounds.width * bounds.height) as usize, T::default());
+        cells.resize_with((bounds.width * bounds.height) as usize, Default::default);
         Chunk { bounds, cells }
     }
 }
 
-impl<T: Default + Clone> Index<GridPoint> for Chunk<T> {
+impl<T: Default> Index<GridPoint> for Chunk<T> {
     type Output = T;
 
     fn index(&self, index: GridPoint) -> &Self::Output {
@@ -37,7 +37,7 @@ impl<T: Default + Clone> Index<GridPoint> for Chunk<T> {
     }
 }
 
-impl<T: Default + Clone> IndexMut<GridPoint> for Chunk<T> {
+impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
@@ -81,7 +81,7 @@ pub struct Grid<T> {
     chunks: HashMap<ChunkOrigin, Chunk<T>>,
 }
 
-impl<T: Default + Clone> Grid<T> {
+impl<T: Default> Grid<T> {
     pub fn new(chunker: Box<dyn Chunker>) -> Self {
         Grid {
             chunker,
@@ -107,7 +107,7 @@ impl<T: Default + Clone> Grid<T> {
     }
 }
 
-impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
+impl<T: Default> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
@@ -118,7 +118,7 @@ impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
     }
 }
 
-impl<T: Default + Clone> IndexMut<GridPoint> for Grid<T> {
+impl<T: Default> IndexMut<GridPoint> for Grid<T> {
     fn index_mut(&mut self, point: GridPoint) -> &mut Self::Output {
         let chunk: &mut Chunk<T> = self.get_or_create_chunk_containing(&point);
         &mut chunk[point]
