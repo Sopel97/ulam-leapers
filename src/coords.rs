@@ -76,6 +76,7 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
