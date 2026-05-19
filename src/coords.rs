@@ -1,6 +1,7 @@
 ﻿use std::cmp::max;
 use std::ops::*;
 
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Point2D<T> {
     pub x: T,
     pub y: T,
