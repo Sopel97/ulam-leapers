@@ -1,4 +1,5 @@
-﻿use std::ops::*;
+﻿use std::cmp::max;
+use std::ops::*;
 
 pub struct Point2D<T> {
     pub x: T,
@@ -9,6 +10,8 @@ pub struct Vector2D<T> {
     pub x: T,
     pub y: T,
 }
+
+pub struct UlamSpiralPoint(i64);
 
 impl<T> Point2D<T> {
     pub fn new(x: T, y: T) -> Point2D<T> {
@@ -50,6 +53,29 @@ where
     }
 }
 
+impl From<&Point2D<i32>> for UlamSpiralPoint {
+    fn from(point: &Point2D<i32>) -> Self {
+        let x = point.x as i64;
+        let y = point.y as i64;
+        let m = max(x.abs(), y.abs());
+
+        let base = 4 * m * (m - 1);
+        let p = if x == m && y != -m {
+            base + m + y
+        } else if y == m {
+            base + 3 * m - x
+        } else if x == -m {
+            base + 5 * m - y
+        } else if y == -m {
+            base + 7 * m + x
+        } else {
+            unreachable!()
+        };
+
+        UlamSpiralPoint(p)
+    }
+}
+
 mod tests {
     use super::*;
 
@@ -69,5 +95,36 @@ mod tests {
         let translated = p - v;
         assert_eq!(translated.x, -2);
         assert_eq!(translated.y, -2);
+    }
+
+    #[test]
+    fn can_convert_point_to_ulam_spiral_point() {
+        let p = Point2D::new(0, 0);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 0);
+
+        let p = Point2D::new(1, 0);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 1);
+
+        let p = Point2D::new(1, 1);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 2);
+
+        let p = Point2D::new(0, 1);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 3);
+
+        let p = Point2D::new(-1, 1);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 4);
+
+        let p = Point2D::new(-1, -1);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 6);
+
+        let p = Point2D::new(-2, -2);
+        let u = UlamSpiralPoint::from(&p);
+        assert_eq!(u.0, 20);
     }
 }
