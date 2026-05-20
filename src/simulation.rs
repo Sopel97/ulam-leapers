@@ -6,16 +6,11 @@ use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use crate::simulation::SimulationError::OutOfMemory;
 
-const MAX_PLAYER_COUNT: usize = 64;
-
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct PlayerId(u8);
 
 impl PlayerId {
     pub fn new(id: u8) -> PlayerId {
-        if (id as usize) >= MAX_PLAYER_COUNT {
-            panic!("Player ID out of range");
-        }
         PlayerId(id)
     }
 }
@@ -32,6 +27,10 @@ pub struct PlayerIdSet {
 }
 
 impl PlayerIdSet {
+    pub fn is_player_id_allowed(id: PlayerId) -> bool {
+        (id.0 as usize) < (size_of::<PlayerIdSet>() * 8)
+    }
+
     pub fn empty() -> PlayerIdSet {
         PlayerIdSet { bits: 0 }
     }
@@ -171,6 +170,10 @@ impl Simulation {
         }
     }
 
+    pub fn empty_cell() -> PlayerId {
+        PlayerId::new(0)
+    }
+
     pub fn memory_usage(&self) -> usize {
         self.grid.memory_usage() + self.restrictions.memory_usage()
     }
@@ -192,11 +195,11 @@ impl Simulation {
     }
 
     pub fn add_player(&mut self, attacks: LeaperAttacks) -> PlayerId {
-        if self.players.len() >= MAX_PLAYER_COUNT {
-            panic!("Too many players");
+        // ID 0 reserved for empty cell.
+        let id = PlayerId((self.players.len() + 1) as u8);
+        if !PlayerIdSet::is_player_id_allowed(id) {
+            panic!("Simulated player with an invalid id");
         }
-
-        let id = PlayerId(self.players.len() as u8);
 
         self.players.push(Player {
             attacks,
@@ -209,15 +212,15 @@ impl Simulation {
     }
 
     pub fn add_player_threat(&mut self, threatening: PlayerId, threatened: PlayerId) {
-        if threatening.0 as usize >= self.players.len() {
+        if threatening.0 as usize >= self.players.len() + 1 {
             panic!("Threatening player is out of bounds");
         }
 
-        if threatened.0 as usize >= self.players.len() {
+        if threatened.0 as usize >= self.players.len() + 1 {
             panic!("Threatened player is out of bounds");
         }
 
-        self.players[threatening.0 as usize].threats |= threatened;
+        self.players[(threatening.0 - 1) as usize].threats |= threatened;
     }
 
     fn simulate_single_turn(&mut self) {
@@ -306,6 +309,14 @@ mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
     use crate::simulation::{PlayerIdSet, Simulation, SimulationError};
+
+    #[test]
+    fn empty_cell_distinguishable_from_player() {
+        let mut sim = Simulation::new(5);
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+
+        assert_ne!(p1, Simulation::empty_cell());
+    }
 
     #[test]
     fn empty_simulation_works() {
