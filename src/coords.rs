@@ -86,6 +86,12 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
     }
 }
 
+impl Point2D<i32> {
+    pub fn chebyshev_distance_from_origin(&self) -> i32 {
+        max(self.x.abs(), self.y.abs())
+    }
+}
+
 pub struct UlamSpiralCursor {
     grid_position: GridPoint,
     spiral_position: UlamSpiralPoint,

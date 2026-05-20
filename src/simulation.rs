@@ -4,7 +4,6 @@ use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
-use crate::simulation::SimulationError::OutOfMemory;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct PlayerId(u8);
@@ -150,6 +149,7 @@ pub struct Simulation {
 #[derive(Debug, PartialEq)]
 pub enum SimulationError {
     OutOfMemory,
+    MaximumDistanceReached,
 }
 
 impl Simulation {
@@ -180,6 +180,10 @@ impl Simulation {
 
     pub fn set_max_memory_usage(&mut self, usage: usize) {
         self.max_memory = usage;
+    }
+
+    pub fn set_max_distance(&mut self, distance: usize) {
+        self.max_distance = distance;
     }
 
     pub fn set_turns_per_step(&mut self, step_size: usize) {
@@ -286,7 +290,14 @@ impl Simulation {
         self.finalize_step();
 
         if self.memory_usage() > self.max_memory {
-            return Err(OutOfMemory);
+            return Err(SimulationError::OutOfMemory);
+        }
+
+        for player in self.players.iter() {
+            let distance = player.cursor.grid_position().chebyshev_distance_from_origin();
+            if distance as usize > self.max_distance {
+                return Err(SimulationError::MaximumDistanceReached);
+            }
         }
 
         Ok(())
@@ -410,6 +421,19 @@ mod tests {
         let res = sim.simulate();
 
         assert_eq!(res, Err(SimulationError::OutOfMemory));
+        assert_eq!(sim.simulated_turns, 10);
+    }
+
+    #[test]
+    fn terminates_after_first_step_with_low_max_distance_limit() {
+        let mut sim = Simulation::new(100);
+        sim.set_turns_per_step(10);
+        sim.set_max_distance(1);
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim.add_player_enemy(p1, p1);
+        let res = sim.simulate();
+
+        assert_eq!(res, Err(SimulationError::MaximumDistanceReached));
         assert_eq!(sim.simulated_turns, 10);
     }
 }
