@@ -16,20 +16,43 @@ pub struct ChunkBounds {
 
 pub struct Chunk<T> {
     bounds: ChunkBounds,
-    cells: Vec<T>, // TODO: 64 byte alignment via overallocation
+    cells_storage: Box<[T]>,
+    cells_begin: usize,
+    cells_end: usize,
 }
 
 impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> usize {
-        size_of::<T>() * self.cells.len()
+        size_of::<T>() * self.cells_storage.len()
+    }
+
+    pub fn cells(&self) -> &[T] {
+        self.cells_storage[self.cells_begin..self.cells_end].as_ref()
+    }
+
+    pub fn cells_mut(&mut self) -> &mut [T] {
+        self.cells_storage[self.cells_begin..self.cells_end].as_mut()
     }
 }
 
-impl<T: Default> Chunk<T> {
+impl<T: Default + Clone> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
-        let mut cells = Vec::new();
-        cells.resize_with((bounds.width * bounds.height) as usize, Default::default);
-        Chunk { bounds, cells }
+        let elem_size = size_of::<T>();
+        let size = (bounds.width * bounds.height) as usize;
+        let extra = 64 / elem_size + 1;
+
+        let cells = vec![Default::default(); size + extra].into_boxed_slice();
+
+        let ptr = cells.as_ptr() as usize;
+        let aligned_ptr = (ptr + 63) & !63usize;
+        let aligned_offset = (aligned_ptr - ptr) / elem_size;
+
+        Chunk {
+            bounds,
+            cells_storage: cells,
+            cells_begin: aligned_offset,
+            cells_end: aligned_offset + size,
+        }
     }
 }
 
@@ -39,7 +62,7 @@ impl<T: Default> Index<GridPoint> for Chunk<T> {
     fn index(&self, index: GridPoint) -> &Self::Output {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
-        &self.cells[yy as usize * self.bounds.width as usize + xx as usize]
+        &self.cells()[yy as usize * self.bounds.width as usize + xx as usize]
     }
 }
 
@@ -47,7 +70,8 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
-        &mut self.cells[yy as usize * self.bounds.width as usize + xx as usize]
+        let w = self.bounds.width;
+        &mut self.cells_mut()[yy as usize * w as usize + xx as usize]
     }
 }
 
@@ -99,7 +123,7 @@ impl<T> Grid<T> {
     }
 }
 
-impl<T: Default> Grid<T> {
+impl<T: Default + Clone> Grid<T> {
     pub fn new(chunker: Box<dyn Chunker>) -> Self {
         Grid {
             chunker,
@@ -125,7 +149,7 @@ impl<T: Default> Grid<T> {
     }
 }
 
-impl<T: Default> Index<GridPoint> for Grid<T> {
+impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
@@ -136,7 +160,7 @@ impl<T: Default> Index<GridPoint> for Grid<T> {
     }
 }
 
-impl<T: Default> IndexMut<GridPoint> for Grid<T> {
+impl<T: Default + Clone> IndexMut<GridPoint> for Grid<T> {
     fn index_mut(&mut self, point: GridPoint) -> &mut Self::Output {
         let chunk: &mut Chunk<T> = self.get_or_create_chunk_containing(&point);
         &mut chunk[point]
