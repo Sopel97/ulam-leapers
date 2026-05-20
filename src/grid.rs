@@ -16,7 +16,7 @@ pub struct ChunkBounds {
 
 pub struct Chunk<T> {
     bounds: ChunkBounds,
-    cells: Vec<T>,
+    cells: Vec<T>, // TODO: 64 byte alignment via overallocation
 }
 
 impl<T> Chunk<T> {
