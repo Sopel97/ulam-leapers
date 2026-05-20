@@ -127,7 +127,7 @@ impl BitXor<PlayerId> for PlayerIdSet {
 pub struct Player {
     attacks: LeaperAttacks,
     id: PlayerId,
-    threats: PlayerIdSet,
+    enemies: PlayerIdSet,
     cursor: UlamSpiralCursor,
 }
 
@@ -138,7 +138,7 @@ const DEFAULT_SLIDING_WINDOW_CHUNK_SIZE_POW2: usize = 20;
 pub struct Simulation {
     players: Vec<Player>,
     grid: Grid<PlayerId>,
-    restrictions: SlidingWindow<PlayerIdSet>,
+    forbiddances: SlidingWindow<PlayerIdSet>,
 
     turns_per_step: usize,
     max_turns: usize,
@@ -157,7 +157,7 @@ impl Simulation {
         Simulation {
             players: vec![],
             grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE_POW2))),
-            restrictions: SlidingWindow::with_chunk_size_and_origin(
+            forbiddances: SlidingWindow::with_chunk_size_and_origin(
                 DEFAULT_SLIDING_WINDOW_CHUNK_SIZE_POW2,
                 0,
             ),
@@ -175,7 +175,7 @@ impl Simulation {
     }
 
     pub fn memory_usage(&self) -> usize {
-        self.grid.memory_usage() + self.restrictions.memory_usage()
+        self.grid.memory_usage() + self.forbiddances.memory_usage()
     }
 
     pub fn set_max_memory_usage(&mut self, usage: usize) {
@@ -204,37 +204,37 @@ impl Simulation {
         self.players.push(Player {
             attacks,
             id,
-            threats: PlayerIdSet::empty(),
+            enemies: PlayerIdSet::empty(),
             cursor: UlamSpiralCursor::new(),
         });
 
         id
     }
 
-    pub fn add_player_threat(&mut self, threatening: PlayerId, threatened: PlayerId) {
-        if threatening.0 as usize >= self.players.len() + 1 {
-            panic!("Threatening player is out of bounds");
+    pub fn add_player_enemy(&mut self, player: PlayerId, enemy: PlayerId) {
+        if player.0 as usize >= self.players.len() + 1 {
+            panic!("Player is out of bounds");
         }
 
-        if threatened.0 as usize >= self.players.len() + 1 {
-            panic!("Threatened player is out of bounds");
+        if enemy.0 as usize >= self.players.len() + 1 {
+            panic!("Enemy player is out of bounds");
         }
 
-        self.players[(threatening.0 - 1) as usize].threats |= threatened;
+        self.players[(player.0 - 1) as usize].enemies |= enemy;
     }
 
-    pub fn add_all_pairwise_player_threats(&mut self) {
+    pub fn add_all_pairwise_player_enemies(&mut self) {
         for player in &mut self.players {
-            player.threats = PlayerIdSet::full() ^ player.id;
+            player.enemies = PlayerIdSet::full() ^ player.id;
         }
     }
 
     fn simulate_single_turn(&mut self) {
         for player in self.players.iter_mut() {
             loop {
-                let disallowed_in_this_cell =
-                    self.restrictions[player.cursor.spiral_position().index()];
-                if !disallowed_in_this_cell.is_set(player.id) {
+                let forbidden =
+                    self.forbiddances[player.cursor.spiral_position().index()];
+                if !forbidden.is_set(player.id) {
                     break;
                 }
 
@@ -243,7 +243,7 @@ impl Simulation {
 
             // We found a place we can put the piece on
             self.grid[player.cursor.grid_position()] = player.id;
-            self.restrictions[player.cursor.spiral_position().index()] = PlayerIdSet::full();
+            self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
             for attack_vector in player
                 .attacks
                 .get_attacks_from(&player.cursor.grid_position())
@@ -251,8 +251,8 @@ impl Simulation {
                 let u = UlamSpiralPoint::from(&attack_vector);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
-                if u.index() >= self.restrictions.get_origin() {
-                    self.restrictions[u.index()] |= player.threats;
+                if u.index() >= self.forbiddances.get_origin() {
+                    self.forbiddances[u.index()] |= player.enemies;
                 }
             }
 
@@ -270,7 +270,7 @@ impl Simulation {
             .min_by_key(|player| player.cursor.spiral_position().index())
             .unwrap();
         let new_origin = last_player.cursor.spiral_position().index();
-        self.restrictions.set_origin(new_origin);
+        self.forbiddances.set_origin(new_origin);
     }
 
     pub fn simulate_single_step(&mut self) -> Result<(), SimulationError> {
@@ -344,7 +344,7 @@ mod tests {
     fn single_self_attacking_knight() {
         let mut sim = Simulation::new(5);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_threat(p1, p1);
+        sim.add_player_enemy(p1, p1);
         sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
@@ -367,7 +367,7 @@ mod tests {
         let mut sim = Simulation::new(5);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_all_pairwise_player_threats();
+        sim.add_all_pairwise_player_enemies();
         sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
@@ -394,7 +394,7 @@ mod tests {
         let mut sim = Simulation::new(100);
         sim.set_turns_per_step(10);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_threat(p1, p1);
+        sim.add_player_enemy(p1, p1);
         sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 100);
@@ -406,7 +406,7 @@ mod tests {
         sim.set_turns_per_step(10);
         sim.set_max_memory_usage(0);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_threat(p1, p1);
+        sim.add_player_enemy(p1, p1);
         let res = sim.simulate();
 
         assert_eq!(res, Err(SimulationError::OutOfMemory));
