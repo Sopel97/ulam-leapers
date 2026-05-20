@@ -223,6 +223,12 @@ impl Simulation {
         self.players[(threatening.0 - 1) as usize].threats |= threatened;
     }
 
+    pub fn add_all_pairwise_player_threats(&mut self) {
+        for player in &mut self.players {
+            player.threats = PlayerIdSet::full() ^ player.id;
+        }
+    }
+
     fn simulate_single_turn(&mut self) {
         for player in self.players.iter_mut() {
             loop {
@@ -319,6 +325,15 @@ mod tests {
     }
 
     #[test]
+    fn added_players_are_different() {
+        let mut sim = Simulation::new(5);
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+
+        assert_ne!(p1, p2);
+    }
+
+    #[test]
     fn empty_simulation_works() {
         let mut sim = Simulation::new(100);
         sim.simulate().unwrap();
@@ -352,8 +367,7 @@ mod tests {
         let mut sim = Simulation::new(5);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_threat(p1, p2);
-        sim.add_player_threat(p2, p1);
+        sim.add_all_pairwise_player_threats();
         sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
