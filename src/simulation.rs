@@ -165,6 +165,18 @@ impl Simulation {
         }
     }
 
+    pub fn set_turns_per_step(&mut self, step_size: usize) {
+        if step_size == 0 {
+            panic!("Turns per step must be greater than 0");
+        }
+
+        self.turns_per_step = step_size;
+    }
+
+    pub fn simulated_turns(&self) -> usize {
+        self.simulated_turns
+    }
+
     pub fn add_player(&mut self, attacks: LeaperAttacks) -> PlayerId {
         if self.players.len() >= MAX_PLAYER_COUNT {
             panic!("Too many players");
@@ -214,7 +226,11 @@ impl Simulation {
                 .get_attacks_from(&player.cursor.grid_position())
             {
                 let u = UlamSpiralPoint::from(&attack_vector);
-                self.restrictions[u.index()] |= player.threats;
+                // We don't care about cells before the origin (last player) and
+                // we need to be careful not to modify them.
+                if u.index() > self.restrictions.get_origin() {
+                    self.restrictions[u.index()] |= player.threats;
+                }
             }
 
             // Advance after placement to remove a redundant check next turn.
@@ -270,7 +286,7 @@ mod tests {
         //    _  _ [1] 1  _
         //    _  _  _  _  _
         //    1
-        
+
         assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
         assert_eq!(sim.grid[GridPoint::new(1, 0)], p1);
         assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
@@ -293,7 +309,7 @@ mod tests {
         //    2  2  1  1
         //    1 [1] 2  _
         //    2  _  1  _
-        
+
         assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
         assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
         assert_eq!(sim.grid[GridPoint::new(-1, 0)], p1);
@@ -305,5 +321,16 @@ mod tests {
         assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
         assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
         assert_eq!(sim.grid[GridPoint::new(2, 2)], p2);
+    }
+
+    #[test]
+    fn multiple_steps_work() {
+        let mut sim = Simulation::new(100);
+        sim.set_turns_per_step(10);
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim.add_player_threat(p1, p1);
+        sim.run();
+
+        assert_eq!(sim.simulated_turns, 100);
     }
 }
