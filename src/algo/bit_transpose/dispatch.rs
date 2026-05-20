@@ -64,17 +64,27 @@ mod tests {
     use super::*;
 
     #[repr(align(64))]
-    struct Wrapper([u8; 64]);
+    struct Wrapper([u8; 128]);
 
-    fn make_test_case() -> (Wrapper, Wrapper, [u8; 64]) {
-        let input: Wrapper = Wrapper(core::array::from_fn(|i| i as u8));
-        let output = Wrapper([0_u8; 64]);
-        let expected: [u8; 64] = {
+    // 2 chunks to test chunked processing too
+    fn make_test_case() -> (Wrapper, Wrapper, [u8; 128]) {
+        let input: Wrapper = Wrapper(core::array::from_fn(|i| (i % 64) as u8));
+        let output = Wrapper([0_u8; 128]);
+        let expected: [u8; 128] = {
             let a = 0b10101010u8;
             let b = 0b11001100u8;
             let c = 0b11110000u8;
             let d = 0b11111111u8;
             [
+                a, a, a, a, a, a, a, a, // lowest bit pattern
+                b, b, b, b, b, b, b, b,
+                c, c, c, c, c, c, c, c,
+                0, d, 0, d, 0, d, 0, d,
+                0, 0, d, d, 0, 0, d, d,
+                0, 0, 0, 0, d, d, d, d,
+                0, 0, 0, 0, 0, 0, 0, 0, // highest 2 bits are not set because max value is 63
+                0, 0, 0, 0, 0, 0, 0, 0,
+                // repeat for the second chunk
                 a, a, a, a, a, a, a, a, // lowest bit pattern
                 b, b, b, b, b, b, b, b,
                 c, c, c, c, c, c, c, c,
@@ -140,7 +150,7 @@ mod tests {
 
         assert_eq!(output.0, expected);
 
-        let mut output2 = Wrapper([0_u8; 64]);
+        let mut output2 = Wrapper([0_u8; 128]);
 
         sse2::inv_bit_transpose_sse2(&output.0, &mut output2.0);
 
