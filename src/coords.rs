@@ -17,6 +17,12 @@ pub struct Vector2D<T> {
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct UlamSpiralPoint(i64);
 
+impl UlamSpiralPoint {
+    pub fn index(self) -> isize {
+        self.0 as isize
+    }
+}
+
 impl<T> Point2D<T> {
     pub fn new(x: T, y: T) -> Point2D<T> {
         Point2D::<T> { x, y }
@@ -80,7 +86,7 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
     }
 }
 
-struct UlamSpiralCursor {
+pub struct UlamSpiralCursor {
     grid_position: GridPoint,
     spiral_position: UlamSpiralPoint,
 

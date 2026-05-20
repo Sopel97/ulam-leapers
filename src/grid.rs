@@ -54,6 +54,12 @@ pub struct SquareChunker {
     chunk_size_pow2: u32,
 }
 
+impl SquareChunker {
+    pub fn new(chunk_size_pow2: u32) -> SquareChunker {
+        SquareChunker { chunk_size_pow2 }
+    }
+}
+
 impl Chunker for SquareChunker {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin {
         let x = point.x;
