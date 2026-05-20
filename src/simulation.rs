@@ -242,7 +242,7 @@ impl Simulation {
                 let u = UlamSpiralPoint::from(&attack_vector);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
-                if u.index() > self.restrictions.get_origin() {
+                if u.index() >= self.restrictions.get_origin() {
                     self.restrictions[u.index()] |= player.threats;
                 }
             }
@@ -264,29 +264,40 @@ impl Simulation {
         self.restrictions.set_origin(new_origin);
     }
 
-    pub fn run(&mut self) -> Result<(), SimulationError> {
+    pub fn simulate_single_step(&mut self) -> Result<(), SimulationError> {
+        let turns_this_step = min(self.turns_per_step, self.max_turns - self.simulated_turns);
+        if turns_this_step == 0 {
+            return Ok(());
+        }
+
+        for t in 0..turns_this_step {
+            self.simulate_single_turn()
+        }
+
+        self.finalize_step();
+
+        if self.memory_usage() > self.max_memory {
+            return Err(OutOfMemory);
+        }
+
+        Ok(())
+    }
+
+    pub fn simulate(&mut self) -> Result<(), SimulationError> {
         // Handle simulation without players.
         if self.players.is_empty() {
             self.simulated_turns = self.max_turns;
             return Ok(());
         }
 
-        loop {
-            let turns_this_step = min(self.turns_per_step, self.max_turns - self.simulated_turns);
-            if turns_this_step == 0 {
-                return Ok(());
-            }
-
-            for t in 0..turns_this_step {
-                self.simulate_single_turn()
-            }
-
-            self.finalize_step();
-
-            if self.memory_usage() > self.max_memory {
-                return Err(OutOfMemory);
+        while self.simulated_turns < self.max_turns {
+            match self.simulate_single_step() {
+                Ok(_) => {},
+                Err(e) => return Err(e),
             }
         }
+
+        Ok(())
     }
 }
 
@@ -299,7 +310,7 @@ mod tests {
     #[test]
     fn empty_simulation_works() {
         let mut sim = Simulation::new(100);
-        sim.run().unwrap();
+        sim.simulate().unwrap();
         assert_eq!(sim.simulated_turns(), 100);
     }
 
@@ -308,7 +319,7 @@ mod tests {
         let mut sim = Simulation::new(5);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p1);
-        sim.run().unwrap();
+        sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -332,14 +343,13 @@ mod tests {
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p2);
         sim.add_player_threat(p2, p1);
-        sim.run().unwrap();
+        sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
-        //             2
         //    2  2  1  1
-        //    1 [1] 2  _
-        //    2  _  1  _
+        //    1 [1] 2  2
+        //    2  _  _  1
 
         assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
         assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
@@ -351,7 +361,7 @@ mod tests {
         assert_eq!(sim.grid[GridPoint::new(0, 1)], p2);
         assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
         assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(2, 2)], p2);
+        assert_eq!(sim.grid[GridPoint::new(2, 0)], p2);
     }
 
     #[test]
@@ -360,7 +370,7 @@ mod tests {
         sim.set_turns_per_step(10);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p1);
-        sim.run().unwrap();
+        sim.simulate().unwrap();
 
         assert_eq!(sim.simulated_turns, 100);
     }
@@ -372,7 +382,7 @@ mod tests {
         sim.set_max_memory_usage(0);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p1);
-        let res = sim.run();
+        let res = sim.simulate();
 
         assert_eq!(res, Err(SimulationError::OutOfMemory));
         assert_eq!(sim.simulated_turns, 10);
