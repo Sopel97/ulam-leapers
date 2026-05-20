@@ -140,7 +140,6 @@ pub struct Simulation {
     forbiddances: SlidingWindow<PlayerIdSet>,
 
     turns_per_step: usize,
-    max_turns: usize,
     max_memory: usize,
     max_distance: usize,
     simulated_turns: usize,
@@ -153,7 +152,7 @@ pub enum SimulationError {
 }
 
 impl Simulation {
-    pub fn new(max_turns: usize) -> Simulation {
+    pub fn new() -> Simulation {
         Simulation {
             players: vec![],
             grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE_POW2))),
@@ -163,7 +162,6 @@ impl Simulation {
             ),
 
             turns_per_step: DEFAULT_TURNS_PER_STEP,
-            max_turns,
             max_memory: usize::MAX,
             max_distance: usize::MAX,
             simulated_turns: 0,
@@ -277,13 +275,16 @@ impl Simulation {
         self.forbiddances.set_origin(new_origin);
     }
 
-    pub fn simulate_single_step(&mut self) -> Result<(), SimulationError> {
-        let turns_this_step = min(self.turns_per_step, self.max_turns - self.simulated_turns);
-        if turns_this_step == 0 {
+    fn simulate_single_step(&mut self, turns_to_simulate: usize) -> Result<(), SimulationError> {
+        if turns_to_simulate > self.turns_per_step {
+            panic!("Trying to simulate more turns in a single step than allowed.");
+        }
+
+        if turns_to_simulate == 0 {
             return Ok(());
         }
 
-        for t in 0..turns_this_step {
+        for t in 0..turns_to_simulate {
             self.simulate_single_turn()
         }
 
@@ -303,18 +304,20 @@ impl Simulation {
         Ok(())
     }
 
-    pub fn simulate(&mut self) -> Result<(), SimulationError> {
+    pub fn simulate(&mut self, mut turns_to_simulate: usize) -> Result<(), SimulationError> {
         // Handle simulation without players.
         if self.players.is_empty() {
-            self.simulated_turns = self.max_turns;
+            self.simulated_turns += turns_to_simulate;
             return Ok(());
         }
 
-        while self.simulated_turns < self.max_turns {
-            match self.simulate_single_step() {
+        while turns_to_simulate > 0 {
+            let turns_to_simulate_this_step = min(self.turns_per_step, turns_to_simulate);
+            match self.simulate_single_step(turns_to_simulate_this_step) {
                 Ok(_) => {},
                 Err(e) => return Err(e),
             }
+            turns_to_simulate -= turns_to_simulate_this_step;
         }
 
         Ok(())
@@ -329,7 +332,7 @@ mod tests {
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
-        let mut sim = Simulation::new(5);
+        let mut sim = Simulation::new();
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
 
         assert_ne!(p1, Simulation::empty_cell());
@@ -337,7 +340,7 @@ mod tests {
 
     #[test]
     fn added_players_are_different() {
-        let mut sim = Simulation::new(5);
+        let mut sim = Simulation::new();
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
 
@@ -346,17 +349,17 @@ mod tests {
 
     #[test]
     fn empty_simulation_works() {
-        let mut sim = Simulation::new(100);
-        sim.simulate().unwrap();
+        let mut sim = Simulation::new();
+        sim.simulate(100).unwrap();
         assert_eq!(sim.simulated_turns(), 100);
     }
 
     #[test]
     fn single_self_attacking_knight() {
-        let mut sim = Simulation::new(5);
+        let mut sim = Simulation::new();
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_enemy(p1, p1);
-        sim.simulate().unwrap();
+        sim.simulate(5).unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -375,11 +378,11 @@ mod tests {
 
     #[test]
     fn two_knights() {
-        let mut sim = Simulation::new(5);
+        let mut sim = Simulation::new();
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
-        sim.simulate().unwrap();
+        sim.simulate(5).unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -401,24 +404,61 @@ mod tests {
     }
 
     #[test]
+    fn simulation_is_resumable() {
+        let mut sim = Simulation::new();
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim.add_all_pairwise_player_enemies();
+
+        sim.simulate(2).unwrap();
+
+        assert_eq!(sim.simulated_turns, 2);
+
+        //    2  1
+        //   [1] 2
+        
+        assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
+        assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
+
+        assert_eq!(sim.grid[GridPoint::new(1, 0)], p2);
+        assert_eq!(sim.grid[GridPoint::new(0, 1)], p2);
+
+        sim.simulate(3).unwrap();
+
+        assert_eq!(sim.simulated_turns, 5);
+
+        //    2  2  1  1
+        //    1 [1] 2  2
+        //    2  _  _  1
+
+        assert_eq!(sim.grid[GridPoint::new(-1, 0)], p1);
+        assert_eq!(sim.grid[GridPoint::new(2, -1)], p1);
+        assert_eq!(sim.grid[GridPoint::new(2, 1)], p1);
+
+        assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
+        assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
+        assert_eq!(sim.grid[GridPoint::new(2, 0)], p2);
+    }
+
+    #[test]
     fn multiple_steps_work() {
-        let mut sim = Simulation::new(100);
+        let mut sim = Simulation::new();
         sim.set_turns_per_step(10);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_enemy(p1, p1);
-        sim.simulate().unwrap();
+        sim.simulate(100).unwrap();
 
         assert_eq!(sim.simulated_turns, 100);
     }
 
     #[test]
     fn terminates_after_first_step_with_low_memory_usage_limit() {
-        let mut sim = Simulation::new(100);
+        let mut sim = Simulation::new();
         sim.set_turns_per_step(10);
         sim.set_max_memory_usage(0);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_enemy(p1, p1);
-        let res = sim.simulate();
+        let res = sim.simulate(100);
 
         assert_eq!(res, Err(SimulationError::OutOfMemory));
         assert_eq!(sim.simulated_turns, 10);
@@ -426,12 +466,12 @@ mod tests {
 
     #[test]
     fn terminates_after_first_step_with_low_max_distance_limit() {
-        let mut sim = Simulation::new(100);
+        let mut sim = Simulation::new();
         sim.set_turns_per_step(10);
         sim.set_max_distance(1);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_enemy(p1, p1);
-        let res = sim.simulate();
+        let res = sim.simulate(100);
 
         assert_eq!(res, Err(SimulationError::MaximumDistanceReached));
         assert_eq!(sim.simulated_turns, 10);
