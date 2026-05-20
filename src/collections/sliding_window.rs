@@ -18,6 +18,12 @@ pub struct SlidingWindow<T> {
     out_of_bounds_value: T,
 }
 
+impl<T> SlidingWindow<T> {
+    pub fn memory_usage(&self) -> usize {
+        (1 << self.chunk_size_pow2) * self.chunks.len() * size_of::<T>()
+    }
+}
+
 impl<T: Default> SlidingWindow<T> {
     pub fn with_chunk_size_and_origin(chunk_size_pow2: usize, origin: isize) -> SlidingWindow<T> {
         SlidingWindow::<T> {

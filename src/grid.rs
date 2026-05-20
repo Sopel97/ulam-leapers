@@ -19,6 +19,12 @@ pub struct Chunk<T> {
     cells: Vec<T>,
 }
 
+impl<T> Chunk<T> {
+    pub fn memory_usage(&self) -> usize {
+        size_of::<T>() * self.cells.len()
+    }
+}
+
 impl<T: Default> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
         let mut cells = Vec::new();
@@ -85,6 +91,12 @@ impl Chunker for SquareChunker {
 pub struct Grid<T> {
     chunker: Box<dyn Chunker>,
     chunks: HashMap<ChunkOrigin, Chunk<T>>,
+}
+
+impl<T> Grid<T> {
+    pub fn memory_usage(&self) -> usize {
+        self.chunks.values().map(|c| c.memory_usage()).sum()
+    }
 }
 
 impl<T: Default> Grid<T> {

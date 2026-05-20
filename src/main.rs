@@ -13,5 +13,5 @@ fn main() {
     sim.run();
     let elapsed = start.elapsed();
 
-    println!("Simulated {} turns in {:?}.", sim.simulated_turns(), elapsed);
+    println!("Simulated {} turns in {:?} with {} MiB of memory.", sim.simulated_turns(), elapsed, sim.memory_usage() / 1024 / 1024);
 }

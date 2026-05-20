@@ -4,6 +4,7 @@ use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
+use crate::simulation::SimulationError::OutOfMemory;
 
 const MAX_PLAYER_COUNT: usize = 64;
 
@@ -147,6 +148,11 @@ pub struct Simulation {
     simulated_turns: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum SimulationError {
+    OutOfMemory,
+}
+
 impl Simulation {
     pub fn new(max_turns: usize) -> Simulation {
         Simulation {
@@ -163,6 +169,14 @@ impl Simulation {
             max_distance: usize::MAX,
             simulated_turns: 0,
         }
+    }
+
+    pub fn memory_usage(&self) -> usize {
+        self.grid.memory_usage() + self.restrictions.memory_usage()
+    }
+
+    pub fn set_max_memory_usage(&mut self, usage: usize) {
+        self.max_memory = usage;
     }
 
     pub fn set_turns_per_step(&mut self, step_size: usize) {
@@ -250,11 +264,17 @@ impl Simulation {
         self.restrictions.set_origin(new_origin);
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), SimulationError> {
+        // Handle simulation without players.
+        if self.players.is_empty() {
+            self.simulated_turns = self.max_turns;
+            return Ok(());
+        }
+
         loop {
             let turns_this_step = min(self.turns_per_step, self.max_turns - self.simulated_turns);
             if turns_this_step == 0 {
-                break;
+                return Ok(());
             }
 
             for t in 0..turns_this_step {
@@ -262,6 +282,10 @@ impl Simulation {
             }
 
             self.finalize_step();
+
+            if self.memory_usage() > self.max_memory {
+                return Err(OutOfMemory);
+            }
         }
     }
 }
@@ -270,14 +294,21 @@ impl Simulation {
 mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
-    use crate::simulation::{PlayerIdSet, Simulation};
+    use crate::simulation::{PlayerIdSet, Simulation, SimulationError};
+
+    #[test]
+    fn empty_simulation_works() {
+        let mut sim = Simulation::new(100);
+        sim.run().unwrap();
+        assert_eq!(sim.simulated_turns(), 100);
+    }
 
     #[test]
     fn single_self_attacking_knight() {
         let mut sim = Simulation::new(5);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p1);
-        sim.run();
+        sim.run().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -301,7 +332,7 @@ mod tests {
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p2);
         sim.add_player_threat(p2, p1);
-        sim.run();
+        sim.run().unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -329,8 +360,21 @@ mod tests {
         sim.set_turns_per_step(10);
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_threat(p1, p1);
-        sim.run();
+        sim.run().unwrap();
 
         assert_eq!(sim.simulated_turns, 100);
+    }
+
+    #[test]
+    fn terminates_after_first_step_with_low_memory_usage_limit() {
+        let mut sim = Simulation::new(100);
+        sim.set_turns_per_step(10);
+        sim.set_max_memory_usage(0);
+        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim.add_player_threat(p1, p1);
+        let res = sim.run();
+
+        assert_eq!(res, Err(SimulationError::OutOfMemory));
+        assert_eq!(sim.simulated_turns, 10);
     }
 }
