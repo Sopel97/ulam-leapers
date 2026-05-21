@@ -26,6 +26,10 @@ pub struct MortonCurveTransform {
 impl MortonCurveTransform {
     pub fn new(size: Pow2) -> MortonCurveTransform {
         let sz: usize = size.into();
+        if sz > u16::MAX as usize {
+            panic!("Size does not fit in u16");
+        }
+
         let table_size: usize = sz * sz;
         let d_to_xy_table: Box<[(u16, u16)]> = (0..table_size).map(|d| d_to_xy(d as u32)).collect();
         MortonCurveTransform {
