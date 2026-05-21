@@ -1,6 +1,7 @@
 ﻿use std::cmp::min;
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
+use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.
@@ -14,7 +15,7 @@ pub struct SlidingWindow<T> {
     chunk_index_mask: isize,
     origin: isize,
     origin_chunk: isize,
-    chunks: VecDeque<Vec<T>>,
+    chunks: VecDeque<AlignedBoxedSlice<T>>,
     out_of_bounds_value: T,
 }
 
@@ -82,7 +83,7 @@ impl<T: Default> Index<isize> for SlidingWindow<T> {
     }
 }
 
-impl<T: Default> IndexMut<isize> for SlidingWindow<T> {
+impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
     fn index_mut(&mut self, index: isize) -> &mut Self::Output {
         if index < self.origin {
             panic!("Index is before the origin.");
@@ -91,9 +92,7 @@ impl<T: Default> IndexMut<isize> for SlidingWindow<T> {
         let chunk_index = ((index >> self.chunk_size_pow2) - self.origin_chunk) as usize;
         if chunk_index >= self.chunks.len() {
             self.chunks.resize_with(chunk_index + 1, || {
-                let mut vec = Vec::new();
-                vec.resize_with(1 << self.chunk_size_pow2, Default::default);
-                vec
+                AlignedBoxedSlice::<T>::new(1 << self.chunk_size_pow2, 64)
             });
         }
 
