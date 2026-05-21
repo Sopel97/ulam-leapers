@@ -2,6 +2,7 @@
 pub mod grid;
 pub mod collections {
     pub mod sliding_window;
+    pub mod aligned_boxed_slice;
 }
 pub mod piece;
 pub mod simulation;
