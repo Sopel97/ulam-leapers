@@ -1,8 +1,8 @@
-﻿use std::ops::{Index, IndexMut, Range};
-use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+﻿use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::util::align::MemoryAlignment;
+use std::ops::{Index, IndexMut, Range};
 
-// Row-major 2 dimensional array.
+// Row-major 2-dimensional array.
 pub struct Array2D<T> {
     data: AlignedBoxedSlice<T>,
     width: usize,
@@ -10,6 +10,17 @@ pub struct Array2D<T> {
 }
 
 impl<T: Default + Clone> Array2D<T> {
+    pub fn new(width: usize, height: usize) -> Self {
+        Array2D::<T> {
+            data: AlignedBoxedSlice::<T>::new(
+                width * height,
+                MemoryAlignment::new(align_of::<T>()),
+            ),
+            width,
+            height,
+        }
+    }
+
     pub fn new_aligned(width: usize, height: usize, align: MemoryAlignment) -> Self {
         Array2D::<T> {
             data: AlignedBoxedSlice::<T>::new(width * height, align),
@@ -41,10 +52,20 @@ pub struct Slice2DInternal<'a, T, P> {
     _marker: std::marker::PhantomData<&'a T>,
 }
 
+impl<'a, T, P> Slice2DInternal<'a, T, P> {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+}
+
 pub type Slice2D<'a, T> = Slice2DInternal<'a, T, &'a [T]>;
 pub type MutSlice2D<'a, T> = Slice2DInternal<'a, T, &'a mut [T]>;
 
-impl<'a, T> Index<(usize, usize)> for Slice2D<'a, T> {
+impl<T> Index<(usize, usize)> for Slice2D<'_, T> {
     type Output = T;
 
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
@@ -52,7 +73,7 @@ impl<'a, T> Index<(usize, usize)> for Slice2D<'a, T> {
     }
 }
 
-impl<'a, T> Index<(usize, usize)> for MutSlice2D<'a, T> {
+impl<T> Index<(usize, usize)> for MutSlice2D<'_, T> {
     type Output = T;
 
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
@@ -60,7 +81,7 @@ impl<'a, T> Index<(usize, usize)> for MutSlice2D<'a, T> {
     }
 }
 
-impl<'a, T> IndexMut<(usize, usize)> for MutSlice2D<'a, T> {
+impl<T> IndexMut<(usize, usize)> for MutSlice2D<'_, T> {
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
         &mut self.data[y * self.stride + x]
     }
@@ -77,10 +98,9 @@ impl<T> Array2D<T> {
 }
 
 impl<'a, T> Array2D<T> {
-    pub fn slice2d(&'a self, xr: Range<usize>, yr: Range<usize>) -> Slice2D<'a, T> {
+    pub fn slice2d(&self, xr: Range<usize>, yr: Range<usize>) -> Slice2D<'_, T> {
         let width = xr.len();
         let height = yr.len();
-        let size = width * height;
 
         let start = yr.start * self.width + xr.start;
         // We don't need to form an end, and it would be problematic anyway
@@ -95,10 +115,9 @@ impl<'a, T> Array2D<T> {
         }
     }
 
-    pub fn mut_slice2d(&'a mut self, xr: Range<usize>, yr: Range<usize>) -> MutSlice2D<'a, T> {
+    pub fn mut_slice2d(&mut self, xr: Range<usize>, yr: Range<usize>) -> MutSlice2D<'_, T> {
         let width = xr.len();
         let height = yr.len();
-        let size = width * height;
 
         let start = yr.start * self.width + xr.start;
         // We don't need to form an end, and it would be problematic anyway
@@ -106,6 +125,62 @@ impl<'a, T> Array2D<T> {
 
         MutSlice2D {
             data: &mut self.data.as_mut_slice()[start..],
+            stride: self.width,
+            width: xr.len(),
+            height: yr.len(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn as_slice2d(&self) -> Slice2D<'_, T> {
+        Slice2D {
+            data: self.data.as_slice(),
+            stride: self.width,
+            width: self.width,
+            height: self.height,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn as_mut_slice2d(&mut self) -> MutSlice2D<'_, T> {
+        MutSlice2D {
+            data: self.data.as_mut_slice(),
+            stride: self.width,
+            width: self.width,
+            height: self.height,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn as_flat_slice(&self) -> &'_ [T] {
+        self.data.as_slice()
+    }
+}
+
+// TODO: how to avoid code duplication?
+impl<T> Slice2D<'_, T> {
+    pub fn slice2d(&self, xr: Range<usize>, yr: Range<usize>) -> Slice2D<'_, T> {
+        let new_start = yr.start * self.stride + xr.start;
+        // We don't need to form an end, and it would be problematic anyway
+        // because no matter what we do the slice spills outside the 2d box.
+
+        Slice2D {
+            data: &self.data[new_start..],
+            stride: self.width,
+            width: xr.len(),
+            height: yr.len(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+// TODO: how to avoid code duplication?
+impl<T> MutSlice2D<'_, T> {
+    pub fn mut_slice2d(&mut self, xr: Range<usize>, yr: Range<usize>) -> MutSlice2D<'_, T> {
+        let new_start = yr.start * self.stride + xr.start;
+
+        MutSlice2D {
+            data: &mut self.data[new_start..],
             stride: self.width,
             width: xr.len(),
             height: yr.len(),

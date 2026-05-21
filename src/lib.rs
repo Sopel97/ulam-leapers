@@ -14,6 +14,7 @@ pub mod algo {
         pub mod avx512bw;
         pub mod dispatch;
     }
+    pub mod morton;
 }
 pub mod util {
     pub mod align;
