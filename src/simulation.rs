@@ -4,6 +4,7 @@ use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
+use crate::util::pow2::Pow2;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct PlayerId(u8);
@@ -131,8 +132,8 @@ pub struct Player {
 }
 
 const DEFAULT_TURNS_PER_STEP: usize = 1_000_000;
-const DEFAULT_CHUNK_SIZE_POW2: u32 = 10;
-const DEFAULT_SLIDING_WINDOW_CHUNK_SIZE_POW2: usize = 20;
+const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
+const DEFAULT_SLIDING_WINDOW_CHUNK_SIZE: Pow2 = Pow2::new(1024*1024);
 
 pub struct Simulation {
     players: Vec<Player>,
@@ -155,9 +156,9 @@ impl Simulation {
     pub fn new() -> Simulation {
         Simulation {
             players: vec![],
-            grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE_POW2))),
+            grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE))),
             forbiddances: SlidingWindow::with_chunk_size_and_origin(
-                DEFAULT_SLIDING_WINDOW_CHUNK_SIZE_POW2,
+                DEFAULT_SLIDING_WINDOW_CHUNK_SIZE,
                 0,
             ),
 

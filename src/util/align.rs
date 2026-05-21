@@ -2,7 +2,7 @@
 pub struct MemoryAlignment(usize);
 
 impl MemoryAlignment {
-    pub fn new(value: usize) -> Self {
+    pub const fn new(value: usize) -> Self {
         if !value.is_power_of_two() {
             panic!("Alignment value must be a power of two");
         }

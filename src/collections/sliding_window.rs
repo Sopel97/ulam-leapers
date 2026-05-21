@@ -1,8 +1,10 @@
-﻿use std::cmp::min;
+﻿use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::pow2;
+use crate::util::pow2::Pow2;
+use std::cmp::min;
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
-use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
-use crate::util::align::CACHE_LINE_SIZE;
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.
@@ -12,8 +14,8 @@ use crate::util::align::CACHE_LINE_SIZE;
 /// However, trying to index mutably below the origin will cause a panic.
 /// Note that this collection is not sparse - there are no holes between valid elements.
 pub struct SlidingWindow<T> {
-    chunk_size_pow2: usize,
-    chunk_index_mask: isize,
+    chunk_size: Pow2,
+    chunk_size_mod_mask: isize, // Using a precomputed mask instead of pow2::floor_mod is measurably faster.
     origin: isize,
     origin_chunk: isize,
     chunks: VecDeque<AlignedBoxedSlice<T>>,
@@ -22,24 +24,25 @@ pub struct SlidingWindow<T> {
 
 impl<T> SlidingWindow<T> {
     pub fn memory_usage(&self) -> usize {
-        (1 << self.chunk_size_pow2) * self.chunks.len() * size_of::<T>()
+        let chunk_size: usize = self.chunk_size.into();
+        chunk_size * self.chunks.len() * size_of::<T>()
     }
 }
 
 impl<T: Default> SlidingWindow<T> {
-    pub fn with_chunk_size_and_origin(chunk_size_pow2: usize, origin: isize) -> SlidingWindow<T> {
+    pub fn with_chunk_size_and_origin(chunk_size: Pow2, origin: isize) -> SlidingWindow<T> {
         SlidingWindow::<T> {
-            chunk_size_pow2,
-            chunk_index_mask: (1 << chunk_size_pow2) - 1,
+            chunk_size,
+            chunk_size_mod_mask: chunk_size.floor_mod_mask() as isize,
             origin,
-            origin_chunk: origin >> chunk_size_pow2,
+            origin_chunk: pow2::floor_div(origin, chunk_size),
             chunks: VecDeque::new(),
             out_of_bounds_value: T::default(),
         }
     }
 
-    pub fn with_chunk_size(chunk_size_pow2: usize) -> SlidingWindow<T> {
-        Self::with_chunk_size_and_origin(chunk_size_pow2, 0)
+    pub fn with_chunk_size(chunk_size: Pow2) -> SlidingWindow<T> {
+        Self::with_chunk_size_and_origin(chunk_size, 0)
     }
 
     pub fn set_origin(&mut self, origin: isize) {
@@ -47,8 +50,11 @@ impl<T: Default> SlidingWindow<T> {
             panic!("New origin must not be lower than the current origin.");
         }
 
-        let new_origin_chunk = origin >> self.chunk_size_pow2;
-        let num_chunks_to_drop = min((new_origin_chunk - self.origin_chunk) as usize, self.chunks.len());
+        let new_origin_chunk = pow2::floor_div(origin, self.chunk_size);
+        let num_chunks_to_drop = min(
+            (new_origin_chunk - self.origin_chunk) as usize,
+            self.chunks.len(),
+        );
         for _ in 0..num_chunks_to_drop {
             self.chunks.pop_front();
         }
@@ -74,12 +80,12 @@ impl<T: Default> Index<isize> for SlidingWindow<T> {
             return &self.out_of_bounds_value;
         }
 
-        let chunk_index = ((index >> self.chunk_size_pow2) - self.origin_chunk) as usize;
+        let chunk_index = (pow2::floor_div(index, self.chunk_size) - self.origin_chunk) as usize;
         if chunk_index >= self.chunks.len() {
             return &self.out_of_bounds_value;
         }
 
-        let index_within_chunk = (index & self.chunk_index_mask) as usize;
+        let index_within_chunk = (index & self.chunk_size_mod_mask) as usize;
         &self.chunks[chunk_index][index_within_chunk]
     }
 }
@@ -90,14 +96,14 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
             panic!("Index is before the origin.");
         }
 
-        let chunk_index = ((index >> self.chunk_size_pow2) - self.origin_chunk) as usize;
+        let chunk_index = (pow2::floor_div(index, self.chunk_size) - self.origin_chunk) as usize;
         if chunk_index >= self.chunks.len() {
             self.chunks.resize_with(chunk_index + 1, || {
-                AlignedBoxedSlice::<T>::new(1 << self.chunk_size_pow2, CACHE_LINE_SIZE)
+                AlignedBoxedSlice::<T>::new(self.chunk_size.into(), CACHE_LINE_SIZE)
             });
         }
 
-        let index_within_chunk = (index & self.chunk_index_mask) as usize;
+        let index_within_chunk = (index & self.chunk_size_mod_mask) as usize;
         &mut self.chunks[chunk_index][index_within_chunk]
     }
 }
@@ -108,7 +114,7 @@ mod tests {
     use std::panic::AssertUnwindSafe;
 
     fn make_window() -> SlidingWindow<i32> {
-        SlidingWindow::with_chunk_size_and_origin(2, 0) // chunk size = 4
+        SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0) // chunk size = 4
     }
 
     #[test]
@@ -128,7 +134,7 @@ mod tests {
 
     #[test]
     fn write_and_read_within_same_chunk() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 0);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0);
 
         w[1] = 10;
         w[2] = 20;
@@ -143,7 +149,7 @@ mod tests {
 
     #[test]
     fn write_and_read_across_chunk_boundary() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 0); // chunk size = 4
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0); // chunk size = 4
 
         w[3] = 1;
         w[4] = 2; // next chunk
@@ -158,7 +164,7 @@ mod tests {
 
     #[test]
     fn chunks_are_created_without_holes() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 0);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0);
 
         assert_eq!(w.get_active_chunk_count(), 0);
 
@@ -170,7 +176,7 @@ mod tests {
 
     #[test]
     fn multiple_chunks_are_allocated_correctly() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 0);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0);
 
         w[0] = 1;
         w[4] = 2;
@@ -187,7 +193,7 @@ mod tests {
 
     #[test]
     fn origin_allows_reads_below_as_default() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 10);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 10);
 
         w[12] = 5;
 
@@ -200,7 +206,7 @@ mod tests {
 
     #[test]
     fn write_before_origin_panics() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 10);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 10);
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             w[9] = 1;
@@ -211,7 +217,7 @@ mod tests {
 
     #[test]
     fn origin_boundary_is_allowed() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 10);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 10);
 
         w[10] = 42;
 
@@ -220,7 +226,7 @@ mod tests {
 
     #[test]
     fn chunk_indexing_is_consistent() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(3, 0); // chunk size = 8
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(8), 0); // chunk size = 8
 
         for i in 0..32 {
             w[i] = i as i32;
@@ -250,7 +256,7 @@ mod tests {
 
     #[test]
     fn moving_the_origin_deactivates_chunks() {
-        let mut w = SlidingWindow::with_chunk_size_and_origin(2, 0);
+        let mut w = SlidingWindow::with_chunk_size_and_origin(Pow2::new(4), 0);
 
         assert_eq!(w.get_active_chunk_count(), 0);
 

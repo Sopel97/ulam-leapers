@@ -3,6 +3,8 @@ use crate::coords::{Point2D, Vector2D};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::pow2::Pow2;
+use crate::util::pow2;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -48,7 +50,6 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
-        let w = self.bounds.width;
         &mut self.cells[(xx as usize, yy as usize)]
     }
 }
@@ -59,12 +60,12 @@ pub trait Chunker {
 }
 
 pub struct SquareChunker {
-    chunk_size_pow2: u32,
+    size: Pow2,
 }
 
 impl SquareChunker {
-    pub fn new(chunk_size_pow2: u32) -> SquareChunker {
-        SquareChunker { chunk_size_pow2 }
+    pub fn new(size: Pow2) -> SquareChunker {
+        SquareChunker { size }
     }
 }
 
@@ -74,8 +75,8 @@ impl Chunker for SquareChunker {
         let y = point.y;
 
         // arithmetic shift provides floored division by a power of 2
-        let cx = x >> self.chunk_size_pow2 << self.chunk_size_pow2;
-        let cy = y >> self.chunk_size_pow2 << self.chunk_size_pow2;
+        let cx = pow2::floor_to_multiple(x, self.size);
+        let cy = pow2::floor_to_multiple(y, self.size);
 
         ChunkOrigin(GridPoint::new(cx, cy))
     }
@@ -84,8 +85,8 @@ impl Chunker for SquareChunker {
         let origin = self.resolve_chunk_origin(bounds);
         ChunkBounds {
             origin,
-            width: 1 << self.chunk_size_pow2,
-            height: 1 << self.chunk_size_pow2,
+            width: self.size.into(),
+            height: self.size.into(),
         }
     }
 }
@@ -162,9 +163,9 @@ mod tests {
         }
     }
 
-    fn make_grid(chunk_pow2: u32) -> Grid<i32> {
+    fn make_grid(chunk_size: Pow2) -> Grid<i32> {
         Grid::new(Box::new(SquareChunker {
-            chunk_size_pow2: chunk_pow2,
+            size: chunk_size,
         }))
     }
 
@@ -197,7 +198,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_positive_chunk_origins() {
         let chunker = SquareChunker {
-            chunk_size_pow2: 4, // chunk size = 16
+            size: Pow2::new(16)
         };
 
         let origin = chunker.resolve_chunk_origin(&point(18, 33));
@@ -208,7 +209,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_negative_chunk_origins() {
         let chunker = SquareChunker {
-            chunk_size_pow2: 4, // chunk size = 16
+            size: Pow2::new(16)
         };
 
         let origin = chunker.resolve_chunk_origin(&point(-1, -17));
@@ -220,7 +221,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_bounds() {
         let chunker = SquareChunker {
-            chunk_size_pow2: 3, // chunk size = 8
+            size: Pow2::new(8)
         };
 
         let bounds = chunker.resolve_chunk_bounds(&point(9, 17));
@@ -232,7 +233,7 @@ mod tests {
 
     #[test]
     fn grid_creates_chunk_on_mutation() {
-        let mut grid = make_grid(2);
+        let mut grid = make_grid(Pow2::new(4));
 
         grid[point(1, 1)] = 42;
 
@@ -245,7 +246,7 @@ mod tests {
 
     #[test]
     fn grid_returns_same_chunk_for_points_in_same_region() {
-        let mut grid = make_grid(2); // chunk size = 4
+        let mut grid = make_grid(Pow2::new(4)); // chunk size = 4
 
         grid[point(1, 1)] = 10;
         grid[point(3, 3)] = 20;
@@ -258,7 +259,7 @@ mod tests {
 
     #[test]
     fn grid_creates_different_chunks_for_different_regions() {
-        let mut grid = make_grid(2); // chunk size = 4
+        let mut grid = make_grid(Pow2::new(4)); // chunk size = 4
 
         grid[point(1, 1)] = 10;
         grid[point(5, 5)] = 20;
@@ -271,7 +272,7 @@ mod tests {
 
     #[test]
     fn grid_index_panics_when_chunk_does_not_exist() {
-        let grid = make_grid(2);
+        let grid = make_grid(Pow2::new(4));
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = grid[point(0, 0)];
@@ -282,7 +283,7 @@ mod tests {
 
     #[test]
     fn grid_supports_negative_coordinates() {
-        let mut grid = make_grid(2);
+        let mut grid = make_grid(Pow2::new(4));
 
         grid[point(-1, -1)] = 123;
 

@@ -17,4 +17,5 @@ pub mod algo {
 }
 pub mod util {
     pub mod align;
+    pub mod pow2;
 }
