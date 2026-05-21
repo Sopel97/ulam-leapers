@@ -1,5 +1,6 @@
 ﻿use std::ops::{Index, IndexMut, Range};
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+use crate::util::align::MemoryAlignment;
 
 // Row-major 2 dimensional array.
 pub struct Array2D<T> {
@@ -9,7 +10,7 @@ pub struct Array2D<T> {
 }
 
 impl<T: Default + Clone> Array2D<T> {
-    pub fn new_aligned(width: usize, height: usize, align: usize) -> Self {
+    pub fn new_aligned(width: usize, height: usize, align: MemoryAlignment) -> Self {
         Array2D::<T> {
             data: AlignedBoxedSlice::<T>::new(width * height, align),
             width,
@@ -93,7 +94,7 @@ impl<'a, T> Array2D<T> {
             _marker: std::marker::PhantomData,
         }
     }
-    
+
     pub fn mut_slice2d(&'a mut self, xr: Range<usize>, yr: Range<usize>) -> MutSlice2D<'a, T> {
         let width = xr.len();
         let height = yr.len();

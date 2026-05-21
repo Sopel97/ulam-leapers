@@ -2,6 +2,7 @@
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+use crate::util::align::CACHE_LINE_SIZE;
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.
@@ -92,7 +93,7 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
         let chunk_index = ((index >> self.chunk_size_pow2) - self.origin_chunk) as usize;
         if chunk_index >= self.chunks.len() {
             self.chunks.resize_with(chunk_index + 1, || {
-                AlignedBoxedSlice::<T>::new(1 << self.chunk_size_pow2, 64)
+                AlignedBoxedSlice::<T>::new(1 << self.chunk_size_pow2, CACHE_LINE_SIZE)
             });
         }
 

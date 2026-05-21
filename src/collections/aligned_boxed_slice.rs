@@ -1,4 +1,5 @@
 ﻿use std::ops::{Index, IndexMut};
+use crate::util::align::MemoryAlignment;
 
 pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,
@@ -7,15 +8,12 @@ pub struct AlignedBoxedSlice<T> {
 }
 
 impl<T: Default + Clone> AlignedBoxedSlice<T> {
-    pub fn new(size: usize, align: usize) -> AlignedBoxedSlice<T> {
-        let elem_size = size_of::<T>();
-        let extra = (align + elem_size - 1) / elem_size; // ceil_div
+    pub fn new(size: usize, align: MemoryAlignment) -> AlignedBoxedSlice<T> {
+        let extra = align.extra_elements::<T>();
 
         let storage = vec![Default::default(); size + extra].into_boxed_slice();
         
-        let ptr = storage.as_ptr() as usize;
-        let aligned_ptr = (ptr + 63) & !63usize;
-        let aligned_offset = (aligned_ptr - ptr) / elem_size;
+        let aligned_offset = align.unaligned_elements::<T>(storage.as_ptr() as usize);
 
         AlignedBoxedSlice {
             storage,

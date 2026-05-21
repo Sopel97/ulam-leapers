@@ -2,6 +2,7 @@
 use crate::coords::{Point2D, Vector2D};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
+use crate::util::align::CACHE_LINE_SIZE;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -28,7 +29,7 @@ impl<T> Chunk<T> {
 
 impl<T: Default + Clone> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
-        let cells = Array2D::<T>::new_aligned(bounds.width as usize, bounds.height as usize, 64);
+        let cells = Array2D::<T>::new_aligned(bounds.width as usize, bounds.height as usize, CACHE_LINE_SIZE);
         Chunk { bounds, cells }
     }
 }
