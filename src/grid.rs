@@ -1,4 +1,5 @@
-﻿use crate::coords::{Point2D, Vector2D};
+﻿use crate::collections::array2d::Array2D;
+use crate::coords::{Point2D, Vector2D};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
@@ -16,43 +17,19 @@ pub struct ChunkBounds {
 
 pub struct Chunk<T> {
     bounds: ChunkBounds,
-    cells_storage: Box<[T]>,
-    cells_begin: usize,
-    cells_end: usize,
+    cells: Array2D<T>,
 }
 
 impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> usize {
-        size_of::<T>() * self.cells_storage.len()
-    }
-
-    pub fn cells(&self) -> &[T] {
-        self.cells_storage[self.cells_begin..self.cells_end].as_ref()
-    }
-
-    pub fn cells_mut(&mut self) -> &mut [T] {
-        self.cells_storage[self.cells_begin..self.cells_end].as_mut()
+        size_of::<T>() * self.cells.width() * self.cells.height()
     }
 }
 
 impl<T: Default + Clone> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
-        let elem_size = size_of::<T>();
-        let size = (bounds.width * bounds.height) as usize;
-        let extra = 64 / elem_size + 1;
-
-        let cells = vec![Default::default(); size + extra].into_boxed_slice();
-
-        let ptr = cells.as_ptr() as usize;
-        let aligned_ptr = (ptr + 63) & !63usize;
-        let aligned_offset = (aligned_ptr - ptr) / elem_size;
-
-        Chunk {
-            bounds,
-            cells_storage: cells,
-            cells_begin: aligned_offset,
-            cells_end: aligned_offset + size,
-        }
+        let cells = Array2D::<T>::new_aligned(bounds.width as usize, bounds.height as usize, 64);
+        Chunk { bounds, cells }
     }
 }
 
@@ -62,7 +39,7 @@ impl<T: Default> Index<GridPoint> for Chunk<T> {
     fn index(&self, index: GridPoint) -> &Self::Output {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
-        &self.cells()[yy as usize * self.bounds.width as usize + xx as usize]
+        &self.cells[(xx as usize, yy as usize)]
     }
 }
 
@@ -71,7 +48,7 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
         let w = self.bounds.width;
-        &mut self.cells_mut()[yy as usize * w as usize + xx as usize]
+        &mut self.cells[(xx as usize, yy as usize)]
     }
 }
 
