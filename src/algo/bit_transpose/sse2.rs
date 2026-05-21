@@ -75,10 +75,6 @@ unsafe fn inv_bit_transpose_sse2_impl(input: &[u8], output: &mut [u8]) {
 
     let chunks = input.len() / 64;
 
-    #[repr(align(64))]
-    struct Wrapper([u16; 32]);
-    let mut temp = Wrapper([0u16; 32]);
-
     for _ in 0..chunks {
         unsafe {
             // The digits denote a byte containing only nth bits.

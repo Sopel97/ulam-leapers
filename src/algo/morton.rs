@@ -2,16 +2,6 @@
 use crate::util::pow2;
 use crate::util::pow2::Pow2;
 
-// Effectively inserts a 0 bit before every bit of the source.
-// Can be implemented faster with specific instructions, but we don't really care about speed.
-fn carryless_square(mut n: u16) -> u32 {
-    n &= 0x00ff;
-    n = (n | (n << 4)) & 0x0F0F;
-    n = (n | (n << 2)) & 0x3333;
-    n = (n | (n << 1)) & 0x5555;
-    n as u32
-}
-
 // "Squishes" the number by removing every even bit.
 // Could be implemented with pext, but we don't really care about speed.
 fn inv_carryless_square(mut n: u32) -> u16 {
@@ -28,31 +18,19 @@ fn d_to_xy(index: u32) -> (u16, u16) {
     (x, y)
 }
 
-fn xy_to_d(x: u16, y: u16) -> u32 {
-    (carryless_square(y) << 1) | carryless_square(x)
-}
-
 pub struct MortonCurveTransform {
     size: Pow2,
     d_to_xy_table: Box<[(u16, u16)]>,
-    xy_to_d_table: Box<[u32]>,
 }
 
 impl MortonCurveTransform {
     pub fn new(size: Pow2) -> MortonCurveTransform {
         let sz: usize = size.into();
         let table_size: usize = sz * sz;
-        let mut d_to_xy_table: Box<[(u16, u16)]> = vec![Default::default(); table_size].into_boxed_slice();
-        let mut xy_to_d_table: Box<[u32]> = vec![Default::default(); table_size].into_boxed_slice();
-        for d in 0..table_size {
-            let (x, y) = d_to_xy(d as u32);
-            d_to_xy_table[d] = (x, y);
-            xy_to_d_table[(y as usize) * sz + (x as usize)] = d as u32;
-        }
+        let d_to_xy_table: Box<[(u16, u16)]> = (0..table_size).map(|d| d_to_xy(d as u32)).collect();
         MortonCurveTransform {
             size,
             d_to_xy_table,
-            xy_to_d_table,
         }
     }
 
@@ -143,7 +121,6 @@ impl MortonCurveTransform {
 mod tests {
     use crate::algo::morton::MortonCurveTransform;
     use crate::collections::array2d::Array2D;
-    use crate::util::align::MemoryAlignment;
     use crate::util::pow2::Pow2;
 
     #[test]

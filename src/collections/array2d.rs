@@ -99,9 +99,6 @@ impl<T> Array2D<T> {
 
 impl<'a, T> Array2D<T> {
     pub fn slice2d(&self, xr: Range<usize>, yr: Range<usize>) -> Slice2D<'_, T> {
-        let width = xr.len();
-        let height = yr.len();
-
         let start = yr.start * self.width + xr.start;
         // We don't need to form an end, and it would be problematic anyway
         // because no matter what we do the slice spills outside the 2d box.
@@ -116,9 +113,6 @@ impl<'a, T> Array2D<T> {
     }
 
     pub fn mut_slice2d(&mut self, xr: Range<usize>, yr: Range<usize>) -> MutSlice2D<'_, T> {
-        let width = xr.len();
-        let height = yr.len();
-
         let start = yr.start * self.width + xr.start;
         // We don't need to form an end, and it would be problematic anyway
         // because no matter what we do the slice spills outside the 2d box.

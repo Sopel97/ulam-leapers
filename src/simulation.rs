@@ -1,6 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
-use crate::grid::{Grid, GridPoint, SquareChunker};
+use crate::grid::{Grid, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
@@ -56,9 +56,9 @@ impl BitAnd<PlayerIdSet> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitand(self, other: PlayerIdSet) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits & other.bits,
-        };
+        }
     }
 }
 
@@ -66,9 +66,9 @@ impl BitAnd<PlayerId> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitand(self, other: PlayerId) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits & (1u64 << other.0),
-        };
+        }
     }
 }
 
@@ -76,9 +76,9 @@ impl BitOr<PlayerIdSet> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitor(self, other: PlayerIdSet) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits | other.bits,
-        };
+        }
     }
 }
 
@@ -86,9 +86,9 @@ impl BitOr<PlayerId> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitor(self, other: PlayerId) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits | (1u64 << other.0),
-        };
+        }
     }
 }
 
@@ -108,9 +108,9 @@ impl BitXor<PlayerIdSet> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitxor(self, other: PlayerIdSet) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits ^ other.bits,
-        };
+        }
     }
 }
 
@@ -118,9 +118,9 @@ impl BitXor<PlayerId> for PlayerIdSet {
     type Output = PlayerIdSet;
 
     fn bitxor(self, other: PlayerId) -> PlayerIdSet {
-        return PlayerIdSet {
+        PlayerIdSet {
             bits: self.bits ^ (1u64 << other.0),
-        };
+        }
     }
 }
 
@@ -285,7 +285,7 @@ impl Simulation {
             return Ok(());
         }
 
-        for t in 0..turns_to_simulate {
+        for _ in 0..turns_to_simulate {
             self.simulate_single_turn()
         }
 
@@ -329,7 +329,7 @@ impl Simulation {
 mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
-    use crate::simulation::{PlayerIdSet, Simulation, SimulationError};
+    use crate::simulation::{Simulation, SimulationError};
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
