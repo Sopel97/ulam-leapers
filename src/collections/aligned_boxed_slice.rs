@@ -1,6 +1,6 @@
 ﻿use std::ops::{Index, IndexMut};
 
-struct AlignedBoxedSlice<T> {
+pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,
     begin: usize,
     end: usize,
