@@ -1,4 +1,5 @@
-﻿use std::collections::VecDeque;
+﻿use std::cmp::min;
+use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
 
 /// A contiguous array where the origin can be moved forward,
@@ -10,13 +11,13 @@ use std::ops::{Index, IndexMut};
 /// Note that this collection is not sparse - there are no holes between valid elements.
 pub struct SlidingWindow<T> {
     origin: isize,
-    chunks: VecDeque<T>,
+    elements: VecDeque<T>,
     out_of_bounds_value: T,
 }
 
 impl<T> SlidingWindow<T> {
     pub fn memory_usage(&self) -> usize {
-        self.chunks.len() * size_of::<T>()
+        self.elements.len() * size_of::<T>()
     }
 }
 
@@ -24,7 +25,7 @@ impl<T: Default> SlidingWindow<T> {
     pub fn with_origin(origin: isize) -> SlidingWindow<T> {
         SlidingWindow::<T> {
             origin,
-            chunks: VecDeque::new(),
+            elements: VecDeque::new(),
             out_of_bounds_value: T::default(),
         }
     }
@@ -34,10 +35,8 @@ impl<T: Default> SlidingWindow<T> {
             panic!("New origin must not be lower than the current origin.");
         }
 
-        let num_elements_to_drop = (origin - self.origin) as usize;
-        for _ in 0..num_elements_to_drop {
-            self.chunks.pop_front();
-        }
+        let num_elements_to_drop = min(self.elements.len(), (origin - self.origin) as usize);
+        self.elements.drain(..num_elements_to_drop);
 
         self.origin = origin;
     }
@@ -56,11 +55,11 @@ impl<T: Default> Index<isize> for SlidingWindow<T> {
         }
 
         let actual_idx = (index - self.origin) as usize;
-        if actual_idx >= self.chunks.len() {
+        if actual_idx >= self.elements.len() {
             return &self.out_of_bounds_value;
         }
 
-        &self.chunks[actual_idx]
+        &self.elements[actual_idx]
     }
 }
 
@@ -71,11 +70,12 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
         }
 
         let actual_idx = (index - self.origin) as usize;
-        while self.chunks.len() <= actual_idx {
-            self.chunks.push_back(T::default());
+        if actual_idx >= self.elements.len() {
+            // For some reason this is slightly faster than calling resize
+            self.elements.extend((0..=actual_idx).map(|_| T::default()));
         }
 
-        &mut self.chunks[actual_idx]
+        &mut self.elements[actual_idx]
     }
 }
 
