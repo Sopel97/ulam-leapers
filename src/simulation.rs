@@ -133,7 +133,6 @@ pub struct Player {
 
 const DEFAULT_TURNS_PER_STEP: usize = 1_000_000;
 const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
-const DEFAULT_SLIDING_WINDOW_CHUNK_SIZE: Pow2 = Pow2::new(1024*1024);
 
 pub struct Simulation {
     players: Vec<Player>,
@@ -157,10 +156,7 @@ impl Simulation {
         Simulation {
             players: vec![],
             grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE))),
-            forbiddances: SlidingWindow::with_chunk_size_and_origin(
-                DEFAULT_SLIDING_WINDOW_CHUNK_SIZE,
-                0,
-            ),
+            forbiddances: SlidingWindow::with_origin(0),
 
             turns_per_step: DEFAULT_TURNS_PER_STEP,
             max_memory: usize::MAX,
