@@ -2,19 +2,19 @@
 use std::ops::*;
 use crate::grid::{GridPoint, GridVector};
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct Point2D<T> {
     pub x: T,
     pub y: T,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct Vector2D<T> {
     pub x: T,
     pub y: T,
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct UlamSpiralPoint(i64);
 
 impl UlamSpiralPoint {

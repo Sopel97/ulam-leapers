@@ -1,6 +1,6 @@
 ﻿use crate::collections::array2d::Array2D;
 use crate::coords::{Point2D, Vector2D};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::pow2::Pow2;
@@ -9,7 +9,7 @@ use crate::util::pow2;
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
 
 pub struct ChunkBounds {
@@ -93,7 +93,7 @@ impl Chunker for SquareChunker {
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker>,
-    chunks: HashMap<ChunkOrigin, Chunk<T>>,
+    chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
 }
 
 impl<T> Grid<T> {
@@ -106,7 +106,7 @@ impl<T: Default + Clone> Grid<T> {
     pub fn new(chunker: Box<dyn Chunker>) -> Self {
         Grid {
             chunker,
-            chunks: HashMap::new(),
+            chunks: BTreeMap::new(),
         }
     }
 
@@ -126,6 +126,8 @@ impl<T: Default + Clone> Grid<T> {
             Chunk::new(bounds)
         })
     }
+
+    pub fn set_with_continuity_hint(&mut self, point: &GridPoint, hint: usize) {}
 }
 
 impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
