@@ -1,6 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
-use crate::grid::{Grid, SquareChunker};
+use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
@@ -232,7 +232,7 @@ impl Simulation {
         }
     }
 
-    fn simulate_single_turn(&mut self) {
+    fn simulate_single_turn(&mut self, placements: &mut Vec<Vec<GridPoint>>) {
         for player in self.players.iter_mut() {
             loop {
                 let forbidden =
@@ -245,11 +245,12 @@ impl Simulation {
             }
 
             // We found a place we can put the piece on
-            self.grid[player.cursor.grid_position()] = player.id;
+            let point = player.cursor.grid_position();
+            placements[player.id.0 as usize].push(point);
             self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
             for attack_vector in player
                 .attacks
-                .get_attacks_from(&player.cursor.grid_position())
+                .get_attacks_from(&point)
             {
                 let u = UlamSpiralPoint::from(&attack_vector);
                 // We don't care about cells before the origin (last player) and
@@ -285,8 +286,16 @@ impl Simulation {
             return Ok(());
         }
 
+        let mut placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
+            0 => Vec::new(),
+            _ => Vec::with_capacity(turns_to_simulate),
+        }).collect();
         for _ in 0..turns_to_simulate {
-            self.simulate_single_turn()
+            // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
+            self.simulate_single_turn(&mut placements);
+        }
+        for player in self.players.iter() {
+            self.grid.set_multiple(&placements[player.id.0 as usize], player.id);
         }
 
         self.finalize_step();

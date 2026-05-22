@@ -27,6 +27,13 @@ impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> usize {
         size_of::<T>() * self.cells.width() * self.cells.height()
     }
+
+    pub fn contains_point(&self, point: &GridPoint) -> bool {
+        point.x >= self.bounds.origin.0.x
+            && point.y >= self.bounds.origin.0.y
+            && point.x < self.bounds.origin.0.x + self.bounds.width as i32
+            && point.y < self.bounds.origin.0.y + self.bounds.height as i32
+    }
 }
 
 impl<T: Default + Clone> Chunk<T> {
@@ -102,7 +109,7 @@ impl<T> Grid<T> {
     }
 }
 
-impl<T: Default + Clone> Grid<T> {
+impl<T: Default + Clone + Copy> Grid<T> {
     pub fn new(chunker: Box<dyn Chunker>) -> Self {
         Grid {
             chunker,
@@ -127,10 +134,24 @@ impl<T: Default + Clone> Grid<T> {
         })
     }
 
-    pub fn set_with_continuity_hint(&mut self, point: &GridPoint, hint: usize) {}
+    pub fn set_multiple(&mut self, indices: &Vec<GridPoint>, value: T) {
+        if indices.is_empty() {
+            return;
+        }
+
+        let mut last_chunk = self.get_or_create_chunk_containing(&indices[0]);
+        for index in indices.iter() {
+            if last_chunk.contains_point(index) {
+                last_chunk[*index] = value;
+            } else {
+                last_chunk = self.get_or_create_chunk_containing(index);
+                last_chunk[*index] = value;
+            }
+        }
+    }
 }
 
-impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
+impl<T: Default + Clone + Copy> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
@@ -141,7 +162,7 @@ impl<T: Default + Clone> Index<GridPoint> for Grid<T> {
     }
 }
 
-impl<T: Default + Clone> IndexMut<GridPoint> for Grid<T> {
+impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
     fn index_mut(&mut self, point: GridPoint) -> &mut Self::Output {
         let chunk: &mut Chunk<T> = self.get_or_create_chunk_containing(&point);
         &mut chunk[point]
