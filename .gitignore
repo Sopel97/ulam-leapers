@@ -1,4 +1,6 @@
 /target
 /.idea
+/.cargo
 
 *.lock
+profile.json.gz
