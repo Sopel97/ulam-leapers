@@ -2,11 +2,11 @@
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
-use std::cmp::min;
+use crate::util::pow2::Pow2;
+use std::cmp::{max, min};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::mpsc;
 use std::thread;
-use crate::util::pow2::Pow2;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct PlayerId(u8);
@@ -211,11 +211,32 @@ impl Simulation {
         }
     }
 
+    pub fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
+        let min_shell = self
+            .players
+            .iter()
+            .map(|p| {
+                let point = p.cursor.grid_position();
+                max(point.x.abs(), point.y.abs())
+            })
+            .min()
+            .unwrap();
+
+        if min_shell == 0 {
+            return None;
+        }
+
+        let last_past_shell = min_shell - 1;
+        let min_point = GridPoint::new(-last_past_shell, -last_past_shell);
+        let max_point = GridPoint::new(last_past_shell, last_past_shell);
+
+        Some((min_point, max_point))
+    }
+
     fn simulate_single_turn(&mut self, placements: &mut Vec<Vec<GridPoint>>) {
         for player in self.players.iter_mut() {
             loop {
-                let forbidden =
-                    self.forbiddances[player.cursor.spiral_position().index()];
+                let forbidden = self.forbiddances[player.cursor.spiral_position().index()];
                 if !forbidden.is_set(player.id) {
                     break;
                 }
@@ -227,10 +248,7 @@ impl Simulation {
             let point = player.cursor.grid_position();
             placements[player.id.0 as usize].push(point);
             self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
-            for attack_vector in player
-                .attacks
-                .get_attacks_from(&point)
-            {
+            for attack_vector in player.attacks.get_attacks_from(&point) {
                 let u = UlamSpiralPoint::from(&attack_vector);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
@@ -264,25 +282,33 @@ impl Simulation {
         }
 
         const STEP_SIZE: usize = 1024 * 16;
+        const COMPRESSION_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
         const NUM_PLACEMENT_BUFFERS: usize = 8;
 
         // We transfer ownership of the grid to the worker thread for the time of processing.
         let mut grid = self.grid.take().unwrap();
-        let player_ids = self.players.iter().map(|player| player.id).collect::<Vec<_>>();
+        let player_ids = self
+            .players
+            .iter()
+            .map(|player| player.id)
+            .collect::<Vec<_>>();
         let (job_tx, job_rx) = mpsc::channel();
         let (buffer_tx, buffer_rx) = mpsc::channel();
 
         enum Job {
             Place(Vec<Vec<GridPoint>>),
-            Stop
+            Compress { min: GridPoint, max: GridPoint },
+            Stop,
         }
 
         // Preallocate buffers.
         for _ in 0..NUM_PLACEMENT_BUFFERS {
-            let placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
-                0 => Vec::new(),
-                _ => Vec::with_capacity(STEP_SIZE),
-            }).collect();
+            let placements: Vec<Vec<GridPoint>> = (0..self.players.len() + 1)
+                .map(|i| match i {
+                    0 => Vec::new(),
+                    _ => Vec::with_capacity(STEP_SIZE),
+                })
+                .collect();
             buffer_tx.send(placements).unwrap();
         }
 
@@ -308,7 +334,10 @@ impl Simulation {
                         }
 
                         buffer_tx.send(placements).unwrap();
-                    },
+                    }
+                    Job::Compress { min, max } => {
+                        grid.freeze(&min, &max);
+                    }
                     Job::Stop => {
                         break;
                     }
@@ -318,6 +347,7 @@ impl Simulation {
             grid
         });
 
+        let mut step = 0;
         while turns_to_simulate > 0 {
             let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
 
@@ -328,9 +358,20 @@ impl Simulation {
             }
             job_tx.send(Job::Place(placements)).unwrap();
 
+            // Compress the grid every few steps to reduce memory usage.
+            // We don't want to be doing it too often because it requires a whole chunk to be
+            // outside the active area and the chunks are large; reduces redundant searches
+            // for no longer active chunks.
+            if step % COMPRESSION_INTERVAL_STEPS == COMPRESSION_INTERVAL_STEPS - 1 {
+                if let Some((min, max)) = self.grid_region_past_modification() {
+                    job_tx.send(Job::Compress { min, max }).unwrap();
+                }
+            }
+
             self.update_forbiddances_origin();
 
             turns_to_simulate -= turns_to_simulate_this_step;
+            step += 1;
         }
 
         // Send final message to terminate the worker thread and get the grid back.

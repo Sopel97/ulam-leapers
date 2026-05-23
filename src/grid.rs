@@ -1,10 +1,10 @@
 ﻿use crate::collections::array2d::Array2D;
 use crate::coords::{Point2D, Vector2D};
+use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::pow2;
+use crate::util::pow2::Pow2;
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use crate::util::align::CACHE_LINE_SIZE;
-use crate::util::pow2::Pow2;
-use crate::util::pow2;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -33,6 +33,13 @@ impl<T> Chunk<T> {
             && point.y >= self.bounds.origin.0.y
             && point.x < self.bounds.origin.0.x + self.bounds.width as i32
             && point.y < self.bounds.origin.0.y + self.bounds.height as i32
+    }
+
+    pub fn is_contained_within(&self, min: &GridPoint, max: &GridPoint) -> bool {
+        self.bounds.origin.0.x >= min.x
+            && self.bounds.origin.0.y >= min.y
+            && self.bounds.origin.0.x + self.bounds.width as i32 - 1 <= max.x
+            && self.bounds.origin.0.y + self.bounds.height as i32 - 1 <= max.y
     }
 }
 
@@ -100,12 +107,26 @@ impl Chunker for SquareChunker {
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send>,
-    chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
+    active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
+    frozen_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
 }
 
 impl<T> Grid<T> {
     pub fn memory_usage(&self) -> usize {
-        self.chunks.values().map(|c| c.memory_usage()).sum()
+        let s1: usize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
+        let s2: usize = self.frozen_chunks.values().map(|c| c.memory_usage()).sum();
+        s1 + s2
+    }
+
+    pub fn freeze(&mut self, min: &GridPoint, max: &GridPoint) {
+        let to_freeze = self.active_chunks.extract_if(.., |_origin, chunk| {
+            chunk.is_contained_within(min, max)
+        });
+        // TODO: compression
+        let frozen = to_freeze;
+        for (origin, chunk) in frozen {
+            self.frozen_chunks.insert(origin, chunk);
+        }
     }
 }
 
@@ -113,22 +134,36 @@ impl<T: Default + Clone + Copy> Grid<T> {
     pub fn new(chunker: Box<dyn Chunker + Send>) -> Self {
         Grid {
             chunker,
-            chunks: BTreeMap::new(),
+            active_chunks: BTreeMap::new(),
+            frozen_chunks: BTreeMap::new(),
         }
     }
 
-    pub fn get_chunk_at(&self, point: &ChunkOrigin) -> Option<&Chunk<T>> {
-        self.chunks.get(point)
+    pub fn get_active_chunk_at(&self, point: &ChunkOrigin) -> Option<&Chunk<T>> {
+        self.active_chunks.get(point)
     }
 
-    pub fn get_chunk_containing(&self, point: &GridPoint) -> Option<&Chunk<T>> {
+    pub fn get_active_chunk_containing(&self, point: &GridPoint) -> Option<&Chunk<T>> {
         let origin = self.chunker.resolve_chunk_origin(point);
-        self.get_chunk_at(&origin)
+        self.get_active_chunk_at(&origin)
+    }
+
+    pub fn get_frozen_chunk_at(&self, point: &ChunkOrigin) -> Option<&Chunk<T>> {
+        self.frozen_chunks.get(point)
+    }
+
+    pub fn get_frozen_chunk_containing(&self, point: &GridPoint) -> Option<&Chunk<T>> {
+        let origin = self.chunker.resolve_chunk_origin(point);
+        self.get_frozen_chunk_at(&origin)
     }
 
     pub fn get_or_create_chunk_containing(&mut self, point: &GridPoint) -> &mut Chunk<T> {
         let origin = self.chunker.resolve_chunk_origin(point);
-        self.chunks.entry(origin).or_insert_with(|| {
+        if self.frozen_chunks.contains_key(&origin) {
+            panic!("Chunk is frozen");
+        }
+
+        self.active_chunks.entry(origin).or_insert_with(|| {
             let bounds = self.chunker.resolve_chunk_bounds(point);
             Chunk::new(bounds)
         })
@@ -155,10 +190,13 @@ impl<T: Default + Clone + Copy> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
-        let chunk = self
-            .get_chunk_containing(&point)
-            .expect("chunk should exist");
-        &chunk[point]
+        if let Some(chunk) = self.get_frozen_chunk_containing(&point) {
+            &chunk[point]
+        } else if let Some(chunk) = self.get_active_chunk_containing(&point) {
+            &chunk[point]
+        } else {
+            panic!("Point out of bounds");
+        }
     }
 }
 
@@ -261,7 +299,7 @@ mod tests {
         grid[point(1, 1)] = 42;
 
         let chunk = grid
-            .get_chunk_containing(&point(1, 1))
+            .get_active_chunk_containing(&point(1, 1))
             .expect("chunk should exist");
 
         assert_eq!(chunk[point(1, 1)], 42);
@@ -274,8 +312,8 @@ mod tests {
         grid[point(1, 1)] = 10;
         grid[point(3, 3)] = 20;
 
-        let chunk_a = grid.get_chunk_containing(&point(1, 1)).unwrap() as *const _;
-        let chunk_b = grid.get_chunk_containing(&point(3, 3)).unwrap() as *const _;
+        let chunk_a = grid.get_active_chunk_containing(&point(1, 1)).unwrap() as *const _;
+        let chunk_b = grid.get_active_chunk_containing(&point(3, 3)).unwrap() as *const _;
 
         assert_eq!(chunk_a, chunk_b);
     }
@@ -287,8 +325,8 @@ mod tests {
         grid[point(1, 1)] = 10;
         grid[point(5, 5)] = 20;
 
-        let chunk_a = grid.get_chunk_containing(&point(1, 1)).unwrap() as *const _;
-        let chunk_b = grid.get_chunk_containing(&point(5, 5)).unwrap() as *const _;
+        let chunk_a = grid.get_active_chunk_containing(&point(1, 1)).unwrap() as *const _;
+        let chunk_b = grid.get_active_chunk_containing(&point(5, 5)).unwrap() as *const _;
 
         assert_ne!(chunk_a, chunk_b);
     }
