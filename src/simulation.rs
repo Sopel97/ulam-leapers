@@ -269,8 +269,13 @@ impl Simulation {
         // We transfer ownership of the grid to the worker thread for the time of processing.
         let mut grid = self.grid.take().unwrap();
         let player_ids = self.players.iter().map(|player| player.id).collect::<Vec<_>>();
-        let (placements_tx, placements_rx) = mpsc::channel();
+        let (job_tx, job_rx) = mpsc::channel();
         let (buffer_tx, buffer_rx) = mpsc::channel();
+
+        enum Job {
+            Place(Vec<Vec<GridPoint>>),
+            Stop
+        }
 
         // Preallocate buffers.
         for _ in 0..NUM_PLACEMENT_BUFFERS {
@@ -291,17 +296,23 @@ impl Simulation {
 
         let grid_worker = thread::spawn(move || {
             loop {
-                let placements: Vec<Vec<GridPoint>> = placements_rx.recv().unwrap();
+                let job = job_rx.recv().unwrap();
+                match job {
+                    Job::Place(placements) => {
+                        if placements.is_empty() {
+                            break;
+                        }
 
-                if placements.is_empty() {
-                    break;
+                        for player_id in player_ids.iter() {
+                            grid.set_multiple(&placements[player_id.0 as usize], *player_id);
+                        }
+
+                        buffer_tx.send(placements).unwrap();
+                    },
+                    Job::Stop => {
+                        break;
+                    }
                 }
-
-                for player_id in player_ids.iter() {
-                    grid.set_multiple(&placements[player_id.0 as usize], *player_id);
-                }
-
-                buffer_tx.send(placements).unwrap();
             }
 
             grid
@@ -315,7 +326,7 @@ impl Simulation {
                 // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
                 self.simulate_single_turn(&mut placements);
             }
-            placements_tx.send(placements).unwrap();
+            job_tx.send(Job::Place(placements)).unwrap();
 
             self.update_forbiddances_origin();
 
@@ -323,7 +334,7 @@ impl Simulation {
         }
 
         // Send final message to terminate the worker thread and get the grid back.
-        placements_tx.send(vec![]).unwrap();
+        job_tx.send(Job::Stop).unwrap();
         self.grid = Some(grid_worker.join().unwrap());
 
         Ok(())
