@@ -128,6 +128,15 @@ impl<T> Grid<T> {
             self.frozen_chunks.insert(origin, chunk);
         }
     }
+
+    pub fn is_chunk_at_frozen(&self, origin: &ChunkOrigin) -> bool {
+        self.frozen_chunks.contains_key(origin)
+    }
+
+    pub fn is_chunk_containing_frozen(&self, point: &GridPoint) -> bool {
+        let origin = self.chunker.resolve_chunk_origin(point);
+        self.is_chunk_at_frozen(&origin)
+    }
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
@@ -349,5 +358,44 @@ mod tests {
         grid[point(-1, -1)] = 123;
 
         assert_eq!(grid[point(-1, -1)], 123);
+    }
+
+    #[test]
+    fn can_read_from_frozen_chunks() {
+        let mut grid = make_grid(Pow2::new(4));
+
+        grid[point(-1, -1)] = 123;
+
+        grid.freeze(&GridPoint::new(-40, -40), &GridPoint::new(40, 40));
+
+        assert_eq!(grid[point(-1, -1)], 123);
+    }
+
+    #[test]
+    fn correct_chunks_get_frozen() {
+        let mut grid = make_grid(Pow2::new(4));
+
+        grid[point(0, 0)] = 123;
+        grid[point(-5, 0)] = 123;
+
+        grid.freeze(&GridPoint::new(-4, -4), &GridPoint::new(4, 4));
+
+        assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
+        assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-5, 0)));
+    }
+
+    #[test]
+    fn attempting_to_modify_frozen_chunk_panics() {
+        let mut grid = make_grid(Pow2::new(4));
+
+        grid[point(0, 0)] = 123;
+
+        grid.freeze(&GridPoint::new(-40, -40), &GridPoint::new(40, 40));
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            grid[point(0, 0)] = 123;
+        }));
+        
+        assert!(result.is_err());
     }
 }

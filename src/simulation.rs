@@ -386,7 +386,7 @@ impl Simulation {
 mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
-    use crate::simulation::{Simulation, SimulationError};
+    use crate::simulation::Simulation;
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
