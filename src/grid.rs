@@ -99,7 +99,7 @@ impl Chunker for SquareChunker {
 }
 
 pub struct Grid<T> {
-    chunker: Box<dyn Chunker>,
+    chunker: Box<dyn Chunker + Send>,
     chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
 }
 
@@ -110,7 +110,7 @@ impl<T> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
-    pub fn new(chunker: Box<dyn Chunker>) -> Self {
+    pub fn new(chunker: Box<dyn Chunker + Send>) -> Self {
         Grid {
             chunker,
             chunks: BTreeMap::new(),

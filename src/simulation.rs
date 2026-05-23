@@ -4,6 +4,8 @@ use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
+use std::sync::mpsc;
+use std::thread;
 use crate::util::pow2::Pow2;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -135,7 +137,7 @@ const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
 
 pub struct Simulation {
     players: Vec<Player>,
-    grid: Grid<PlayerId>,
+    grid: Option<Grid<PlayerId>>,
     forbiddances: SlidingWindow<PlayerIdSet>,
 
     simulated_turns: usize,
@@ -151,7 +153,7 @@ impl Simulation {
     pub fn new() -> Simulation {
         Simulation {
             players: vec![],
-            grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE))),
+            grid: Some(Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE)))),
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
@@ -163,7 +165,11 @@ impl Simulation {
     }
 
     pub fn memory_usage(&self) -> usize {
-        self.grid.memory_usage() + self.forbiddances.memory_usage()
+        let grid_usage = match self.grid {
+            Some(ref grid) => grid.memory_usage(),
+            None => 0,
+        };
+        grid_usage + self.forbiddances.memory_usage()
     }
 
     pub fn simulated_turns(&self) -> usize {
@@ -240,7 +246,7 @@ impl Simulation {
         self.simulated_turns += 1;
     }
 
-    fn finalize_step(&mut self) {
+    fn update_forbiddances_origin(&mut self) {
         let last_player = self
             .players
             .iter()
@@ -257,30 +263,68 @@ impl Simulation {
             return Ok(());
         }
 
-        const STEP_SIZE: usize = 4096;
+        const STEP_SIZE: usize = 1024 * 16;
+        const NUM_PLACEMENT_BUFFERS: usize = 8;
+
+        // We transfer ownership of the grid to the worker thread for the time of processing.
+        let mut grid = self.grid.take().unwrap();
+        let player_ids = self.players.iter().map(|player| player.id).collect::<Vec<_>>();
+        let (placements_tx, placements_rx) = mpsc::channel();
+        let (buffer_tx, buffer_rx) = mpsc::channel();
+
+        // Preallocate buffers.
+        for _ in 0..NUM_PLACEMENT_BUFFERS {
+            let placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
+                0 => Vec::new(),
+                _ => Vec::with_capacity(STEP_SIZE),
+            }).collect();
+            buffer_tx.send(placements).unwrap();
+        }
+
+        let get_clear_buffer = || {
+            let mut placements = buffer_rx.recv().unwrap();
+            for v in placements.iter_mut() {
+                v.clear();
+            }
+            placements
+        };
+
+        let grid_worker = thread::spawn(move || {
+            loop {
+                let placements: Vec<Vec<GridPoint>> = placements_rx.recv().unwrap();
+
+                if placements.is_empty() {
+                    break;
+                }
+
+                for player_id in player_ids.iter() {
+                    grid.set_multiple(&placements[player_id.0 as usize], *player_id);
+                }
+
+                buffer_tx.send(placements).unwrap();
+            }
+
+            grid
+        });
+
         while turns_to_simulate > 0 {
             let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
 
-            let mut placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
-                0 => Vec::new(),
-                _ => Vec::with_capacity(turns_to_simulate_this_step),
-            }).collect();
+            let mut placements = get_clear_buffer();
             for _ in 0..turns_to_simulate_this_step {
                 // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
                 self.simulate_single_turn(&mut placements);
             }
-            for player in self.players.iter() {
-                self.grid.set_multiple(&placements[player.id.0 as usize], player.id);
-            }
+            placements_tx.send(placements).unwrap();
 
-            self.finalize_step();
+            self.update_forbiddances_origin();
 
             turns_to_simulate -= turns_to_simulate_this_step;
         }
 
-        // This is actually important for optimization for some godforsaken reason.
-        // Removing this block slows execution down by 30%.
-        for _player in self.players.iter() {}
+        // Send final message to terminate the worker thread and get the grid back.
+        placements_tx.send(vec![]).unwrap();
+        self.grid = Some(grid_worker.join().unwrap());
 
         Ok(())
     }
@@ -331,11 +375,15 @@ mod tests {
         //    _  _  _  _  _
         //    1
 
-        assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(1, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
-        assert_eq!(sim.grid[GridPoint::new(0, 1)], p1);
-        assert_eq!(sim.grid[GridPoint::new(-2, -2)], p1);
+        let grid = match &sim.grid {
+            Some(grid) => grid,
+            _ => panic!("No grid"),
+        };
+        assert_eq!(grid[GridPoint::new(0, 0)], p1);
+        assert_eq!(grid[GridPoint::new(1, 0)], p1);
+        assert_eq!(grid[GridPoint::new(1, 1)], p1);
+        assert_eq!(grid[GridPoint::new(0, 1)], p1);
+        assert_eq!(grid[GridPoint::new(-2, -2)], p1);
     }
 
     #[test]
@@ -352,17 +400,21 @@ mod tests {
         //    1 [1] 2  2
         //    2  _  _  1
 
-        assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
-        assert_eq!(sim.grid[GridPoint::new(-1, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(2, -1)], p1);
-        assert_eq!(sim.grid[GridPoint::new(2, 1)], p1);
+        let grid = match &sim.grid {
+            Some(grid) => grid,
+            _ => panic!("No grid"),
+        };
+        assert_eq!(grid[GridPoint::new(0, 0)], p1);
+        assert_eq!(grid[GridPoint::new(1, 1)], p1);
+        assert_eq!(grid[GridPoint::new(-1, 0)], p1);
+        assert_eq!(grid[GridPoint::new(2, -1)], p1);
+        assert_eq!(grid[GridPoint::new(2, 1)], p1);
 
-        assert_eq!(sim.grid[GridPoint::new(1, 0)], p2);
-        assert_eq!(sim.grid[GridPoint::new(0, 1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(2, 0)], p2);
+        assert_eq!(grid[GridPoint::new(1, 0)], p2);
+        assert_eq!(grid[GridPoint::new(0, 1)], p2);
+        assert_eq!(grid[GridPoint::new(-1, 1)], p2);
+        assert_eq!(grid[GridPoint::new(-1, -1)], p2);
+        assert_eq!(grid[GridPoint::new(2, 0)], p2);
     }
 
     #[test]
@@ -378,12 +430,16 @@ mod tests {
 
         //    2  1
         //   [1] 2
-        
-        assert_eq!(sim.grid[GridPoint::new(0, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(1, 1)], p1);
 
-        assert_eq!(sim.grid[GridPoint::new(1, 0)], p2);
-        assert_eq!(sim.grid[GridPoint::new(0, 1)], p2);
+        let grid = match &sim.grid {
+            Some(grid) => grid,
+            _ => panic!("No grid"),
+        };
+        assert_eq!(grid[GridPoint::new(0, 0)], p1);
+        assert_eq!(grid[GridPoint::new(1, 1)], p1);
+
+        assert_eq!(grid[GridPoint::new(1, 0)], p2);
+        assert_eq!(grid[GridPoint::new(0, 1)], p2);
 
         sim.simulate(3).unwrap();
 
@@ -393,12 +449,16 @@ mod tests {
         //    1 [1] 2  2
         //    2  _  _  1
 
-        assert_eq!(sim.grid[GridPoint::new(-1, 0)], p1);
-        assert_eq!(sim.grid[GridPoint::new(2, -1)], p1);
-        assert_eq!(sim.grid[GridPoint::new(2, 1)], p1);
+        let grid = match &sim.grid {
+            Some(grid) => grid,
+            _ => panic!("No grid"),
+        };
+        assert_eq!(grid[GridPoint::new(-1, 0)], p1);
+        assert_eq!(grid[GridPoint::new(2, -1)], p1);
+        assert_eq!(grid[GridPoint::new(2, 1)], p1);
 
-        assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
-        assert_eq!(sim.grid[GridPoint::new(2, 0)], p2);
+        assert_eq!(grid[GridPoint::new(-1, 1)], p2);
+        assert_eq!(grid[GridPoint::new(-1, -1)], p2);
+        assert_eq!(grid[GridPoint::new(2, 0)], p2);
     }
 }
