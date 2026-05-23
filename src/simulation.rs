@@ -131,7 +131,6 @@ pub struct Player {
     cursor: UlamSpiralCursor,
 }
 
-const DEFAULT_TURNS_PER_STEP: usize = 1_000_000;
 const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
 
 pub struct Simulation {
@@ -139,9 +138,6 @@ pub struct Simulation {
     grid: Grid<PlayerId>,
     forbiddances: SlidingWindow<PlayerIdSet>,
 
-    turns_per_step: usize,
-    max_memory: usize,
-    max_distance: usize,
     simulated_turns: usize,
 }
 
@@ -158,9 +154,6 @@ impl Simulation {
             grid: Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE))),
             forbiddances: SlidingWindow::with_origin(0),
 
-            turns_per_step: DEFAULT_TURNS_PER_STEP,
-            max_memory: usize::MAX,
-            max_distance: usize::MAX,
             simulated_turns: 0,
         }
     }
@@ -171,22 +164,6 @@ impl Simulation {
 
     pub fn memory_usage(&self) -> usize {
         self.grid.memory_usage() + self.forbiddances.memory_usage()
-    }
-
-    pub fn set_max_memory_usage(&mut self, usage: usize) {
-        self.max_memory = usage;
-    }
-
-    pub fn set_max_distance(&mut self, distance: usize) {
-        self.max_distance = distance;
-    }
-
-    pub fn set_turns_per_step(&mut self, step_size: usize) {
-        if step_size == 0 {
-            panic!("Turns per step must be greater than 0");
-        }
-
-        self.turns_per_step = step_size;
     }
 
     pub fn simulated_turns(&self) -> usize {
@@ -273,43 +250,6 @@ impl Simulation {
         self.forbiddances.set_origin(new_origin);
     }
 
-    fn simulate_single_step(&mut self, turns_to_simulate: usize) -> Result<(), SimulationError> {
-        if turns_to_simulate > self.turns_per_step {
-            panic!("Trying to simulate more turns in a single step than allowed.");
-        }
-
-        if turns_to_simulate == 0 {
-            return Ok(());
-        }
-
-        let mut placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
-            0 => Vec::new(),
-            _ => Vec::with_capacity(turns_to_simulate),
-        }).collect();
-        for _ in 0..turns_to_simulate {
-            // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
-            self.simulate_single_turn(&mut placements);
-        }
-        for player in self.players.iter() {
-            self.grid.set_multiple(&placements[player.id.0 as usize], player.id);
-        }
-
-        self.finalize_step();
-
-        if self.memory_usage() > self.max_memory {
-            return Err(SimulationError::OutOfMemory);
-        }
-
-        for player in self.players.iter() {
-            let distance = player.cursor.grid_position().chebyshev_distance_from_origin();
-            if distance as usize > self.max_distance {
-                return Err(SimulationError::MaximumDistanceReached);
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn simulate(&mut self, mut turns_to_simulate: usize) -> Result<(), SimulationError> {
         // Handle simulation without players.
         if self.players.is_empty() {
@@ -317,14 +257,30 @@ impl Simulation {
             return Ok(());
         }
 
+        const STEP_SIZE: usize = 4096;
         while turns_to_simulate > 0 {
-            let turns_to_simulate_this_step = min(self.turns_per_step, turns_to_simulate);
-            match self.simulate_single_step(turns_to_simulate_this_step) {
-                Ok(_) => {},
-                Err(e) => return Err(e),
+            let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
+
+            let mut placements: Vec<Vec<GridPoint>> = (0..self.players.len()+1).map(|i| match i {
+                0 => Vec::new(),
+                _ => Vec::with_capacity(turns_to_simulate_this_step),
+            }).collect();
+            for _ in 0..turns_to_simulate_this_step {
+                // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
+                self.simulate_single_turn(&mut placements);
             }
+            for player in self.players.iter() {
+                self.grid.set_multiple(&placements[player.id.0 as usize], player.id);
+            }
+
+            self.finalize_step();
+
             turns_to_simulate -= turns_to_simulate_this_step;
         }
+
+        // This is actually important for optimization for some godforsaken reason.
+        // Removing this block slows execution down by 30%.
+        for _player in self.players.iter() {}
 
         Ok(())
     }
@@ -444,42 +400,5 @@ mod tests {
         assert_eq!(sim.grid[GridPoint::new(-1, 1)], p2);
         assert_eq!(sim.grid[GridPoint::new(-1, -1)], p2);
         assert_eq!(sim.grid[GridPoint::new(2, 0)], p2);
-    }
-
-    #[test]
-    fn multiple_steps_work() {
-        let mut sim = Simulation::new();
-        sim.set_turns_per_step(10);
-        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_enemy(p1, p1);
-        sim.simulate(100).unwrap();
-
-        assert_eq!(sim.simulated_turns, 100);
-    }
-
-    #[test]
-    fn terminates_after_first_step_with_low_memory_usage_limit() {
-        let mut sim = Simulation::new();
-        sim.set_turns_per_step(10);
-        sim.set_max_memory_usage(0);
-        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_enemy(p1, p1);
-        let res = sim.simulate(100);
-
-        assert_eq!(res, Err(SimulationError::OutOfMemory));
-        assert_eq!(sim.simulated_turns, 10);
-    }
-
-    #[test]
-    fn terminates_after_first_step_with_low_max_distance_limit() {
-        let mut sim = Simulation::new();
-        sim.set_turns_per_step(10);
-        sim.set_max_distance(1);
-        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_enemy(p1, p1);
-        let res = sim.simulate(100);
-
-        assert_eq!(res, Err(SimulationError::MaximumDistanceReached));
-        assert_eq!(sim.simulated_turns, 10);
     }
 }
