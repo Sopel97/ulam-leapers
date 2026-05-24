@@ -3,7 +3,7 @@ use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
-use std::cmp::{max, min};
+use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::mpsc;
 use std::thread;
@@ -216,8 +216,7 @@ impl Simulation {
             .players
             .iter()
             .map(|p| {
-                let point = p.cursor.grid_position();
-                max(point.x.abs(), point.y.abs())
+                p.cursor.grid_position().chebyshev_distance_from_origin()
             })
             .min()
             .unwrap();
@@ -226,9 +225,9 @@ impl Simulation {
             return None;
         }
 
-        let last_past_shell = min_shell - 1;
-        let min_point = GridPoint::new(-last_past_shell, -last_past_shell);
-        let max_point = GridPoint::new(last_past_shell, last_past_shell);
+        let last_filled_shell = min_shell - 1;
+        let min_point = GridPoint::new(-last_filled_shell, -last_filled_shell);
+        let max_point = GridPoint::new(last_filled_shell, last_filled_shell);
 
         Some((min_point, max_point))
     }
