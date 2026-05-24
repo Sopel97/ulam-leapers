@@ -18,28 +18,40 @@ pub struct ChunkBounds {
     height: u32,
 }
 
+trait SquareBoundedChunk {
+    fn bounds(&self) -> &ChunkBounds;
+
+    fn contains_point(&self, point: &GridPoint) -> bool {
+        let bounds = self.bounds();
+        point.x >= bounds.origin.0.x
+            && point.y >= bounds.origin.0.y
+            && point.x < bounds.origin.0.x + bounds.width as i32
+            && point.y < bounds.origin.0.y + bounds.height as i32
+    }
+
+    fn is_contained_within(&self, min: &GridPoint, max: &GridPoint) -> bool {
+        let bounds = self.bounds();
+        bounds.origin.0.x >= min.x
+            && bounds.origin.0.y >= min.y
+            && bounds.origin.0.x + bounds.width as i32 - 1 <= max.x
+            && bounds.origin.0.y + bounds.height as i32 - 1 <= max.y
+    }
+}
+
 pub struct Chunk<T> {
     bounds: ChunkBounds,
     cells: Array2D<T>,
 }
 
+impl<T> SquareBoundedChunk for Chunk<T> {
+    fn bounds(&self) -> &ChunkBounds {
+        &self.bounds
+    }
+}
+
 impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> usize {
         size_of::<T>() * self.cells.width() * self.cells.height()
-    }
-
-    pub fn contains_point(&self, point: &GridPoint) -> bool {
-        point.x >= self.bounds.origin.0.x
-            && point.y >= self.bounds.origin.0.y
-            && point.x < self.bounds.origin.0.x + self.bounds.width as i32
-            && point.y < self.bounds.origin.0.y + self.bounds.height as i32
-    }
-
-    pub fn is_contained_within(&self, min: &GridPoint, max: &GridPoint) -> bool {
-        self.bounds.origin.0.x >= min.x
-            && self.bounds.origin.0.y >= min.y
-            && self.bounds.origin.0.x + self.bounds.width as i32 - 1 <= max.x
-            && self.bounds.origin.0.y + self.bounds.height as i32 - 1 <= max.y
     }
 }
 
@@ -65,6 +77,25 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
         let xx = index.x - self.bounds.origin.0.x;
         let yy = index.y - self.bounds.origin.0.y;
         &mut self.cells[(xx as usize, yy as usize)]
+    }
+}
+
+// Generic over T because we want to preserve type information of the underlying data.
+pub struct CompressedChunk<T> {
+    bounds: ChunkBounds,
+    data: Box<[u8]>,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> SquareBoundedChunk for CompressedChunk<T> {
+    fn bounds(&self) -> &ChunkBounds {
+        &self.bounds
+    }
+}
+
+impl<T> CompressedChunk<T> {
+    pub fn memory_usage(&self) -> usize {
+        size_of::<CompressedChunk<T>>() + self.data.len()
     }
 }
 
