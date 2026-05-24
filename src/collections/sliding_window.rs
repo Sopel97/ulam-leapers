@@ -1,4 +1,4 @@
-﻿use std::cmp::min;
+﻿use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut};
 
@@ -17,7 +17,7 @@ pub struct SlidingWindow<T> {
 
 impl<T> SlidingWindow<T> {
     pub fn memory_usage(&self) -> usize {
-        self.elements.len() * size_of::<T>()
+        self.elements.capacity() * size_of::<T>()
     }
 }
 
@@ -71,8 +71,12 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
 
         let actual_idx = (index - self.origin) as usize;
         if actual_idx >= self.elements.len() {
-            // For some reason this is slightly faster than calling resize
-            self.elements.extend((0..=actual_idx).map(|_| T::default()));
+            // We overallocate a little to hit this call less often, batch more.
+            let mut new_size = max(2, self.elements.len());
+            while new_size <= actual_idx {
+                new_size += new_size / 2;
+            }
+            self.elements.resize(new_size, T::default());
         }
 
         &mut self.elements[actual_idx]
