@@ -10,7 +10,7 @@ fn main() {
     sim.add_player_enemy(p2, p1);
 
     let start = std::time::Instant::now();
-    let _ = sim.simulate(34_000_000);
+    let _ = sim.simulate(100_000_000);
     let elapsed = start.elapsed();
 
     println!("Simulated {} turns in {:?} with {} MiB of memory.", sim.simulated_turns(), elapsed, sim.memory_usage() / 1024 / 1024);
