@@ -232,7 +232,7 @@ impl Simulation {
         Some((min_point, max_point))
     }
 
-    fn simulate_single_turn(&mut self, placements: &mut Vec<Vec<GridPoint>>) {
+    fn simulate_single_turn(&mut self, placements: &mut [Vec<GridPoint>]) {
         for player in self.players.iter_mut() {
             // In a lot of cases we can place the piece immediately where we currently are,
             // so special case it. Results in a significant speedup.
@@ -356,7 +356,7 @@ impl Simulation {
             let mut placements = get_clear_buffer();
             for _ in 0..turns_to_simulate_this_step {
                 // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
-                self.simulate_single_turn(&mut placements);
+                self.simulate_single_turn(placements.as_mut_slice());
             }
             job_tx.send(Job::Place(placements)).unwrap();
 
