@@ -19,6 +19,10 @@ impl<T> SlidingWindow<T> {
     pub fn memory_usage(&self) -> usize {
         self.elements.capacity() * size_of::<T>()
     }
+
+    pub fn clear(&mut self) {
+        self.elements.clear();
+    }
 }
 
 impl<T: Default> SlidingWindow<T> {

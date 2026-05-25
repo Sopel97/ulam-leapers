@@ -141,12 +141,14 @@ pub struct Simulation {
     forbiddances: SlidingWindow<PlayerIdSet>,
 
     simulated_turns: usize,
+    is_finalized: bool,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SimulationError {
     OutOfMemory,
     MaximumDistanceReached,
+    IsFinalized,
 }
 
 impl Simulation {
@@ -157,6 +159,7 @@ impl Simulation {
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
+            is_finalized: false,
         }
     }
 
@@ -175,8 +178,20 @@ impl Simulation {
     pub fn simulated_turns(&self) -> usize {
         self.simulated_turns
     }
+    
+    pub fn is_finalized(&self) -> bool {
+        self.is_finalized
+    }
 
     pub fn add_player(&mut self, attacks: LeaperAttacks) -> PlayerId {
+        if self.is_finalized {
+            panic!("Cannot add players to a finalized simulation.");
+        }
+        
+        if self.simulated_turns > 0 {
+            panic!("Cannot add players to a running simulation.");
+        }
+        
         // ID 0 reserved for empty cell.
         let id = PlayerId((self.players.len() + 1) as u8);
         if !PlayerIdSet::is_player_id_allowed(id) {
@@ -194,6 +209,14 @@ impl Simulation {
     }
 
     pub fn add_player_enemy(&mut self, player: PlayerId, enemy: PlayerId) {
+        if self.is_finalized {
+            panic!("Cannot modify player enemies in a finalized simulation.");
+        }
+
+        if self.simulated_turns > 0 {
+            panic!("Cannot modify player enemies in a running simulation.");
+        }
+        
         if player.0 as usize >= self.players.len() + 1 {
             panic!("Player is out of bounds");
         }
@@ -206,12 +229,20 @@ impl Simulation {
     }
 
     pub fn add_all_pairwise_player_enemies(&mut self) {
+        if self.is_finalized {
+            panic!("Cannot modify player enemies in a finalized simulation.");
+        }
+
+        if self.simulated_turns > 0 {
+            panic!("Cannot modify player enemies in a running simulation.");
+        }
+
         for player in &mut self.players {
             player.enemies = PlayerIdSet::full() ^ player.id;
         }
     }
 
-    pub fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
+    fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
         let min_shell = self
             .players
             .iter()
@@ -277,6 +308,10 @@ impl Simulation {
     }
 
     pub fn simulate(&mut self, mut turns_to_simulate: usize) -> Result<(), SimulationError> {
+        if self.is_finalized {
+            return Err(SimulationError::IsFinalized);
+        }
+        
         // Handle simulation without players.
         if self.players.is_empty() {
             self.simulated_turns += turns_to_simulate;
@@ -381,6 +416,22 @@ impl Simulation {
         self.grid = Some(grid_worker.join().unwrap());
 
         Ok(())
+    }
+
+    // Freezes all chunks, deallocates simulation buffers, prohibits further simulation.
+    pub fn finalize(&mut self) {
+        if self.is_finalized {
+            return;
+        }
+        
+        match self.grid {
+            Some(ref mut grid) => {
+                grid.freeze(&GridPoint::new(i32::MIN, i32::MIN), &GridPoint::new(i32::MAX, i32::MAX));
+            },
+            None => { panic!("No grid"); },
+        }
+        
+        self.forbiddances.clear();
     }
 }
 
