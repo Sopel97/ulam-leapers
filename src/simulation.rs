@@ -526,10 +526,7 @@ impl Simulation {
 
         match self.grid {
             Some(ref mut grid) => {
-                grid.freeze(
-                    &GridPoint::new(i32::MIN, i32::MIN),
-                    &GridPoint::new(i32::MAX, i32::MAX),
-                );
+                grid.freeze_all();
             }
             None => {
                 panic!("No grid");

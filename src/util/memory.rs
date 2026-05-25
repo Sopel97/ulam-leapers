@@ -8,3 +8,12 @@ pub fn as_bytes<T>(slice: &[T]) -> &[u8] {
         )
     }
 }
+
+pub fn as_bytes_mut<T>(slice: &mut [T]) -> &mut [u8] {
+    unsafe {
+        slice::from_raw_parts_mut(
+            slice.as_mut_ptr() as *mut u8,
+            std::mem::size_of_val(slice),
+        )
+    }
+}

@@ -5,14 +5,15 @@ use crate::util::pow2;
 use crate::util::pow2::Pow2;
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use crate::util::memory::as_bytes;
+use crate::util::memory::{as_bytes, as_bytes_mut};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
 
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
 
+#[derive(Clone, Copy)]
 pub struct ChunkBounds {
     origin: ChunkOrigin,
     width: u32,
@@ -88,6 +89,26 @@ pub struct CompressedChunk<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
+impl<T> From<&Chunk<T>> for CompressedChunk<T> {
+    fn from(chunk: &Chunk<T>) -> Self {
+        // We might try Morton transform and bit-transposition later,
+        // but for now zstd can reduce the size to pretty much zero for the test-case.
+        // We use default level 3 compression because higher levels don't seem to have an impact.
+        let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
+        let compressed = zstd::encode_all(raw_uncompressed, 3).unwrap().into_boxed_slice();
+        CompressedChunk { bounds: chunk.bounds, data: compressed, _marker: std::marker::PhantomData }
+    }
+}
+
+impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
+    fn from(chunk: &CompressedChunk<T>) -> Self {
+        let mut cells: Array2D<T> = Array2D::new_aligned(chunk.bounds.width as usize, chunk.bounds.height as usize, CACHE_LINE_SIZE);
+        let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
+        zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
+        Chunk { bounds: chunk.bounds, cells }
+    }
+}
+
 impl<T> SquareBoundedChunk for CompressedChunk<T> {
     fn bounds(&self) -> &ChunkBounds {
         &self.bounds
@@ -157,17 +178,19 @@ impl<T> Grid<T> {
         let frozen = to_freeze.map(|entry| {
             let origin = entry.0;
             let chunk = entry.1;
-            // We might try Morton transform and bit-transposition later,
-            // but for now zstd can reduce the size to pretty much zero for the test-case.
-            // We use default level 3 compression because higher levels don't seem to have an impact.
-            let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
-            let compressed = zstd::encode_all(raw_uncompressed, 3).unwrap().into_boxed_slice();
-            (origin, CompressedChunk { bounds: chunk.bounds, data: compressed, _marker: std::marker::PhantomData })
+            (origin, CompressedChunk::from(&chunk))
         });
         for (origin, chunk) in frozen {
             self.frozen_chunks_memory_usage += chunk.memory_usage();
             self.frozen_chunks.insert(origin, chunk);
         }
+    }
+
+    pub fn freeze_all(&mut self) {
+        self.freeze(
+            &GridPoint::new(i32::MIN, i32::MIN),
+            &GridPoint::new(i32::MAX, i32::MAX),
+        );
     }
 
     pub fn is_chunk_at_frozen(&self, origin: &ChunkOrigin) -> bool {
@@ -257,6 +280,58 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
     fn index_mut(&mut self, point: GridPoint) -> &mut Self::Output {
         let chunk: &mut Chunk<T> = self.get_or_create_chunk_containing(&point);
         &mut chunk[point]
+    }
+}
+
+pub struct FrozenGrid<T> {
+    chunker: Box<dyn Chunker + Send>,
+    frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
+}
+
+impl<T> Into<FrozenGrid<T>> for Grid<T> {
+    fn into(mut self) -> FrozenGrid<T> {
+        self.freeze_all();
+
+        FrozenGrid {
+            chunker: self.chunker,
+            frozen_chunks: self.frozen_chunks
+        }
+    }
+}
+
+impl<T: Default + Clone + Copy> FrozenGrid<T> {
+    pub fn sample_range2d(&self, min: &GridPoint, max: &GridPoint) -> Array2D<T> {
+        let mut uncompressed_chunk_cache: BTreeMap<ChunkOrigin, Chunk<T>> = BTreeMap::new();
+
+        let width = max.x - min.x + 1;
+        let height = max.y - min.y + 1;
+        let mut result: Array2D<T> = Array2D::new(width as usize, height as usize);
+
+        for x in min.x..max.x+1 {
+            for y in min.y..max.y+1 {
+                let chunk_origin = self.chunker.resolve_chunk_origin(&GridPoint::new(x, y));
+                let chunk = if let Some(chunk) = uncompressed_chunk_cache.get(&chunk_origin) {
+                    chunk
+                } else {
+                    let compressed_chunk = self.frozen_chunks.get(&chunk_origin);
+                    match compressed_chunk {
+                        Some(chunk) => {
+                            uncompressed_chunk_cache.entry(chunk_origin).or_insert(Chunk::from(chunk))
+                        },
+                        // If we don't have a corresponding chunk we just leave the output values unfilled.
+                        None => continue,
+                    }
+                };
+
+                let val = chunk[GridPoint::new(x, y)];
+
+                let dx = (x - min.x) as usize;
+                let dy = (y - min.y) as usize;
+                result[(dx, dy)] = val;
+            }
+        }
+
+        result
     }
 }
 
@@ -404,19 +479,6 @@ mod tests {
         assert_eq!(grid[point(-1, -1)], 123);
     }
 
-    /* // currently unimplemented
-    #[test]
-    fn can_read_from_frozen_chunks() {
-        let mut grid = make_grid(Pow2::new(4));
-
-        grid[point(-1, -1)] = 123;
-
-        grid.freeze(&GridPoint::new(-40, -40), &GridPoint::new(40, 40));
-
-        assert_eq!(grid[point(-1, -1)], 123);
-    }
-    */
-
     #[test]
     fn correct_chunks_get_frozen() {
         let mut grid = make_grid(Pow2::new(4));
@@ -443,5 +505,18 @@ mod tests {
         }));
         
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn frozen_grid_sample_range2d() {
+        let mut grid = make_grid(Pow2::new(4));
+        grid[point(-1, -3)] = 1234;
+        grid[point(-1, -1)] = 123;
+
+        let frozen_grid: FrozenGrid<_> = grid.into();
+
+        let res = frozen_grid.sample_range2d(&GridPoint::new(-1, -3), &GridPoint::new(-1, -1));
+
+        assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
     }
 }

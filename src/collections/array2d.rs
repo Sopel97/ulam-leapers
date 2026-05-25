@@ -149,6 +149,10 @@ impl<'a, T> Array2D<T> {
     pub fn as_flat_slice(&self) -> &'_ [T] {
         self.data.as_slice()
     }
+
+    pub fn as_flat_mut_slice(&mut self) -> &'_ mut [T] {
+        self.data.as_mut_slice()
+    }
 }
 
 // TODO: how to avoid code duplication?
