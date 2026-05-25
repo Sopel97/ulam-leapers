@@ -234,15 +234,22 @@ impl Simulation {
 
     fn simulate_single_turn(&mut self, placements: &mut Vec<Vec<GridPoint>>) {
         for player in self.players.iter_mut() {
-            let pos = self.forbiddances.position_or_first_empty(player.cursor.spiral_position().index().., |x| {
-                !x.is_set(player.id)
-            });
-            player.cursor.advance_to(UlamSpiralPoint::new(pos as i64));
+            // In a lot of cases we can place the piece immediately where we currently are,
+            // so special case it. Results in a significant speedup.
+            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().index()];
+            if !immediate_cell.is_set(player.id) {
+                *immediate_cell = PlayerIdSet::full();
+            } else {
+                // Skip the current element because we checked for it earlier.
+                let pos = self.forbiddances.position_or_first_empty(player.cursor.spiral_position().index()+1.., |x| {
+                    !x.is_set(player.id)
+                });
+                player.cursor.advance_to(UlamSpiralPoint::new(pos as i64));
+                self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
+            }
 
-            // We found a place we can put the piece on
             let point = player.cursor.grid_position();
             placements[player.id.0 as usize].push(point);
-            self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
             for attack_vector in player.attacks.get_attacks_from(&point) {
                 let u = UlamSpiralPoint::from(&attack_vector);
                 // We don't care about cells before the origin (last player) and
