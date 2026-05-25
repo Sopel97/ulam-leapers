@@ -15,12 +15,15 @@ fn main() {
     sim.finalize();
     let elapsed = start.elapsed();
 
-    let finalized_memory_usage = sim.memory_usage();
+    let simulated_turns = sim.simulated_turns();
+    let complete_shells = sim.complete_shells();
+    let frozen_grid = sim.finalize_to_frozen_grid();
+    let finalized_memory_usage = frozen_grid.memory_usage();
     println!(
         "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {} MiB.\nFinal memory usage: {} MiB.",
-        sim.simulated_turns(),
+        simulated_turns,
         elapsed,
-        sim.complete_shells(),
+        complete_shells,
         end_memory_usage / 1024 / 1024,
         finalized_memory_usage / 1024 / 1024
     );

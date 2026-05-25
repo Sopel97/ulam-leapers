@@ -286,6 +286,7 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
 pub struct FrozenGrid<T> {
     chunker: Box<dyn Chunker + Send>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
+    memory_usage: usize,
 }
 
 impl<T> Into<FrozenGrid<T>> for Grid<T> {
@@ -294,8 +295,15 @@ impl<T> Into<FrozenGrid<T>> for Grid<T> {
 
         FrozenGrid {
             chunker: self.chunker,
-            frozen_chunks: self.frozen_chunks
+            frozen_chunks: self.frozen_chunks,
+            memory_usage: self.frozen_chunks_memory_usage,
         }
+    }
+}
+
+impl<T> FrozenGrid<T> {
+    pub fn memory_usage(&self) -> usize {
+        self.memory_usage
     }
 }
 

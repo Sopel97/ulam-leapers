@@ -1,6 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
-use crate::grid::{Grid, GridPoint, SquareChunker};
+use crate::grid::{FrozenGrid, Grid, GridPoint, SquareChunker};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
@@ -534,6 +534,11 @@ impl Simulation {
         }
 
         self.forbiddances.clear();
+    }
+    
+    pub fn finalize_to_frozen_grid(mut self) -> FrozenGrid<PlayerId> {
+        self.finalize();
+        self.grid.unwrap().into()
     }
 }
 
