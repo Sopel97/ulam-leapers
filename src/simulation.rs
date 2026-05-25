@@ -237,9 +237,7 @@ impl Simulation {
             let pos = self.forbiddances.position_or_first_empty(player.cursor.spiral_position().index().., |x| {
                 !x.is_set(player.id)
             });
-            while player.cursor.spiral_position().index() < pos {
-                player.cursor.advance();
-            }
+            player.cursor.advance_to(UlamSpiralPoint::new(pos as i64));
 
             // We found a place we can put the piece on
             let point = player.cursor.grid_position();

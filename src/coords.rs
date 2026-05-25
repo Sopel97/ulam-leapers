@@ -18,6 +18,14 @@ pub struct Vector2D<T> {
 pub struct UlamSpiralPoint(i64);
 
 impl UlamSpiralPoint {
+    pub fn new(d: i64) -> UlamSpiralPoint {
+        if d < 0 {
+            panic!("UlamSpiralPoint is negative");
+        }
+
+        UlamSpiralPoint(d)
+    }
+
     pub fn index(self) -> isize {
         self.0 as isize
     }
@@ -32,6 +40,20 @@ impl<T> Point2D<T> {
 impl<T> Vector2D<T> {
     pub fn new(x: T, y: T) -> Vector2D<T> {
         Vector2D::<T> { x, y }
+    }
+}
+
+impl<T: Copy> Mul<T> for Vector2D<T>
+where
+    T: Mul<T, Output = T>,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self {
+        Vector2D::<T> {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
     }
 }
 
@@ -145,6 +167,28 @@ impl UlamSpiralCursor {
             self.steps_in_current_direction_left = self.current_line / 2 + 1;
             // Rotate 90 degrees counter-clockwise
             self.current_direction = GridVector::new(-self.current_direction.y, self.current_direction.x);
+        }
+    }
+
+    pub fn advance_to(&mut self, to: UlamSpiralPoint) {
+        // Extract predictable branch
+        if self.spiral_position.0 == to.0 {
+            return;
+        }
+
+        while (to.0 - self.spiral_position.0) as usize >= self.steps_in_current_direction_left {
+            self.grid_position = self.grid_position + self.current_direction * self.steps_in_current_direction_left as i32;
+            self.spiral_position.0 += self.steps_in_current_direction_left as i64;
+            self.current_line += 1;
+            self.steps_in_current_direction_left = self.current_line / 2 + 1;
+            self.current_direction = GridVector::new(-self.current_direction.y, self.current_direction.x);
+        }
+
+        let diff = (to.0 - self.spiral_position.0) as usize;
+        if diff < self.steps_in_current_direction_left {
+            self.grid_position = self.grid_position + self.current_direction * diff as i32;
+            self.spiral_position.0 += diff as i64;
+            self.steps_in_current_direction_left -= diff;
         }
     }
 
