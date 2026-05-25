@@ -5,7 +5,6 @@ use crate::util::pow2;
 use crate::util::pow2::Pow2;
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use crate::compression::rle;
 use crate::util::memory::as_bytes;
 
 pub type GridPoint = Point2D<i32>;
@@ -155,12 +154,15 @@ impl<T> Grid<T> {
         let to_freeze = self.active_chunks.extract_if(.., |_origin, chunk| {
             chunk.is_contained_within(min, max)
         });
-        // TODO: zstd
         let frozen = to_freeze.map(|entry| {
             let origin = entry.0;
             let chunk = entry.1;
-            let data = rle::encode(as_bytes(chunk.cells.as_flat_slice()));
-            (origin, CompressedChunk { bounds: chunk.bounds, data, _marker: std::marker::PhantomData })
+            // We might try Morton transform and bit-transposition later,
+            // but for now zstd can reduce the size to pretty much zero for the test-case.
+            // We use default level 3 compression because higher levels don't seem to have an impact.
+            let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
+            let compressed = zstd::encode_all(raw_uncompressed, 3).unwrap().into_boxed_slice();
+            (origin, CompressedChunk { bounds: chunk.bounds, data: compressed, _marker: std::marker::PhantomData })
         });
         for (origin, chunk) in frozen {
             self.frozen_chunks.insert(origin, chunk);
