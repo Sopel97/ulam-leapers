@@ -141,13 +141,13 @@ pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send>,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
+    frozen_chunks_memory_usage: usize, // to reduce the amount of redundant iteration over chunks
 }
 
 impl<T> Grid<T> {
     pub fn memory_usage(&self) -> usize {
         let s1: usize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
-        let s2: usize = self.frozen_chunks.values().map(|c| c.memory_usage()).sum();
-        s1 + s2
+        s1 + self.frozen_chunks_memory_usage
     }
 
     pub fn freeze(&mut self, min: &GridPoint, max: &GridPoint) {
@@ -165,6 +165,7 @@ impl<T> Grid<T> {
             (origin, CompressedChunk { bounds: chunk.bounds, data: compressed, _marker: std::marker::PhantomData })
         });
         for (origin, chunk) in frozen {
+            self.frozen_chunks_memory_usage += chunk.memory_usage();
             self.frozen_chunks.insert(origin, chunk);
         }
     }
@@ -185,6 +186,7 @@ impl<T: Default + Clone + Copy> Grid<T> {
             chunker,
             active_chunks: BTreeMap::new(),
             frozen_chunks: BTreeMap::new(),
+            frozen_chunks_memory_usage: 0,
         }
     }
 

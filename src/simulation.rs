@@ -5,7 +5,7 @@ use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
@@ -146,9 +146,52 @@ pub struct Simulation {
 
 #[derive(Debug, PartialEq)]
 pub enum SimulationError {
-    OutOfMemory,
-    MaximumDistanceReached,
     IsFinalized,
+    InfiniteSimulation,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SimulationLimit {
+    Memory,
+    Turns,
+    CompleteShells,
+}
+
+pub struct SimulationLimits {
+    memory: Option<usize>,
+    turns: Option<usize>,
+    complete_shells: Option<usize>,
+}
+
+// NOTE: Only the turn limit is accurate. Other limits are checked on best effort basis as they
+//       don't control the simulation directly and may be expensive to check.
+impl SimulationLimits {
+    pub fn new() -> Self {
+        SimulationLimits {
+            memory: None,
+            turns: None,
+            complete_shells: None,
+        }
+    }
+
+    pub fn with_memory_limit(mut self, memory: usize) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    pub fn with_turn_limit(mut self, limit: usize) -> Self {
+        self.turns = Some(limit);
+        self
+    }
+
+    pub fn with_complete_shell_limit(mut self, limit: usize) -> Self {
+        self.complete_shells = Some(limit);
+        self
+    }
+
+    pub fn any(&self) -> bool {
+        self.memory.is_some() || self.turns.is_some() || self.complete_shells.is_some()
+    }
 }
 
 impl Simulation {
@@ -178,7 +221,7 @@ impl Simulation {
     pub fn simulated_turns(&self) -> usize {
         self.simulated_turns
     }
-    
+
     pub fn is_finalized(&self) -> bool {
         self.is_finalized
     }
@@ -187,11 +230,11 @@ impl Simulation {
         if self.is_finalized {
             panic!("Cannot add players to a finalized simulation.");
         }
-        
+
         if self.simulated_turns > 0 {
             panic!("Cannot add players to a running simulation.");
         }
-        
+
         // ID 0 reserved for empty cell.
         let id = PlayerId((self.players.len() + 1) as u8);
         if !PlayerIdSet::is_player_id_allowed(id) {
@@ -216,7 +259,7 @@ impl Simulation {
         if self.simulated_turns > 0 {
             panic!("Cannot modify player enemies in a running simulation.");
         }
-        
+
         if player.0 as usize >= self.players.len() + 1 {
             panic!("Player is out of bounds");
         }
@@ -242,13 +285,11 @@ impl Simulation {
         }
     }
 
-    pub fn fully_simulated_shells(&self) -> i32 {
+    pub fn complete_shells(&self) -> i32 {
         let min_shell = self
             .players
             .iter()
-            .map(|p| {
-                p.cursor.grid_position().chebyshev_distance_from_origin()
-            })
+            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
             .min()
             .unwrap();
 
@@ -256,7 +297,7 @@ impl Simulation {
     }
 
     fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
-        let last_fully_simulated_shell = match self.fully_simulated_shells() {
+        let last_fully_simulated_shell = match self.complete_shells() {
             0 => return None,
             s => s - 1,
         };
@@ -276,9 +317,11 @@ impl Simulation {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
-                let pos = self.forbiddances.position_or_first_empty(player.cursor.spiral_position().index()+1.., |x| {
-                    !x.is_set(player.id)
-                });
+                let pos = self
+                    .forbiddances
+                    .position_or_first_empty(player.cursor.spiral_position().index() + 1.., |x| {
+                        !x.is_set(player.id)
+                    });
                 player.cursor.advance_to(UlamSpiralPoint::new(pos as i64));
                 self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
             }
@@ -311,19 +354,42 @@ impl Simulation {
         self.forbiddances.set_origin(new_origin);
     }
 
-    pub fn simulate(&mut self, mut turns_to_simulate: usize) -> Result<(), SimulationError> {
+    pub fn simulate(
+        &mut self,
+        limits: SimulationLimits,
+    ) -> Result<SimulationLimit, SimulationError> {
         if self.is_finalized {
             return Err(SimulationError::IsFinalized);
         }
-        
-        // Handle simulation without players.
+
+        if !limits.any() {
+            return Err(SimulationError::InfiniteSimulation);
+        }
+
         if self.players.is_empty() {
-            self.simulated_turns += turns_to_simulate;
-            return Ok(());
+            return match limits.turns {
+                None => Err(SimulationError::InfiniteSimulation),
+                Some(t) => {
+                    self.simulated_turns += t;
+                    Ok(SimulationLimit::Turns)
+                }
+            };
+        }
+
+        if limits.memory.is_some_and(|v| self.memory_usage() >= v) {
+            return Ok(SimulationLimit::Memory);
+        }
+
+        if limits
+            .complete_shells
+            .is_some_and(|v| self.complete_shells() as usize >= v)
+        {
+            return Ok(SimulationLimit::CompleteShells);
         }
 
         const STEP_SIZE: usize = 1024 * 16;
         const COMPRESSION_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
+        const MEMORY_USAGE_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
         const NUM_PLACEMENT_BUFFERS: usize = 8;
 
         // We transfer ownership of the grid to the worker thread for the time of processing.
@@ -339,6 +405,7 @@ impl Simulation {
         enum Job {
             Place(Vec<Vec<GridPoint>>),
             Compress { min: GridPoint, max: GridPoint },
+            MemoryUsage,
             Stop,
         }
 
@@ -361,6 +428,8 @@ impl Simulation {
             placements
         };
 
+        let grid_memory_usage = Arc::new(Mutex::new(0usize));
+        let grid_memory_usage_worker = grid_memory_usage.clone();
         let grid_worker = thread::spawn(move || {
             loop {
                 let job = job_rx.recv().unwrap();
@@ -379,6 +448,10 @@ impl Simulation {
                     Job::Compress { min, max } => {
                         grid.freeze(&min, &max);
                     }
+                    Job::MemoryUsage => {
+                        let mut grid_memory_usage_worker = grid_memory_usage_worker.lock().unwrap();
+                        *grid_memory_usage_worker = grid.memory_usage();
+                    }
                     Job::Stop => {
                         break;
                     }
@@ -389,6 +462,8 @@ impl Simulation {
         });
 
         let mut step = 0;
+        let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX);
+        let mut hit_limit = SimulationLimit::Turns;
         while turns_to_simulate > 0 {
             let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
 
@@ -409,6 +484,27 @@ impl Simulation {
                 }
             }
 
+            if limits.memory.is_some()
+                && step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1
+            {
+                // Yes, the check lags behind.
+                let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
+                if total >= limits.memory.unwrap() {
+                    hit_limit = SimulationLimit::Memory;
+                    break;
+                }
+
+                job_tx.send(Job::MemoryUsage).unwrap();
+            }
+
+            if limits
+                .complete_shells
+                .is_some_and(|v| self.complete_shells() as usize >= v)
+            {
+                hit_limit = SimulationLimit::CompleteShells;
+                break;
+            }
+
             self.update_forbiddances_origin();
 
             turns_to_simulate -= turns_to_simulate_this_step;
@@ -419,7 +515,7 @@ impl Simulation {
         job_tx.send(Job::Stop).unwrap();
         self.grid = Some(grid_worker.join().unwrap());
 
-        Ok(())
+        Ok(hit_limit)
     }
 
     // Freezes all chunks, deallocates simulation buffers, prohibits further simulation.
@@ -427,14 +523,19 @@ impl Simulation {
         if self.is_finalized {
             return;
         }
-        
+
         match self.grid {
             Some(ref mut grid) => {
-                grid.freeze(&GridPoint::new(i32::MIN, i32::MIN), &GridPoint::new(i32::MAX, i32::MAX));
-            },
-            None => { panic!("No grid"); },
+                grid.freeze(
+                    &GridPoint::new(i32::MIN, i32::MIN),
+                    &GridPoint::new(i32::MAX, i32::MAX),
+                );
+            }
+            None => {
+                panic!("No grid");
+            }
         }
-        
+
         self.forbiddances.clear();
     }
 }
@@ -443,7 +544,7 @@ impl Simulation {
 mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
-    use crate::simulation::Simulation;
+    use crate::simulation::{Simulation, SimulationLimits};
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
@@ -465,7 +566,8 @@ mod tests {
     #[test]
     fn empty_simulation_works() {
         let mut sim = Simulation::new();
-        sim.simulate(100).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(100))
+            .unwrap();
         assert_eq!(sim.simulated_turns(), 100);
     }
 
@@ -474,7 +576,8 @@ mod tests {
         let mut sim = Simulation::new();
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_player_enemy(p1, p1);
-        sim.simulate(5).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(5))
+            .unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -501,7 +604,8 @@ mod tests {
         let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
-        sim.simulate(5).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(5))
+            .unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
@@ -533,7 +637,8 @@ mod tests {
         let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
 
-        sim.simulate(2).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(2))
+            .unwrap();
 
         assert_eq!(sim.simulated_turns, 2);
 
@@ -550,7 +655,8 @@ mod tests {
         assert_eq!(grid[GridPoint::new(1, 0)], p2);
         assert_eq!(grid[GridPoint::new(0, 1)], p2);
 
-        sim.simulate(3).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(3))
+            .unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
 
