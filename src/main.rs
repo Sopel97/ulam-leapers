@@ -17,9 +17,10 @@ fn main() {
 
     let finalized_memory_usage = sim.memory_usage();
     println!(
-        "Simulated {} turns in {:?} with {} MiB of memory -> {} MiB finalized.",
+        "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {} MiB.\nFinal memory usage: {} MiB.",
         sim.simulated_turns(),
         elapsed,
+        sim.fully_simulated_shells(),
         end_memory_usage / 1024 / 1024,
         finalized_memory_usage / 1024 / 1024
     );
