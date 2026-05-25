@@ -242,7 +242,7 @@ impl Simulation {
         }
     }
 
-    fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
+    pub fn fully_simulated_shells(&self) -> i32 {
         let min_shell = self
             .players
             .iter()
@@ -252,13 +252,17 @@ impl Simulation {
             .min()
             .unwrap();
 
-        if min_shell == 0 {
-            return None;
-        }
+        min_shell
+    }
 
-        let last_filled_shell = min_shell - 1;
-        let min_point = GridPoint::new(-last_filled_shell, -last_filled_shell);
-        let max_point = GridPoint::new(last_filled_shell, last_filled_shell);
+    fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
+        let last_fully_simulated_shell = match self.fully_simulated_shells() {
+            0 => return None,
+            s => s - 1,
+        };
+
+        let min_point = GridPoint::new(-last_fully_simulated_shell, -last_fully_simulated_shell);
+        let max_point = GridPoint::new(last_fully_simulated_shell, last_fully_simulated_shell);
 
         Some((min_point, max_point))
     }
