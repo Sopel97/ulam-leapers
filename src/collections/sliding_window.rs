@@ -1,6 +1,6 @@
 ﻿use std::cmp::{max, min};
 use std::collections::VecDeque;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, RangeFrom};
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.
@@ -43,6 +43,28 @@ impl<T: Default> SlidingWindow<T> {
 
     pub fn get_origin(&self) -> isize {
         self.origin
+    }
+
+    pub fn position<P>(&self, range: RangeFrom<isize>, pred: P) -> Option<isize>
+    where
+        P: Fn(&T) -> bool,
+    {
+        assert!(range.start >= self.origin);
+        let mapped_range_start = (range.start - self.origin) as usize;
+        let found_pos = self.elements.range(mapped_range_start..).position(pred)?;
+        Some((found_pos + mapped_range_start) as isize + self.origin)
+    }
+
+    pub fn position_or_first_empty<P>(&self, range: RangeFrom<isize>, pred: P) -> isize
+    where
+        P: Fn(&T) -> bool,
+    {
+        let start = range.start;
+        let found_pos = self.position(range, pred);
+        match found_pos {
+            Some(found_pos) => found_pos,
+            None => max(start, self.elements.len() as isize),
+        }
     }
 }
 

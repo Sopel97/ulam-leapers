@@ -234,12 +234,10 @@ impl Simulation {
 
     fn simulate_single_turn(&mut self, placements: &mut Vec<Vec<GridPoint>>) {
         for player in self.players.iter_mut() {
-            loop {
-                let forbidden = self.forbiddances[player.cursor.spiral_position().index()];
-                if !forbidden.is_set(player.id) {
-                    break;
-                }
-
+            let pos = self.forbiddances.position_or_first_empty(player.cursor.spiral_position().index().., |x| {
+                !x.is_set(player.id)
+            });
+            while player.cursor.spiral_position().index() < pos {
                 player.cursor.advance();
             }
 
