@@ -534,6 +534,7 @@ impl Simulation {
         }
 
         self.forbiddances.clear();
+        self.forbiddances.shrink_to_fit();
     }
     
     pub fn finalize_to_frozen_grid(mut self) -> FrozenGrid<PlayerId> {

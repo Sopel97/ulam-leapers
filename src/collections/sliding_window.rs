@@ -23,6 +23,10 @@ impl<T> SlidingWindow<T> {
     pub fn clear(&mut self) {
         self.elements.clear();
     }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.elements.shrink_to_fit();
+    }
 }
 
 impl<T: Default> SlidingWindow<T> {
