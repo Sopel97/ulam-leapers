@@ -1,5 +1,4 @@
-﻿use std::cmp::max;
-use crate::collections::array2d::Array2D;
+﻿use crate::collections::array2d::Array2D;
 use crate::coords::{Point2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
@@ -355,33 +354,30 @@ impl<T> FrozenGrid<T> {
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
     pub fn sample_range2d(&self, min: &GridPoint, max: &GridPoint) -> Array2D<T> {
-        let mut uncompressed_chunk_cache: BTreeMap<ChunkOrigin, Chunk<T>> = BTreeMap::new();
-
         let width = max.x - min.x + 1;
         let height = max.y - min.y + 1;
         let mut result: Array2D<T> = Array2D::new(width as usize, height as usize);
 
-        for x in min.x..max.x + 1 {
-            for y in min.y..max.y + 1 {
-                let chunk_origin = self.chunker.resolve_chunk_origin(&GridPoint::new(x, y));
-                let chunk = if let Some(chunk) = uncompressed_chunk_cache.get(&chunk_origin) {
-                    chunk
-                } else {
-                    let compressed_chunk = self.frozen_chunks.get(&chunk_origin);
-                    match compressed_chunk {
-                        Some(chunk) => uncompressed_chunk_cache
-                            .entry(chunk_origin)
-                            .or_insert(Chunk::from(chunk)),
-                        // If we don't have a corresponding chunk we just leave the output values unfilled.
-                        None => continue,
+        for origin in self
+            .chunker
+            .origins_of_intersecting_chunks(min, max)
+            .into_iter()
+        {
+            if let Some(compressed_chunk) = self.frozen_chunks.get(&origin) {
+                let (imin, imax) = compressed_chunk
+                    .intersection(min, max)
+                    .expect("Chunker should have returned only intersecting chunks.");
+
+                let chunk = Chunk::from(compressed_chunk);
+                for x in imin.x..imax.x+1 {
+                    for y in imin.y..imax.y+1 {
+                        let val = chunk[GridPoint::new(x, y)];
+
+                        let dx = (x - min.x) as usize;
+                        let dy = (y - min.y) as usize;
+                        result[(dx, dy)] = val;
                     }
-                };
-
-                let val = chunk[GridPoint::new(x, y)];
-
-                let dx = (x - min.x) as usize;
-                let dy = (y - min.y) as usize;
-                result[(dx, dy)] = val;
+                }
             }
         }
 
