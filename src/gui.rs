@@ -55,20 +55,15 @@ pub fn run() -> eframe::Result<()> {
                 );
                 let colors = [Color32::WHITE, Color32::BLACK, Color32::RED];
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_map(&our_rect, |v| colors[v.index()]);
-                let flipped_vec_samples = (0..samples.height())
-                    .rev()
-                    .flat_map(|y| {
-                        samples.row_slice(y).iter().copied()
-                    })
-                    .collect();
-                let image = ColorImage::new([samples.width(), samples.height()], flipped_vec_samples);
+                let image = ColorImage::new([samples.width(), samples.height()], samples.as_flat_slice().to_vec());
                 handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
                 prev_size = curr_size;
                 println!("{} {}", samples.width(), samples.height());
             }
 
             if let Some(handle) = &handle {
-                painter.image(handle.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                // y-flip via uv
+                painter.image(handle.id(), rect, Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)), Color32::WHITE);
             }
         });
     })
