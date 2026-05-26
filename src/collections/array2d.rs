@@ -98,6 +98,10 @@ impl<T> Array2D<T> {
 }
 
 impl<'a, T> Array2D<T> {
+    pub fn row_slice(&self, y: usize) -> &'_ [T] {
+        &self.data.as_slice()[y * self.width..(y + 1) * self.width]
+    }
+    
     pub fn slice2d(&self, xr: Range<usize>, yr: Range<usize>) -> Slice2D<'_, T> {
         let start = yr.start * self.width + xr.start;
         // We don't need to form an end, and it would be problematic anyway

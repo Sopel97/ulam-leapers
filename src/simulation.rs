@@ -15,6 +15,10 @@ impl PlayerId {
     pub fn new(id: u8) -> PlayerId {
         PlayerId(id)
     }
+    
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl Default for PlayerId {
