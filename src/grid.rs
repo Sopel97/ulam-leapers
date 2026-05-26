@@ -326,20 +326,21 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
     pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
         let mut result: Array2D<T> = Array2D::new(region.width() as usize, region.height() as usize);
 
-        for origin in self
+        self
             .chunker
             .origins_of_intersecting_chunks(region)
             .into_iter()
-        {
-            if let Some(compressed_chunk) = self.frozen_chunks.get(&origin) {
-                let r = compressed_chunk
+            .flat_map(|origin| self.frozen_chunks.get(&origin))
+            .for_each(|compressed_chunk| {
+                let subregion = compressed_chunk
                     .bounds()
                     .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
 
                 let chunk = Chunk::from(compressed_chunk);
-                for y in r.start.y..r.end.y {
-                    for x in r.start.x..r.end.x {
+
+                for y in subregion.start.y..subregion.end.y {
+                    for x in subregion.start.x..subregion.end.x {
                         let val = chunk[GridPoint::new(x, y)];
 
                         let dx = (x - region.start.x) as usize;
@@ -347,8 +348,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
                         result[(dx, dy)] = val;
                     }
                 }
-            }
-        }
+            });
 
         result
     }
