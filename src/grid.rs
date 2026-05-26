@@ -150,10 +150,7 @@ impl Chunker for SquareChunker {
 
     fn resolve_chunk_bounds(&self, bounds: &GridPoint) -> GridRect {
         let origin = self.resolve_chunk_origin(bounds);
-        GridRect::square_with_size(
-            origin.0,
-            self.size.into(),
-        )
+        GridRect::square_with_size(origin.0, self.size.into())
     }
 
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
@@ -200,12 +197,10 @@ impl<T> Grid<T> {
 
     pub fn freeze_all(&mut self) {
         // TODO: Remove this hack. We can't represent the full range properly.
-        self.freeze(
-            &GridRect::with_start_end(
-                GridPoint::new(i32::MIN, i32::MIN),
-                GridPoint::new(i32::MAX, i32::MAX),
-            )
-        );
+        self.freeze(&GridRect::with_start_end(
+            GridPoint::new(i32::MIN, i32::MIN),
+            GridPoint::new(i32::MAX, i32::MAX),
+        ));
     }
 
     pub fn is_chunk_at_frozen(&self, origin: &ChunkOrigin) -> bool {
@@ -323,29 +318,15 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
-    pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
-        // This function samples every cell, so we don't have to do any interpolation or translation.
-        // This also means that samples don't span multiple chunks, which allows us to make a simple
-        // implementation that always keeps at most 1 chunk decompressed while having each chunk
-        // decompressed exactly once.
-        //
-        // TODO NOTES:
-        // With larger, zoomed, translated, interpolated samples it will get more problematic and
-        // some tradeoffs will have to be made. Might be best to go in stripes with a chunk cache
-        // and deallocate past decompressed chunks after each stripe
-        // (or 2D sample-chunks at some granularity).
-        //
-        // For samples spanning a significant portion of the grid it might be worthwhile
-        // to implement a precomputed mip-mapped view of every chunk and sample from that.
-        // With each mip-map compressed separately it should be manageable and fast.
-        //
-        // We could also even explore just completely remapping (to RGB) and mip-mapping on load 
-        // and using that for all samples, or even drawing directly as textures.
+    pub fn sample_range2d_map<F, U>(&self, region: &GridRect, func: F) -> Array2D<U>
+    where
+        F: Fn(&T) -> U,
+        U: Default + Clone + Copy,
+    {
+        let mut result: Array2D<U> =
+            Array2D::new(region.width() as usize, region.height() as usize);
 
-        let mut result: Array2D<T> = Array2D::new(region.width() as usize, region.height() as usize);
-
-        self
-            .chunker
+        self.chunker
             .origins_of_intersecting_chunks(region)
             .into_iter()
             .flat_map(|origin| self.frozen_chunks.get(&origin))
@@ -363,12 +344,34 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
 
                         let dx = (x - region.start.x) as usize;
                         let dy = (y - region.start.y) as usize;
-                        result[(dx, dy)] = val;
+                        result[(dx, dy)] = func(&val);
                     }
                 }
             });
 
         result
+    }
+    
+    pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
+        // This function samples every cell, so we don't have to do any interpolation or translation.
+        // This also means that samples don't span multiple chunks, which allows us to make a simple
+        // implementation that always keeps at most 1 chunk decompressed while having each chunk
+        // decompressed exactly once.
+        //
+        // TODO NOTES:
+        // With larger, zoomed, translated, interpolated samples it will get more problematic and
+        // some tradeoffs will have to be made. Might be best to go in stripes with a chunk cache
+        // and deallocate past decompressed chunks after each stripe
+        // (or 2D sample-chunks at some granularity).
+        //
+        // For samples spanning a significant portion of the grid it might be worthwhile
+        // to implement a precomputed mip-mapped view of every chunk and sample from that.
+        // With each mip-map compressed separately it should be manageable and fast.
+        //
+        // We could also even explore just completely remapping (to RGB) and mip-mapping on load
+        // and using that for all samples, or even drawing directly as textures.
+
+        self.sample_range2d_map(region, |x| *x)
     }
 }
 
@@ -382,11 +385,7 @@ mod tests {
     }
 
     fn make_bounds(origin_x: i32, origin_y: i32, width: u32, height: u32) -> GridRect {
-        GridRect::with_size(
-            point(origin_x, origin_y),
-            width as i32,
-            height as i32,
-        )
+        GridRect::with_size(point(origin_x, origin_y), width as i32, height as i32)
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
@@ -548,7 +547,10 @@ mod tests {
 
         let frozen_grid: FrozenGrid<_> = grid.into();
 
-        let res = frozen_grid.sample_range2d(&GridRect::with_start_end(GridPoint::new(-1, -3), GridPoint::new(0, 0)));
+        let res = frozen_grid.sample_range2d(&GridRect::with_start_end(
+            GridPoint::new(-1, -3),
+            GridPoint::new(0, 0),
+        ));
 
         assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
     }
