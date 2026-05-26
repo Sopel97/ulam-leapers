@@ -1,11 +1,11 @@
 ﻿use crate::collections::array2d::Array2D;
 use crate::coords::{Point2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
-use crate::util::pow2::Pow2;
+use crate::util::pow2::{Pow2, floor_div};
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use crate::util::memory::{as_bytes, as_bytes_mut};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -59,7 +59,11 @@ impl<T> Chunk<T> {
 
 impl<T: Default + Clone> Chunk<T> {
     pub fn new(bounds: ChunkBounds) -> Chunk<T> {
-        let cells = Array2D::<T>::new_aligned(bounds.width as usize, bounds.height as usize, CACHE_LINE_SIZE);
+        let cells = Array2D::<T>::new_aligned(
+            bounds.width as usize,
+            bounds.height as usize,
+            CACHE_LINE_SIZE,
+        );
         Chunk { bounds, cells }
     }
 }
@@ -95,17 +99,30 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         // but for now zstd can reduce the size to pretty much zero for the test-case.
         // We use default level 3 compression because higher levels don't seem to have an impact.
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
-        let compressed = zstd::encode_all(raw_uncompressed, 3).unwrap().into_boxed_slice();
-        CompressedChunk { bounds: chunk.bounds, data: compressed, _marker: std::marker::PhantomData }
+        let compressed = zstd::encode_all(raw_uncompressed, 3)
+            .unwrap()
+            .into_boxed_slice();
+        CompressedChunk {
+            bounds: chunk.bounds,
+            data: compressed,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
 impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     fn from(chunk: &CompressedChunk<T>) -> Self {
-        let mut cells: Array2D<T> = Array2D::new_aligned(chunk.bounds.width as usize, chunk.bounds.height as usize, CACHE_LINE_SIZE);
+        let mut cells: Array2D<T> = Array2D::new_aligned(
+            chunk.bounds.width as usize,
+            chunk.bounds.height as usize,
+            CACHE_LINE_SIZE,
+        );
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
         zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
-        Chunk { bounds: chunk.bounds, cells }
+        Chunk {
+            bounds: chunk.bounds,
+            cells,
+        }
     }
 }
 
@@ -124,6 +141,7 @@ impl<T> CompressedChunk<T> {
 pub trait Chunker {
     fn resolve_chunk_origin(&self, _: &GridPoint) -> ChunkOrigin;
     fn resolve_chunk_bounds(&self, _: &GridPoint) -> ChunkBounds;
+    fn origins_of_intersecting_chunks(&self, min: &GridPoint, max: &GridPoint) -> Vec<ChunkOrigin>;
 }
 
 pub struct SquareChunker {
@@ -156,6 +174,19 @@ impl Chunker for SquareChunker {
             height: self.size.into(),
         }
     }
+
+    fn origins_of_intersecting_chunks(&self, min: &GridPoint, max: &GridPoint) -> Vec<ChunkOrigin> {
+        let min_ox = floor_to_multiple(min.x, self.size);
+        let min_oy = floor_to_multiple(min.y, self.size);
+        (min_oy..max.y + 1)
+            .step_by(self.size.into())
+            .flat_map(|oy| {
+                (min_ox..max.x + 1)
+                    .step_by(self.size.into())
+                    .map(move |ox| ChunkOrigin(GridPoint::new(ox, oy)))
+            })
+            .collect()
+    }
 }
 
 pub struct Grid<T> {
@@ -172,9 +203,9 @@ impl<T> Grid<T> {
     }
 
     pub fn freeze(&mut self, min: &GridPoint, max: &GridPoint) {
-        let to_freeze = self.active_chunks.extract_if(.., |_origin, chunk| {
-            chunk.is_contained_within(min, max)
-        });
+        let to_freeze = self
+            .active_chunks
+            .extract_if(.., |_origin, chunk| chunk.is_contained_within(min, max));
         let frozen = to_freeze.map(|entry| {
             let origin = entry.0;
             let chunk = entry.1;
@@ -315,17 +346,17 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         let height = max.y - min.y + 1;
         let mut result: Array2D<T> = Array2D::new(width as usize, height as usize);
 
-        for x in min.x..max.x+1 {
-            for y in min.y..max.y+1 {
+        for x in min.x..max.x + 1 {
+            for y in min.y..max.y + 1 {
                 let chunk_origin = self.chunker.resolve_chunk_origin(&GridPoint::new(x, y));
                 let chunk = if let Some(chunk) = uncompressed_chunk_cache.get(&chunk_origin) {
                     chunk
                 } else {
                     let compressed_chunk = self.frozen_chunks.get(&chunk_origin);
                     match compressed_chunk {
-                        Some(chunk) => {
-                            uncompressed_chunk_cache.entry(chunk_origin).or_insert(Chunk::from(chunk))
-                        },
+                        Some(chunk) => uncompressed_chunk_cache
+                            .entry(chunk_origin)
+                            .or_insert(Chunk::from(chunk)),
                         // If we don't have a corresponding chunk we just leave the output values unfilled.
                         None => continue,
                     }
@@ -361,9 +392,7 @@ mod tests {
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
-        Grid::new(Box::new(SquareChunker {
-            size: chunk_size,
-        }))
+        Grid::new(Box::new(SquareChunker { size: chunk_size }))
     }
 
     #[test]
@@ -395,7 +424,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_positive_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(16)
+            size: Pow2::new(16),
         };
 
         let origin = chunker.resolve_chunk_origin(&point(18, 33));
@@ -406,7 +435,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_negative_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(16)
+            size: Pow2::new(16),
         };
 
         let origin = chunker.resolve_chunk_origin(&point(-1, -17));
@@ -417,9 +446,7 @@ mod tests {
 
     #[test]
     fn square_chunker_resolves_bounds() {
-        let chunker = SquareChunker {
-            size: Pow2::new(8)
-        };
+        let chunker = SquareChunker { size: Pow2::new(8) };
 
         let bounds = chunker.resolve_chunk_bounds(&point(9, 17));
 
@@ -511,7 +538,7 @@ mod tests {
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;
         }));
-        
+
         assert!(result.is_err());
     }
 
