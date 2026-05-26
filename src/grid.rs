@@ -1,5 +1,5 @@
 ﻿use crate::collections::array2d::Array2D;
-use crate::coords::{Point2D, Vector2D};
+use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
@@ -9,58 +9,26 @@ use std::ops::{Index, IndexMut};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
+pub type GridRect = Rect2D<i32>;
 
 #[derive(Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
 
-#[derive(Clone, Copy)]
-pub struct ChunkBounds {
-    origin: ChunkOrigin,
-    width: u32,
-    height: u32,
-}
-
 trait BoundedChunk {
-    fn bounds(&self) -> &ChunkBounds;
+    fn bounds(&self) -> &GridRect;
 
     fn contains_point(&self, point: &GridPoint) -> bool {
-        let bounds = self.bounds();
-        point.x >= bounds.origin.0.x
-            && point.y >= bounds.origin.0.y
-            && point.x < bounds.origin.0.x + bounds.width as i32
-            && point.y < bounds.origin.0.y + bounds.height as i32
-    }
-
-    fn is_contained_within(&self, min: &GridPoint, max: &GridPoint) -> bool {
-        let bounds = self.bounds();
-        bounds.origin.0.x >= min.x
-            && bounds.origin.0.y >= min.y
-            && bounds.origin.0.x + bounds.width as i32 - 1 <= max.x
-            && bounds.origin.0.y + bounds.height as i32 - 1 <= max.y
-    }
-
-    // Returns min and max coordinates of the intersection.
-    fn intersection(&self, min: &GridPoint, max: &GridPoint) -> Option<(GridPoint, GridPoint)> {
-        let bounds = self.bounds();
-        let iminx = std::cmp::max(min.x, bounds.origin.0.x);
-        let iminy = std::cmp::max(min.y, bounds.origin.0.y);
-        let imaxx = std::cmp::min(max.x, bounds.origin.0.x + bounds.width as i32 - 1);
-        let imaxy = std::cmp::min(max.y, bounds.origin.0.y + bounds.height as i32 - 1);
-        if iminx <= imaxx && iminy <= imaxy {
-            Some((GridPoint::new(iminx, iminy), GridPoint::new(imaxx, imaxy)))
-        } else {
-            None
-        }
+        self.bounds().contains_point(point)
     }
 }
 
 pub struct Chunk<T> {
-    bounds: ChunkBounds,
+    bounds: GridRect,
     cells: Array2D<T>,
 }
 
 impl<T> BoundedChunk for Chunk<T> {
-    fn bounds(&self) -> &ChunkBounds {
+    fn bounds(&self) -> &GridRect {
         &self.bounds
     }
 }
@@ -72,10 +40,10 @@ impl<T> Chunk<T> {
 }
 
 impl<T: Default + Clone> Chunk<T> {
-    pub fn new(bounds: ChunkBounds) -> Chunk<T> {
+    pub fn new(bounds: GridRect) -> Chunk<T> {
         let cells = Array2D::<T>::new_aligned(
-            bounds.width as usize,
-            bounds.height as usize,
+            bounds.width() as usize,
+            bounds.height() as usize,
             CACHE_LINE_SIZE,
         );
         Chunk { bounds, cells }
@@ -86,23 +54,23 @@ impl<T: Default> Index<GridPoint> for Chunk<T> {
     type Output = T;
 
     fn index(&self, index: GridPoint) -> &Self::Output {
-        let xx = index.x - self.bounds.origin.0.x;
-        let yy = index.y - self.bounds.origin.0.y;
+        let xx = index.x - self.bounds.start.x;
+        let yy = index.y - self.bounds.start.y;
         &self.cells[(xx as usize, yy as usize)]
     }
 }
 
 impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
-        let xx = index.x - self.bounds.origin.0.x;
-        let yy = index.y - self.bounds.origin.0.y;
+        let xx = index.x - self.bounds.start.x;
+        let yy = index.y - self.bounds.start.y;
         &mut self.cells[(xx as usize, yy as usize)]
     }
 }
 
 // Generic over T because we want to preserve type information of the underlying data.
 pub struct CompressedChunk<T> {
-    bounds: ChunkBounds,
+    bounds: GridRect,
     data: Box<[u8]>,
     _marker: std::marker::PhantomData<T>,
 }
@@ -127,8 +95,8 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
 impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     fn from(chunk: &CompressedChunk<T>) -> Self {
         let mut cells: Array2D<T> = Array2D::new_aligned(
-            chunk.bounds.width as usize,
-            chunk.bounds.height as usize,
+            chunk.bounds.width() as usize,
+            chunk.bounds.height() as usize,
             CACHE_LINE_SIZE,
         );
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
@@ -141,7 +109,7 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
 }
 
 impl<T> BoundedChunk for CompressedChunk<T> {
-    fn bounds(&self) -> &ChunkBounds {
+    fn bounds(&self) -> &GridRect {
         &self.bounds
     }
 }
@@ -154,8 +122,8 @@ impl<T> CompressedChunk<T> {
 
 pub trait Chunker {
     fn resolve_chunk_origin(&self, _: &GridPoint) -> ChunkOrigin;
-    fn resolve_chunk_bounds(&self, _: &GridPoint) -> ChunkBounds;
-    fn origins_of_intersecting_chunks(&self, min: &GridPoint, max: &GridPoint) -> Vec<ChunkOrigin>;
+    fn resolve_chunk_bounds(&self, _: &GridPoint) -> GridRect;
+    fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
 }
 
 pub struct SquareChunker {
@@ -180,22 +148,21 @@ impl Chunker for SquareChunker {
         ChunkOrigin(GridPoint::new(cx, cy))
     }
 
-    fn resolve_chunk_bounds(&self, bounds: &GridPoint) -> ChunkBounds {
+    fn resolve_chunk_bounds(&self, bounds: &GridPoint) -> GridRect {
         let origin = self.resolve_chunk_origin(bounds);
-        ChunkBounds {
-            origin,
-            width: self.size.into(),
-            height: self.size.into(),
-        }
+        GridRect::square_with_size(
+            origin.0,
+            self.size.into(),
+        )
     }
 
-    fn origins_of_intersecting_chunks(&self, min: &GridPoint, max: &GridPoint) -> Vec<ChunkOrigin> {
-        let min_ox = floor_to_multiple(min.x, self.size);
-        let min_oy = floor_to_multiple(min.y, self.size);
-        (min_oy..max.y + 1)
+    fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
+        let min_ox = floor_to_multiple(region.start.x, self.size);
+        let min_oy = floor_to_multiple(region.start.y, self.size);
+        (min_oy..region.end.y)
             .step_by(self.size.into())
             .flat_map(|oy| {
-                (min_ox..max.x + 1)
+                (min_ox..region.end.x)
                     .step_by(self.size.into())
                     .map(move |ox| ChunkOrigin(GridPoint::new(ox, oy)))
             })
@@ -216,10 +183,10 @@ impl<T> Grid<T> {
         s1 + self.frozen_chunks_memory_usage
     }
 
-    pub fn freeze(&mut self, min: &GridPoint, max: &GridPoint) {
+    pub fn freeze(&mut self, region: &GridRect) {
         let to_freeze = self
             .active_chunks
-            .extract_if(.., |_origin, chunk| chunk.is_contained_within(min, max));
+            .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()));
         let frozen = to_freeze.map(|entry| {
             let origin = entry.0;
             let chunk = entry.1;
@@ -232,9 +199,12 @@ impl<T> Grid<T> {
     }
 
     pub fn freeze_all(&mut self) {
+        // TODO: Remove this hack. We can't represent the full range properly.
         self.freeze(
-            &GridPoint::new(i32::MIN, i32::MIN),
-            &GridPoint::new(i32::MAX, i32::MAX),
+            &GridRect::with_start_end(
+                GridPoint::new(i32::MIN, i32::MIN),
+                GridPoint::new(i32::MAX, i32::MAX),
+            )
         );
     }
 
@@ -353,28 +323,27 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
-    pub fn sample_range2d(&self, min: &GridPoint, max: &GridPoint) -> Array2D<T> {
-        let width = max.x - min.x + 1;
-        let height = max.y - min.y + 1;
-        let mut result: Array2D<T> = Array2D::new(width as usize, height as usize);
+    pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
+        let mut result: Array2D<T> = Array2D::new(region.width() as usize, region.height() as usize);
 
         for origin in self
             .chunker
-            .origins_of_intersecting_chunks(min, max)
+            .origins_of_intersecting_chunks(region)
             .into_iter()
         {
             if let Some(compressed_chunk) = self.frozen_chunks.get(&origin) {
-                let (imin, imax) = compressed_chunk
-                    .intersection(min, max)
+                let r = compressed_chunk
+                    .bounds()
+                    .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
 
                 let chunk = Chunk::from(compressed_chunk);
-                for x in imin.x..imax.x+1 {
-                    for y in imin.y..imax.y+1 {
+                for y in r.start.y..r.end.y {
+                    for x in r.start.x..r.end.x {
                         let val = chunk[GridPoint::new(x, y)];
 
-                        let dx = (x - min.x) as usize;
-                        let dy = (y - min.y) as usize;
+                        let dx = (x - region.start.x) as usize;
+                        let dy = (y - region.start.y) as usize;
                         result[(dx, dy)] = val;
                     }
                 }
@@ -394,12 +363,12 @@ mod tests {
         GridPoint::new(x, y)
     }
 
-    fn make_bounds(origin_x: i32, origin_y: i32, width: u32, height: u32) -> ChunkBounds {
-        ChunkBounds {
-            origin: ChunkOrigin(point(origin_x, origin_y)),
-            width,
-            height,
-        }
+    fn make_bounds(origin_x: i32, origin_y: i32, width: u32, height: u32) -> GridRect {
+        GridRect::with_size(
+            point(origin_x, origin_y),
+            width as i32,
+            height as i32,
+        )
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
@@ -461,9 +430,9 @@ mod tests {
 
         let bounds = chunker.resolve_chunk_bounds(&point(9, 17));
 
-        assert_eq!(bounds.origin.0, point(8, 16));
-        assert_eq!(bounds.width, 8);
-        assert_eq!(bounds.height, 8);
+        assert_eq!(bounds.start, point(8, 16));
+        assert_eq!(bounds.width(), 8);
+        assert_eq!(bounds.height(), 8);
     }
 
     #[test]
@@ -532,7 +501,7 @@ mod tests {
         grid[point(0, 0)] = 123;
         grid[point(-5, 0)] = 123;
 
-        grid.freeze(&GridPoint::new(-4, -4), &GridPoint::new(4, 4));
+        grid.freeze(&GridRect::with_size(GridPoint::new(-4, -4), 9, 9));
 
         assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
         assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-5, 0)));
@@ -544,7 +513,7 @@ mod tests {
 
         grid[point(0, 0)] = 123;
 
-        grid.freeze(&GridPoint::new(-40, -40), &GridPoint::new(40, 40));
+        grid.freeze(&GridRect::with_size(GridPoint::new(-40, -40), 81, 81));
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;
@@ -561,7 +530,7 @@ mod tests {
 
         let frozen_grid: FrozenGrid<_> = grid.into();
 
-        let res = frozen_grid.sample_range2d(&GridPoint::new(-1, -3), &GridPoint::new(-1, -1));
+        let res = frozen_grid.sample_range2d(&GridRect::with_start_end(GridPoint::new(-1, -3), GridPoint::new(0, 0)));
 
         assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
     }

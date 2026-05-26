@@ -17,8 +17,8 @@ pub struct Vector2D<T> {
 // Effectively forms a 2-dimensional [start, end) range.
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct Rect2D<T> {
-    start: Point2D<T>,
-    end: Point2D<T>,
+    pub start: Point2D<T>,
+    pub end: Point2D<T>,
 }
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
@@ -245,21 +245,21 @@ impl<T: Sub<Output = T> + Clone + Copy> Rect2D<T> {
 }
 
 impl<T: Ord + Add<Output = T> + Copy + Clone> Rect2D<T> {
-    fn contains_point(&self, point: &Point2D<T>) -> bool {
+    pub fn contains_point(&self, point: &Point2D<T>) -> bool {
         point.x >= self.start.x
             && point.y >= self.start.y
             && point.x < self.end.x
             && point.y < self.end.y
     }
 
-    fn contains(&self, other: &Rect2D<T>) -> bool {
+    pub fn contains(&self, other: &Rect2D<T>) -> bool {
         self.start.x <= other.start.x
             && self.start.y <= other.start.y
             && self.end.x >= other.end.x
             && self.end.y >= other.end.y
     }
 
-    fn intersection(&self, other: &Rect2D<T>) -> Option<Rect2D<T>> {
+    pub fn intersection(&self, other: &Rect2D<T>) -> Option<Rect2D<T>> {
         let start = Point2D::new(cmp::max(self.start.x, other.start.x), cmp::max(self.start.y, other.start.y));
         let end = Point2D::new(cmp::min(self.end.x, other.end.x), cmp::min(self.end.y, other.end.y));
         if start.x < end.x && start.y < end.y {

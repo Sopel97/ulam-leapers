@@ -35,20 +35,40 @@ impl From<Pow2> for u8 {
     fn from(p: Pow2) -> Self { 1u8 << p.exponent }
 }
 
+impl From<Pow2> for i8 {
+    fn from(p: Pow2) -> Self { 1i8 << p.exponent }
+}
+
 impl From<Pow2> for u16 {
     fn from(p: Pow2) -> Self { 1u16 << p.exponent }
+}
+
+impl From<Pow2> for i16 {
+    fn from(p: Pow2) -> Self { 1i16 << p.exponent }
 }
 
 impl From<Pow2> for u32 {
     fn from(p: Pow2) -> Self { 1u32 << p.exponent }
 }
 
+impl From<Pow2> for i32 {
+    fn from(p: Pow2) -> Self { 1i32 << p.exponent }
+}
+
 impl From<Pow2> for u64 {
     fn from(p: Pow2) -> Self { 1u64 << p.exponent }
 }
 
+impl From<Pow2> for i64 {
+    fn from(p: Pow2) -> Self { 1i64 << p.exponent }
+}
+
 impl From<Pow2> for usize {
     fn from(p: Pow2) -> Self { 1usize << p.exponent }
+}
+
+impl From<Pow2> for isize {
+    fn from(p: Pow2) -> Self { 1isize << p.exponent }
 }
 
 pub fn floor_div<T>(a: T, b: Pow2) -> T

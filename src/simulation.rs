@@ -1,6 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
-use crate::grid::{FrozenGrid, Grid, GridPoint, SquareChunker};
+use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
@@ -296,16 +296,15 @@ impl Simulation {
         min_shell
     }
 
-    fn grid_region_past_modification(&self) -> Option<(GridPoint, GridPoint)> {
+    fn grid_region_past_modification(&self) -> Option<GridRect> {
         let last_fully_simulated_shell = match self.complete_shells() {
             0 => return None,
             s => s - 1,
         };
 
         let min_point = GridPoint::new(-last_fully_simulated_shell, -last_fully_simulated_shell);
-        let max_point = GridPoint::new(last_fully_simulated_shell, last_fully_simulated_shell);
 
-        Some((min_point, max_point))
+        Some(GridRect::square_with_size(min_point, 2 * last_fully_simulated_shell + 1))
     }
 
     fn simulate_single_turn(&mut self, placements: &mut [Vec<GridPoint>]) {
@@ -404,7 +403,7 @@ impl Simulation {
 
         enum Job {
             Place(Vec<Vec<GridPoint>>),
-            Compress { min: GridPoint, max: GridPoint },
+            Compress(GridRect),
             MemoryUsage,
             Stop,
         }
@@ -445,8 +444,8 @@ impl Simulation {
 
                         buffer_tx.send(placements).unwrap();
                     }
-                    Job::Compress { min, max } => {
-                        grid.freeze(&min, &max);
+                    Job::Compress(region) => {
+                        grid.freeze(&region);
                     }
                     Job::MemoryUsage => {
                         let mut grid_memory_usage_worker = grid_memory_usage_worker.lock().unwrap();
@@ -479,8 +478,8 @@ impl Simulation {
             // outside the active area and the chunks are large; reduces redundant searches
             // for no longer active chunks.
             if step % COMPRESSION_INTERVAL_STEPS == COMPRESSION_INTERVAL_STEPS - 1 {
-                if let Some((min, max)) = self.grid_region_past_modification() {
-                    job_tx.send(Job::Compress { min, max }).unwrap();
+                if let Some(region) = self.grid_region_past_modification() {
+                    job_tx.send(Job::Compress(region)).unwrap();
                 }
             }
 
