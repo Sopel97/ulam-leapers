@@ -1,4 +1,5 @@
-﻿use crate::collections::array2d::Array2D;
+﻿use std::cmp::max;
+use crate::collections::array2d::Array2D;
 use crate::coords::{Point2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
@@ -20,7 +21,7 @@ pub struct ChunkBounds {
     height: u32,
 }
 
-trait SquareBoundedChunk {
+trait BoundedChunk {
     fn bounds(&self) -> &ChunkBounds;
 
     fn contains_point(&self, point: &GridPoint) -> bool {
@@ -38,6 +39,20 @@ trait SquareBoundedChunk {
             && bounds.origin.0.x + bounds.width as i32 - 1 <= max.x
             && bounds.origin.0.y + bounds.height as i32 - 1 <= max.y
     }
+
+    // Returns min and max coordinates of the intersection.
+    fn intersection(&self, min: &GridPoint, max: &GridPoint) -> Option<(GridPoint, GridPoint)> {
+        let bounds = self.bounds();
+        let iminx = std::cmp::max(min.x, bounds.origin.0.x);
+        let iminy = std::cmp::max(min.y, bounds.origin.0.y);
+        let imaxx = std::cmp::min(max.x, bounds.origin.0.x + bounds.width as i32 - 1);
+        let imaxy = std::cmp::min(max.y, bounds.origin.0.y + bounds.height as i32 - 1);
+        if iminx <= imaxx && iminy <= imaxy {
+            Some((GridPoint::new(iminx, iminy), GridPoint::new(imaxx, imaxy)))
+        } else {
+            None
+        }
+    }
 }
 
 pub struct Chunk<T> {
@@ -45,7 +60,7 @@ pub struct Chunk<T> {
     cells: Array2D<T>,
 }
 
-impl<T> SquareBoundedChunk for Chunk<T> {
+impl<T> BoundedChunk for Chunk<T> {
     fn bounds(&self) -> &ChunkBounds {
         &self.bounds
     }
@@ -126,7 +141,7 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     }
 }
 
-impl<T> SquareBoundedChunk for CompressedChunk<T> {
+impl<T> BoundedChunk for CompressedChunk<T> {
     fn bounds(&self) -> &ChunkBounds {
         &self.bounds
     }
