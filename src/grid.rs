@@ -3,7 +3,7 @@ use crate::coords::{Point2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
-use crate::util::pow2::{Pow2, floor_div};
+use crate::util::pow2::{Pow2, floor_to_multiple};
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
 
