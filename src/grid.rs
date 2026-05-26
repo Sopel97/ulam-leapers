@@ -324,6 +324,24 @@ impl<T> FrozenGrid<T> {
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
     pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
+        // This function samples every cell, so we don't have to do any interpolation or translation.
+        // This also means that samples don't span multiple chunks, which allows us to make a simple
+        // implementation that always keeps at most 1 chunk decompressed while having each chunk
+        // decompressed exactly once.
+        //
+        // TODO NOTES:
+        // With larger, zoomed, translated, interpolated samples it will get more problematic and
+        // some tradeoffs will have to be made. Might be best to go in stripes with a chunk cache
+        // and deallocate past decompressed chunks after each stripe
+        // (or 2D sample-chunks at some granularity).
+        //
+        // For samples spanning a significant portion of the grid it might be worthwhile
+        // to implement a precomputed mip-mapped view of every chunk and sample from that.
+        // With each mip-map compressed separately it should be manageable and fast.
+        //
+        // We could also even explore just completely remapping (to RGB) and mip-mapping on load 
+        // and using that for all samples, or even drawing directly as textures.
+
         let mut result: Array2D<T> = Array2D::new(region.width() as usize, region.height() as usize);
 
         self
