@@ -299,6 +299,10 @@ impl Simulation {
 
         min_shell
     }
+    
+    pub fn player_count(&self) -> usize {
+        self.players.len()
+    }
 
     fn grid_region_past_modification(&self) -> Option<GridRect> {
         let last_fully_simulated_shell = match self.complete_shells() {

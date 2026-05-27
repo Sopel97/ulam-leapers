@@ -1,4 +1,5 @@
-﻿use eframe::egui;
+﻿use crate::gui::Zoom::{Magnification, Minification};
+use eframe::egui;
 use eframe::egui::{ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -8,7 +9,6 @@ use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
-use crate::gui::Zoom::{Magnification, Minification};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Zoom {
@@ -16,16 +16,31 @@ enum Zoom {
     Minification(Pow2),
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct GridRenderParameters {
     bounds: GridRect,
+    colors: Vec<Color32>,
     zoom: Zoom,
+}
+
+fn default_player_colors() -> Vec<Color32> {
+    vec![
+        Color32::WHITE,
+        Color32::BLACK,
+        Color32::RED,
+        Color32::BLUE,
+        Color32::YELLOW,
+        Color32::GREEN,
+        Color32::CYAN,
+        Color32::MAGENTA,
+    ]
 }
 
 impl Default for GridRenderParameters {
     fn default() -> Self {
         GridRenderParameters {
             bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
+            colors: default_player_colors()[..1].to_vec(),
             zoom: Zoom::Magnification(Pow2::new(1)),
         }
     }
@@ -46,10 +61,14 @@ impl Default for GridRender {
 }
 
 impl GridRender {
-    fn controls_to_params(controls: &GridViewControls, viewport_width: usize, viewport_height: usize) -> GridRenderParameters {
+    fn controls_to_params(
+        controls: &GridViewControls,
+        viewport_width: usize,
+        viewport_height: usize,
+    ) -> GridRenderParameters {
         let zoom = match controls.zoom_pow2 {
-            e@0.. => Magnification(Pow2::from_exponent(e as usize)),
-            e@..0 => Minification(Pow2::from_exponent((-e) as usize)),
+            e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
+            e @ ..0 => Minification(Pow2::from_exponent((-e) as usize)),
         };
 
         let bounds = match zoom {
@@ -65,7 +84,7 @@ impl GridRender {
                     floor_div(viewport_width as i32, factor),
                     floor_div(viewport_height as i32, factor),
                 )
-            },
+            }
             Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
                 let origin_x = floor_to_multiple(controls.origin_x as i32, factor);
@@ -87,23 +106,22 @@ impl GridRender {
 
         GridRenderParameters {
             bounds,
-            zoom
+            colors: controls.player_colors.clone(),
+            zoom,
         }
     }
 
     fn update(&mut self, ui: &Ui, frozen_grid: &FrozenGrid<PlayerId>) {
-        let colors = [Color32::WHITE, Color32::BLACK, Color32::RED];
-
         match self.params.zoom {
             Magnification(_factor) => {
-                let samples: Array2D<Color32> =
-                    frozen_grid.sample_range2d_map(&self.params.bounds, |v| colors[v.index()]);
+                let samples: Array2D<Color32> = frozen_grid
+                    .sample_range2d_map(&self.params.bounds, |v| self.params.colors[v.index()]);
                 let image = ColorImage::new(
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
                 );
                 self.handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
-            },
+            }
             Minification(factor) => {
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
                     &self.params.bounds,
@@ -115,7 +133,7 @@ impl GridRender {
                         let mut b: i64 = 0;
                         for y in 0..block.height() {
                             for x in 0..block.width() {
-                                let color = colors[block[(x, y)].index()];
+                                let color = self.params.colors[block[(x, y)].index()];
                                 r += color.r() as i64;
                                 g += color.g() as i64;
                                 b += color.b() as i64;
@@ -139,7 +157,14 @@ impl GridRender {
     }
 
     // Returns true if an update was actually performed (needed), false otherwise.
-    pub fn maybe_update(&mut self, ui: &Ui, frozen_grid: &FrozenGrid<PlayerId>, controls: &GridViewControls, viewport_width: usize, viewport_height: usize) -> bool {
+    pub fn maybe_update(
+        &mut self,
+        ui: &Ui,
+        frozen_grid: &FrozenGrid<PlayerId>,
+        controls: &GridViewControls,
+        viewport_width: usize,
+        viewport_height: usize,
+    ) -> bool {
         let new_params = Self::controls_to_params(controls, viewport_width, viewport_height);
         if self.params != new_params {
             self.params = new_params;
@@ -175,6 +200,7 @@ pub fn run() -> eframe::Result<()> {
 
     let simulated_turns = sim.simulated_turns();
     let complete_shells = sim.complete_shells();
+    let player_count = sim.player_count();
     let frozen_grid = sim.finalize_to_frozen_grid();
     let finalized_memory_usage = frozen_grid.memory_usage();
     println!(
@@ -190,6 +216,8 @@ pub fn run() -> eframe::Result<()> {
         min_zoom_pow2: -3,
         max_zoom_pow2: 3,
         complete_shells: complete_shells.clone(),
+        player_count: player_count.clone(),
+        player_colors: default_player_colors()[..=player_count].to_vec(),
         ..Default::default()
     };
 
@@ -213,7 +241,13 @@ pub fn run() -> eframe::Result<()> {
             painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
 
             let timer = std::time::Instant::now();
-            let updated = grid_render.maybe_update(ui, &frozen_grid, &grid_view_control, rect.width() as usize, rect.height() as usize);
+            let updated = grid_render.maybe_update(
+                ui,
+                &frozen_grid,
+                &grid_view_control,
+                rect.width() as usize,
+                rect.height() as usize,
+            );
             let elapsed = timer.elapsed();
 
             if updated {
@@ -243,6 +277,8 @@ pub struct GridViewControls {
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
     complete_shells: i32,
+    player_count: usize,
+    player_colors: Vec<Color32>,
 
     zoom_pow2: i32,
     origin_x: f32,
@@ -255,6 +291,8 @@ impl Default for GridViewControls {
             min_zoom_pow2: 0,
             max_zoom_pow2: 0,
             complete_shells: 0,
+            player_count: 0,
+            player_colors: default_player_colors()[..1].to_vec(),
 
             zoom_pow2: 0,
             origin_x: 0f32,
@@ -270,10 +308,14 @@ impl GridViewControls {
         if response.hovered() {
             let mut new_zoom_pow2 = self.zoom_pow2;
             let middle_pos = (rect.min + rect.max.to_vec2()) * 0.5f32;
-            let mouse = response.hover_pos().map(|pos| {
-                // Invert y to match world coordinates.
-                pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
-            }).unwrap_or(middle_pos) - middle_pos;
+            let mouse = response
+                .hover_pos()
+                .map(|pos| {
+                    // Invert y to match world coordinates.
+                    pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
+                })
+                .unwrap_or(middle_pos)
+                - middle_pos;
 
             ui.input(|i| {
                 for event in &i.events {
@@ -283,25 +325,18 @@ impl GridViewControls {
                 }
             });
 
-            new_zoom_pow2 = new_zoom_pow2.clamp(
-                self.min_zoom_pow2,
-                self.max_zoom_pow2,
-            );
+            new_zoom_pow2 = new_zoom_pow2.clamp(self.min_zoom_pow2, self.max_zoom_pow2);
 
             // Reproject with respect to the origin
             if new_zoom_pow2 != self.zoom_pow2 {
                 let old_scale = (self.zoom_pow2 as f32).exp2();
                 let new_scale = (new_zoom_pow2 as f32).exp2();
 
-                let mouse_world_x =
-                    self.origin_x + mouse.x / old_scale;
-                let mouse_world_y =
-                    self.origin_y + mouse.y / old_scale;
+                let mouse_world_x = self.origin_x + mouse.x / old_scale;
+                let mouse_world_y = self.origin_y + mouse.y / old_scale;
 
-                self.origin_x =
-                    mouse_world_x - mouse.x / new_scale;
-                self.origin_y =
-                    mouse_world_y - mouse.y / new_scale;
+                self.origin_x = mouse_world_x - mouse.x / new_scale;
+                self.origin_y = mouse_world_y - mouse.y / new_scale;
 
                 self.zoom_pow2 = new_zoom_pow2;
             }
@@ -352,5 +387,17 @@ impl GridViewControls {
             .text("Y")
             .drag_value_speed(coord_drag_speed),
         );
+
+        for player_id in 0..=self.player_count {
+            ui.horizontal_wrapped(|ui| {
+                ui.color_edit_button_srgba(&mut self.player_colors[player_id]);
+                if player_id == 0 {
+                    ui.label("Empty");
+                } else {
+                    ui.label(format!("Player {}", player_id));
+                }
+            });
+            ui.end_row();
+        }
     }
 }
