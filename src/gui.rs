@@ -1,5 +1,5 @@
 ﻿use eframe::egui;
-use eframe::egui::{ColorImage, Rect, Sense, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui, Vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use eframe::wgpu::PresentMode;
@@ -45,7 +45,7 @@ pub fn run() -> eframe::Result<()> {
         finalized_memory_usage / 1024 / 1024
     );
 
-    let mut grid_view_control = GridViewControl {
+    let mut grid_view_control = GridViewControls {
         min_zoom_pow2: -3,
         max_zoom_pow2: 3,
         complete_shells: complete_shells.clone(),
@@ -66,66 +66,16 @@ pub fn run() -> eframe::Result<()> {
                 .show(ui, |ui| grid_view_control.ui(ui));
 
             let rect = ui.clip_rect(); // Full canvas
+
+            grid_view_control.update_from_canvas_events(ui, &rect);
+
             let painter = ui.painter_at(rect);
 
             // background
             painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
 
-            let response = ui.allocate_rect(rect, Sense::drag() | Sense::hover());
-
-            if response.hovered() {
-                let mut new_zoom_pow2 = grid_view_control.zoom_pow2;
-                let middle_pos = (rect.min + rect.max.to_vec2()) * 0.5f32;
-                let mouse = response.hover_pos().map(|pos| {
-                    // Invert y to match world coordinates.
-                    pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
-                }).unwrap_or(middle_pos) - middle_pos;
-
-                ui.input(|i| {
-                    for event in &i.events {
-                        if let egui::Event::MouseWheel { delta, .. } = event {
-                            new_zoom_pow2 += delta.y as i32;
-                        }
-                    }
-                });
-
-                new_zoom_pow2 = new_zoom_pow2.clamp(
-                    grid_view_control.min_zoom_pow2,
-                    grid_view_control.max_zoom_pow2,
-                );
-
-                // Reproject with respect to the origin
-                if new_zoom_pow2 != grid_view_control.zoom_pow2 {
-                    let old_scale = (grid_view_control.zoom_pow2 as f32).exp2();
-                    let new_scale = (new_zoom_pow2 as f32).exp2();
-
-                    let mouse_world_x =
-                        grid_view_control.origin_x + mouse.x / old_scale;
-                    let mouse_world_y =
-                        grid_view_control.origin_y + mouse.y / old_scale;
-
-                    grid_view_control.origin_x =
-                        mouse_world_x - mouse.x / new_scale;
-                    grid_view_control.origin_y =
-                        mouse_world_y - mouse.y / new_scale;
-
-                    grid_view_control.zoom_pow2 = new_zoom_pow2;
-                }
-            }
-
             let curr_size = rect.size();
             let curr_zoom_pow2 = grid_view_control.zoom_pow2;
-
-            if response.dragged_by(egui::PointerButton::Primary) {
-                let delta = response.drag_delta();
-                grid_view_control.origin_x -= 0.5f32.powf(curr_zoom_pow2 as f32) * delta.x;
-                grid_view_control.origin_y += 0.5f32.powf(curr_zoom_pow2 as f32) * delta.y;
-                
-                let bounds = grid_view_control.complete_shells as f32;
-                grid_view_control.origin_x = grid_view_control.origin_x.clamp(-bounds, bounds);
-                grid_view_control.origin_y = grid_view_control.origin_y.clamp(-bounds, bounds);
-            }
-
             let curr_origin = (
                 grid_view_control.origin_x as i32,
                 grid_view_control.origin_y as i32,
@@ -230,7 +180,7 @@ pub fn run() -> eframe::Result<()> {
     })
 }
 
-pub struct GridViewControl {
+pub struct GridViewControls {
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
     complete_shells: i32,
@@ -240,9 +190,9 @@ pub struct GridViewControl {
     origin_y: f32,
 }
 
-impl Default for GridViewControl {
+impl Default for GridViewControls {
     fn default() -> Self {
-        GridViewControl {
+        GridViewControls {
             min_zoom_pow2: 0,
             max_zoom_pow2: 0,
             complete_shells: 0,
@@ -254,7 +204,62 @@ impl Default for GridViewControl {
     }
 }
 
-impl GridViewControl {
+impl GridViewControls {
+    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect) {
+        let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover());
+
+        if response.hovered() {
+            let mut new_zoom_pow2 = self.zoom_pow2;
+            let middle_pos = (rect.min + rect.max.to_vec2()) * 0.5f32;
+            let mouse = response.hover_pos().map(|pos| {
+                // Invert y to match world coordinates.
+                pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
+            }).unwrap_or(middle_pos) - middle_pos;
+
+            ui.input(|i| {
+                for event in &i.events {
+                    if let egui::Event::MouseWheel { delta, .. } = event {
+                        new_zoom_pow2 += delta.y as i32;
+                    }
+                }
+            });
+
+            new_zoom_pow2 = new_zoom_pow2.clamp(
+                self.min_zoom_pow2,
+                self.max_zoom_pow2,
+            );
+
+            // Reproject with respect to the origin
+            if new_zoom_pow2 != self.zoom_pow2 {
+                let old_scale = (self.zoom_pow2 as f32).exp2();
+                let new_scale = (new_zoom_pow2 as f32).exp2();
+
+                let mouse_world_x =
+                    self.origin_x + mouse.x / old_scale;
+                let mouse_world_y =
+                    self.origin_y + mouse.y / old_scale;
+
+                self.origin_x =
+                    mouse_world_x - mouse.x / new_scale;
+                self.origin_y =
+                    mouse_world_y - mouse.y / new_scale;
+
+                self.zoom_pow2 = new_zoom_pow2;
+            }
+        }
+
+        if response.dragged_by(egui::PointerButton::Primary) {
+            let delta = response.drag_delta();
+            let zoom_scale = 0.5f32.powf(self.zoom_pow2 as f32);
+            self.origin_x -= zoom_scale * delta.x;
+            self.origin_y += zoom_scale * delta.y;
+        }
+
+        let bounds = self.complete_shells as f32;
+        self.origin_x = self.origin_x.clamp(-bounds, bounds);
+        self.origin_y = self.origin_y.clamp(-bounds, bounds);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Controls");
         ui.add(
