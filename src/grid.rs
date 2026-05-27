@@ -6,7 +6,6 @@ use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use eframe::wgpu::naga::TypeInner::Array;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
