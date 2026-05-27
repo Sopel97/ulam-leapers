@@ -8,7 +8,7 @@ use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::util::pow2;
-use ulam_leapers::util::pow2::Pow2;
+use ulam_leapers::util::pow2::{floor_to_multiple, Pow2};
 
 pub fn run() -> eframe::Result<()> {
     let mut options = eframe::NativeOptions::default();
@@ -48,31 +48,40 @@ pub fn run() -> eframe::Result<()> {
     let mut grid_view_control = GridViewControl {
         min_zoom_pow2: -3,
         max_zoom_pow2: 0,
+        complete_shells: complete_shells.clone(),
         ..Default::default()
     };
 
     let mut prev_size = Vec2::ZERO;
+    let mut prev_origin = (0, 0);
     let mut prev_zoom_pow2 = grid_view_control.min_zoom_pow2 - 1;
     let mut handle: Option<TextureHandle> = None;
 
     eframe::run_ui_native("Ulam Leapers Explorer", options, move |ui, _frame| {
         egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::Window::new("grid_view_control")
+                .scroll(false)
+                .resizable([false, false]) // resizable so we can shrink if the text edit grows
+                .constrain_to(ui.available_rect_before_wrap())
+                .show(ui, |ui| grid_view_control.ui(ui));
+
             let rect = ui.clip_rect(); // Full canvas
             let painter = ui.painter_at(rect);
 
             // background
-            painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
+            painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
 
             let curr_size = rect.size();
             let curr_zoom_pow2 = grid_view_control.zoom_pow2;
-            if curr_size != prev_size || curr_zoom_pow2 != prev_zoom_pow2 {
+            let curr_origin = (grid_view_control.origin_x, grid_view_control.origin_y);
+            if curr_size != prev_size || curr_zoom_pow2 != prev_zoom_pow2 || curr_origin != prev_origin {
                 let timer = std::time::Instant::now();
 
                 if curr_zoom_pow2 == 0 {
                     let our_rect = GridRect::with_size(
                         GridPoint::new(
-                            -rect.width() as i32 / 2,
-                            -rect.height() as i32 / 2,
+                            curr_origin.0 - rect.width() as i32 / 2,
+                            curr_origin.1 - rect.height() as i32 / 2,
                         ),
                         rect.width() as i32,
                         rect.height() as i32,
@@ -94,8 +103,8 @@ pub fn run() -> eframe::Result<()> {
 
                     let our_rect = GridRect::with_size(
                         GridPoint::new(
-                            -rect.width() as i32 / 2 * minification_i32,
-                            -rect.height() as i32 / 2 * minification_i32,
+                            floor_to_multiple(curr_origin.0, minification) - rect.width() as i32 / 2 * minification_i32,
+                            floor_to_multiple(curr_origin.1, minification) - rect.height() as i32 / 2 * minification_i32,
                         ),
                         rect.width() as i32 * minification_i32,
                         rect.height() as i32 * minification_i32,
@@ -135,6 +144,7 @@ pub fn run() -> eframe::Result<()> {
 
                 prev_size = curr_size;
                 prev_zoom_pow2 = curr_zoom_pow2;
+                prev_origin = curr_origin;
 
                 let elapsed = timer.elapsed();
 
@@ -156,12 +166,6 @@ pub fn run() -> eframe::Result<()> {
                     Color32::WHITE,
                 );
             }
-
-            egui::Window::new("grid_view_control")
-                .scroll(false)
-                .resizable([false, false]) // resizable so we can shrink if the text edit grows
-                .constrain_to(ui.available_rect_before_wrap())
-                .show(ui, |ui| grid_view_control.ui(ui));
         });
     })
 }
@@ -169,8 +173,11 @@ pub fn run() -> eframe::Result<()> {
 pub struct GridViewControl {
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
+    complete_shells: i32,
 
     zoom_pow2: i32,
+    origin_x: i32,
+    origin_y: i32,
 }
 
 impl Default for GridViewControl {
@@ -178,7 +185,11 @@ impl Default for GridViewControl {
         GridViewControl {
             min_zoom_pow2: 0,
             max_zoom_pow2: 0,
+            complete_shells: 0,
+
             zoom_pow2: 0,
+            origin_x: 0,
+            origin_y: 0,
         }
     }
 }
@@ -187,6 +198,7 @@ impl GridViewControl {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Controls");
         ui.add(egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
+            .text("Zoom")
             .custom_formatter(|n, _| {
                 let n = n as i32;
                 if n >= 0 {
@@ -195,5 +207,14 @@ impl GridViewControl {
                     format!("1/{}x", 1 << -n)
                 }
             }));
+
+        // How many per pixel.
+        let coord_drag_speed = (self.complete_shells / 200) as f64;
+        ui.add(egui::Slider::new(&mut self.origin_x, -self.complete_shells..=self.complete_shells)
+            .text("X")
+            .drag_value_speed(coord_drag_speed));
+        ui.add(egui::Slider::new(&mut self.origin_y, -self.complete_shells..=self.complete_shells)
+            .text("Y")
+            .drag_value_speed(coord_drag_speed));
     }
 }
