@@ -64,11 +64,14 @@ pub fn run() -> eframe::Result<()> {
                     rect.height() as i32 * minification_i32,
                 );
                 let colors = [Color32::WHITE, Color32::BLACK, Color32::RED];
+
+                let timer = std::time::Instant::now();
+
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map(
                     &our_rect,
                     minification,
                     |block| {
-                        // Crude area interpolation without gamma correction. 
+                        // Crude area interpolation without gamma correction.
                         let mut r: i64 = 0;
                         let mut g: i64 = 0;
                         let mut b: i64 = 0;
@@ -90,7 +93,10 @@ pub fn run() -> eframe::Result<()> {
                 );
                 handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
                 prev_size = curr_size;
-                println!("{} {}", samples.width(), samples.height());
+
+                let elapsed = timer.elapsed();
+
+                println!("{} {} -> {} {} in {:?}", rect.width(), rect.height(), samples.width(), samples.height(), elapsed);
             }
 
             if let Some(handle) = &handle {
