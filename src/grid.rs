@@ -1,4 +1,4 @@
-﻿use crate::collections::array2d::Array2D;
+﻿use crate::collections::array2d::{Array2D, Slice2D};
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
@@ -6,6 +6,7 @@ use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
+use eframe::wgpu::naga::TypeInner::Array;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -124,6 +125,8 @@ pub trait Chunker {
     fn resolve_chunk_origin(&self, _: &GridPoint) -> ChunkOrigin;
     fn resolve_chunk_bounds(&self, _: &GridPoint) -> GridRect;
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
+    fn minimum_chunk_alignment(&self) -> usize;
+    fn minimum_chunk_extent(&self) -> usize;
 }
 
 pub struct SquareChunker {
@@ -164,6 +167,14 @@ impl Chunker for SquareChunker {
                     .map(move |ox| ChunkOrigin(GridPoint::new(ox, oy)))
             })
             .collect()
+    }
+
+    fn minimum_chunk_alignment(&self) -> usize {
+        self.size.into()
+    }
+
+    fn minimum_chunk_extent(&self) -> usize {
+        self.size.into()
     }
 }
 
@@ -318,6 +329,87 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
+    // Intended for small power of 2 factors. Region must be aligned to minification factor.
+    // Minification factor must be compatible with the chunk grid, otherwise the function panics.
+    pub fn sample_range2d_small_zoom_out_map<F, U>(
+        &self,
+        region: &GridRect,
+        minification: Pow2,
+        func: F,
+    ) -> Array2D<U>
+    where
+        F: Fn(&Slice2D<T>) -> U,
+        U: Default + Clone + Copy,
+    {
+        if pow2::floor_mod(region.start.x, minification) != 0
+            || pow2::floor_mod(region.start.y, minification) != 0
+            || pow2::floor_mod(region.end.x, minification) != 0
+            || pow2::floor_mod(region.end.y, minification) != 0
+        {
+            panic!("Region is not aligned to the minification factor.");
+        }
+
+        if self.chunker.minimum_chunk_alignment() < minification.into() {
+            panic!("Minification factor is larger than minimum chunk alignment.");
+        }
+
+        if self.chunker.minimum_chunk_extent() < minification.into() {
+            panic!("Minification factor is smaller than minimum chunk extent.");
+        }
+
+        let mut result: Array2D<U> = Array2D::new(
+            pow2::floor_div(region.width(), minification) as usize,
+            pow2::floor_div(region.height(), minification) as usize,
+        );
+
+        let mut buffer: Array2D<T> = Array2D::new(
+            minification.into(),
+            minification.into(),
+        );
+
+        self.chunker
+            .origins_of_intersecting_chunks(region)
+            .into_iter()
+            .flat_map(|origin| self.frozen_chunks.get(&origin))
+            .for_each(|compressed_chunk| {
+                let subregion = compressed_chunk
+                    .bounds()
+                    .intersection(region)
+                    .expect("Chunker should have returned only intersecting chunks.");
+
+                assert_eq!(pow2::floor_mod(subregion.start.x, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.start.y, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.end.x, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.end.y, minification), 0);
+
+                let chunk = Chunk::from(compressed_chunk);
+
+                let block_size: i32 = minification.into();
+
+                for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize) {
+                    for bx in (subregion.start.x..subregion.end.x).step_by(block_size as usize) {
+                        // Fill in the input block for the mapping function.
+                        for y in by..by+block_size {
+                            for x in bx..bx+block_size {
+                                let val = chunk[GridPoint::new(x, y)];
+
+                                let dx = (x - bx) as usize;
+                                let dy = (y - by) as usize;
+                                buffer[(dx, dy)] = val;
+                            }
+                        }
+
+                        // Map the block and store into the actual result.
+                        let rx = pow2::floor_div(bx - region.start.x, minification) as usize;
+                        let ry = pow2::floor_div(by - region.start.y, minification) as usize;
+                        result[(rx, ry)] = func(&buffer.as_slice2d());
+                    }
+                }
+            });
+
+        result
+    }
+
     pub fn sample_range2d_map<F, U>(&self, region: &GridRect, func: F) -> Array2D<U>
     where
         F: Fn(&T) -> U,
@@ -351,7 +443,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
 
         result
     }
-    
+
     pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
         // This function samples every cell, so we don't have to do any interpolation or translation.
         // This also means that samples don't span multiple chunks, which allows us to make a simple
