@@ -8,7 +8,7 @@ use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::util::pow2;
-use ulam_leapers::util::pow2::{floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub fn run() -> eframe::Result<()> {
     let mut options = eframe::NativeOptions::default();
@@ -47,7 +47,7 @@ pub fn run() -> eframe::Result<()> {
 
     let mut grid_view_control = GridViewControl {
         min_zoom_pow2: -3,
-        max_zoom_pow2: 0,
+        max_zoom_pow2: 3,
         complete_shells: complete_shells.clone(),
         ..Default::default()
     };
@@ -77,14 +77,15 @@ pub fn run() -> eframe::Result<()> {
             if curr_size != prev_size || curr_zoom_pow2 != prev_zoom_pow2 || curr_origin != prev_origin {
                 let timer = std::time::Instant::now();
 
-                if curr_zoom_pow2 == 0 {
+                if curr_zoom_pow2 >= 0 {
+                    let magnification = Pow2::from_exponent(curr_zoom_pow2 as usize);
                     let our_rect = GridRect::with_size(
                         GridPoint::new(
-                            curr_origin.0 - rect.width() as i32 / 2,
-                            curr_origin.1 - rect.height() as i32 / 2,
+                            curr_origin.0 - floor_div(rect.width() as i32 / 2, magnification),
+                            curr_origin.1 - floor_div(rect.height() as i32 / 2, magnification),
                         ),
-                        rect.width() as i32,
-                        rect.height() as i32,
+                        floor_div(rect.width() as i32, magnification),
+                        floor_div(rect.height() as i32, magnification),
                     );
                     let colors = [Color32::WHITE, Color32::BLACK, Color32::RED];
 
