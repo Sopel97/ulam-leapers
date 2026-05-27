@@ -52,7 +52,7 @@ pub fn run() -> eframe::Result<()> {
             painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
 
             let curr_size = rect.size();
-            let minification = Pow2::new(2);
+            let minification = Pow2::new(8);
             let minification_i32: i32 = minification.into();
             if curr_size != prev_size {
                 let our_rect = GridRect::with_size(

@@ -328,7 +328,10 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
-    // Intended for small power of 2 factors. Region must be aligned to minification factor.
+    // Intended for small power of 2 factors due to overall complexity. If higher minification 
+    // is required consider an approach with pregenerated mip-maps. While not viable for real-time 
+    // updates it's still somewhat interactive for minification factors <=8 on typical resolutions. 
+    // Region must be aligned to minification factor.
     // Minification factor must be compatible with the chunk grid, otherwise the function panics.
     pub fn sample_range2d_small_zoom_out_map<F, U>(
         &self,
