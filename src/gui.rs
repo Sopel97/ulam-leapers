@@ -1,5 +1,5 @@
 ﻿use eframe::egui;
-use eframe::egui::{ColorImage, Rect, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{ColorImage, Rect, Sense, TextureHandle, TextureOptions, Vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use eframe::wgpu::PresentMode;
@@ -8,7 +8,7 @@ use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::util::pow2;
-use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 pub fn run() -> eframe::Result<()> {
     let mut options = eframe::NativeOptions::default();
@@ -73,8 +73,22 @@ pub fn run() -> eframe::Result<()> {
 
             let curr_size = rect.size();
             let curr_zoom_pow2 = grid_view_control.zoom_pow2;
-            let curr_origin = (grid_view_control.origin_x, grid_view_control.origin_y);
-            if curr_size != prev_size || curr_zoom_pow2 != prev_zoom_pow2 || curr_origin != prev_origin {
+
+            let response = ui.allocate_rect(rect, Sense::drag());
+            if response.dragged_by(egui::PointerButton::Primary) {
+                let delta = response.drag_delta();
+                grid_view_control.origin_x -= 0.5f32.powf(curr_zoom_pow2 as f32) * delta.x;
+                grid_view_control.origin_y += 0.5f32.powf(curr_zoom_pow2 as f32) * delta.y;
+            }
+
+            let curr_origin = (
+                grid_view_control.origin_x as i32,
+                grid_view_control.origin_y as i32,
+            );
+            if curr_size != prev_size
+                || curr_zoom_pow2 != prev_zoom_pow2
+                || curr_origin != prev_origin
+            {
                 let timer = std::time::Instant::now();
 
                 if curr_zoom_pow2 >= 0 {
@@ -89,10 +103,8 @@ pub fn run() -> eframe::Result<()> {
                     );
                     let colors = [Color32::WHITE, Color32::BLACK, Color32::RED];
 
-                    let samples: Array2D<Color32> = frozen_grid.sample_range2d_map(
-                        &our_rect,
-                        |v| colors[v.index()],
-                    );
+                    let samples: Array2D<Color32> =
+                        frozen_grid.sample_range2d_map(&our_rect, |v| colors[v.index()]);
                     let image = ColorImage::new(
                         [samples.width(), samples.height()],
                         samples.as_flat_slice().to_vec(),
@@ -104,8 +116,10 @@ pub fn run() -> eframe::Result<()> {
 
                     let our_rect = GridRect::with_size(
                         GridPoint::new(
-                            floor_to_multiple(curr_origin.0, minification) - rect.width() as i32 / 2 * minification_i32,
-                            floor_to_multiple(curr_origin.1, minification) - rect.height() as i32 / 2 * minification_i32,
+                            floor_to_multiple(curr_origin.0, minification)
+                                - rect.width() as i32 / 2 * minification_i32,
+                            floor_to_multiple(curr_origin.1, minification)
+                                - rect.height() as i32 / 2 * minification_i32,
                         ),
                         rect.width() as i32 * minification_i32,
                         rect.height() as i32 * minification_i32,
@@ -177,8 +191,8 @@ pub struct GridViewControl {
     complete_shells: i32,
 
     zoom_pow2: i32,
-    origin_x: i32,
-    origin_y: i32,
+    origin_x: f32,
+    origin_y: f32,
 }
 
 impl Default for GridViewControl {
@@ -189,8 +203,8 @@ impl Default for GridViewControl {
             complete_shells: 0,
 
             zoom_pow2: 0,
-            origin_x: 0,
-            origin_y: 0,
+            origin_x: 0f32,
+            origin_y: 0f32,
         }
     }
 }
@@ -198,24 +212,36 @@ impl Default for GridViewControl {
 impl GridViewControl {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Controls");
-        ui.add(egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
-            .text("Zoom")
-            .custom_formatter(|n, _| {
-                let n = n as i32;
-                if n >= 0 {
-                    format!("{}x", 1 << n)
-                } else {
-                    format!("1/{}x", 1 << -n)
-                }
-            }));
+        ui.add(
+            egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
+                .text("Zoom")
+                .custom_formatter(|n, _| {
+                    let n = n as i32;
+                    if n >= 0 {
+                        format!("{}x", 1 << n)
+                    } else {
+                        format!("1/{}x", 1 << -n)
+                    }
+                }),
+        );
 
         // How many per pixel.
         let coord_drag_speed = (self.complete_shells / 200) as f64;
-        ui.add(egui::Slider::new(&mut self.origin_x, -self.complete_shells..=self.complete_shells)
+        ui.add(
+            egui::Slider::new(
+                &mut self.origin_x,
+                -self.complete_shells as f32..=self.complete_shells as f32,
+            )
             .text("X")
-            .drag_value_speed(coord_drag_speed));
-        ui.add(egui::Slider::new(&mut self.origin_y, -self.complete_shells..=self.complete_shells)
+            .drag_value_speed(coord_drag_speed),
+        );
+        ui.add(
+            egui::Slider::new(
+                &mut self.origin_y,
+                -self.complete_shells as f32..=self.complete_shells as f32,
+            )
             .text("Y")
-            .drag_value_speed(coord_drag_speed));
+            .drag_value_speed(coord_drag_speed),
+        );
     }
 }
