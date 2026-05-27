@@ -103,8 +103,8 @@ pub fn run() -> eframe::Result<()> {
 
                 println!(
                     "{} {} -> {} {} in {:?}",
-                    rect.width(),
-                    rect.height(),
+                    our_rect.width(),
+                    our_rect.height(),
                     samples.width(),
                     samples.height(),
                     elapsed
