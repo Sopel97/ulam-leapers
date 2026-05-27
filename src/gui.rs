@@ -71,14 +71,59 @@ pub fn run() -> eframe::Result<()> {
             // background
             painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
 
+            let response = ui.allocate_rect(rect, Sense::drag() | Sense::hover());
+
+            if response.hovered() {
+                let mut new_zoom_pow2 = grid_view_control.zoom_pow2;
+                let middle_pos = (rect.min + rect.max.to_vec2()) * 0.5f32;
+                let mouse = response.hover_pos().map(|pos| {
+                    // Invert y to match world coordinates.
+                    pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
+                }).unwrap_or(middle_pos) - middle_pos;
+
+                ui.input(|i| {
+                    for event in &i.events {
+                        if let egui::Event::MouseWheel { delta, .. } = event {
+                            new_zoom_pow2 += delta.y as i32;
+                        }
+                    }
+                });
+
+                new_zoom_pow2 = new_zoom_pow2.clamp(
+                    grid_view_control.min_zoom_pow2,
+                    grid_view_control.max_zoom_pow2,
+                );
+
+                // Reproject with respect to the origin
+                if new_zoom_pow2 != grid_view_control.zoom_pow2 {
+                    let old_scale = (grid_view_control.zoom_pow2 as f32).exp2();
+                    let new_scale = (new_zoom_pow2 as f32).exp2();
+
+                    let mouse_world_x =
+                        grid_view_control.origin_x + mouse.x / old_scale;
+                    let mouse_world_y =
+                        grid_view_control.origin_y + mouse.y / old_scale;
+
+                    grid_view_control.origin_x =
+                        mouse_world_x - mouse.x / new_scale;
+                    grid_view_control.origin_y =
+                        mouse_world_y - mouse.y / new_scale;
+
+                    grid_view_control.zoom_pow2 = new_zoom_pow2;
+                }
+            }
+
             let curr_size = rect.size();
             let curr_zoom_pow2 = grid_view_control.zoom_pow2;
 
-            let response = ui.allocate_rect(rect, Sense::drag());
             if response.dragged_by(egui::PointerButton::Primary) {
                 let delta = response.drag_delta();
                 grid_view_control.origin_x -= 0.5f32.powf(curr_zoom_pow2 as f32) * delta.x;
                 grid_view_control.origin_y += 0.5f32.powf(curr_zoom_pow2 as f32) * delta.y;
+                
+                let bounds = grid_view_control.complete_shells as f32;
+                grid_view_control.origin_x = grid_view_control.origin_x.clamp(-bounds, bounds);
+                grid_view_control.origin_y = grid_view_control.origin_y.clamp(-bounds, bounds);
             }
 
             let curr_origin = (
