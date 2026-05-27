@@ -4,8 +4,11 @@ use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
+use std::sync::mpsc;
+use std::thread;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -178,7 +181,7 @@ impl Chunker for SquareChunker {
 }
 
 pub struct Grid<T> {
-    chunker: Box<dyn Chunker + Send>,
+    chunker: Box<dyn Chunker + Send + Sync>,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     frozen_chunks_memory_usage: usize, // to reduce the amount of redundant iteration over chunks
@@ -224,7 +227,7 @@ impl<T> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
-    pub fn new(chunker: Box<dyn Chunker + Send>) -> Self {
+    pub fn new(chunker: Box<dyn Chunker + Send + Sync>) -> Self {
         Grid {
             chunker,
             active_chunks: BTreeMap::new(),
@@ -304,7 +307,7 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
 }
 
 pub struct FrozenGrid<T> {
-    chunker: Box<dyn Chunker + Send>,
+    chunker: Box<dyn Chunker + Send + Sync>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     memory_usage: usize,
 }
@@ -327,10 +330,115 @@ impl<T> FrozenGrid<T> {
     }
 }
 
+impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
+    pub fn sample_range2d_small_zoom_out_map_par<F, U>(
+        &self,
+        region: &GridRect,
+        minification: Pow2,
+        func: F,
+    ) -> Array2D<U>
+    where
+        F: Fn(&Slice2D<T>) -> U + Send + Sync,
+        U: Default + Clone + Copy + Send + Sync + 'static,
+    {
+        if pow2::floor_mod(region.start.x, minification) != 0
+            || pow2::floor_mod(region.start.y, minification) != 0
+            || pow2::floor_mod(region.end.x, minification) != 0
+            || pow2::floor_mod(region.end.y, minification) != 0
+        {
+            panic!("Region is not aligned to the minification factor.");
+        }
+
+        if self.chunker.minimum_chunk_alignment() < minification.into() {
+            panic!("Minification factor is larger than minimum chunk alignment.");
+        }
+
+        if self.chunker.minimum_chunk_extent() < minification.into() {
+            panic!("Minification factor is smaller than minimum chunk extent.");
+        }
+
+        let (tx, rx) = mpsc::channel::<(usize, usize, Array2D<U>)>();
+
+        let region_clone = region.clone();
+        let result_assembler = thread::spawn(move || {
+            let mut result: Array2D<U> = Array2D::new(
+                pow2::floor_div(region_clone.width(), minification) as usize,
+                pow2::floor_div(region_clone.height(), minification) as usize,
+            );
+
+            while let Ok((rx, ry, subregion_result)) = rx.recv() {
+                for y in 0..subregion_result.height() {
+                    for x in 0..subregion_result.width() {
+                        result[(rx + x, ry + y)] = subregion_result[(x, y)];
+                    }
+                }
+            }
+
+            result
+        });
+
+        self.chunker
+            .origins_of_intersecting_chunks(region)
+            .into_par_iter()
+            .flat_map(|origin| self.frozen_chunks.get(&origin))
+            .for_each(|compressed_chunk| {
+                let subregion = compressed_chunk
+                    .bounds()
+                    .intersection(region)
+                    .expect("Chunker should have returned only intersecting chunks.");
+
+                assert_eq!(pow2::floor_mod(subregion.start.x, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.start.y, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.end.x, minification), 0);
+                assert_eq!(pow2::floor_mod(subregion.end.y, minification), 0);
+
+                let chunk = Chunk::from(compressed_chunk);
+
+                let block_size: i32 = minification.into();
+
+                let mut subregion_result: Array2D<U> = Array2D::new(
+                    pow2::floor_div(subregion.width(), minification) as usize,
+                    pow2::floor_div(subregion.height(), minification) as usize,
+                );
+
+                let mut pixel_components: Array2D<T> =
+                    Array2D::new(minification.into(), minification.into());
+
+                for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize) {
+                    for bx in (subregion.start.x..subregion.end.x).step_by(block_size as usize) {
+                        // Fill in the input block for the mapping function.
+                        for y in by..by + block_size {
+                            for x in bx..bx + block_size {
+                                let val = chunk[GridPoint::new(x, y)];
+
+                                let dx = (x - bx) as usize;
+                                let dy = (y - by) as usize;
+                                pixel_components[(dx, dy)] = val;
+                            }
+                        }
+
+                        // Map the block and store into the actual result.
+                        let srx = pow2::floor_div(bx - subregion.start.x, minification) as usize;
+                        let sry = pow2::floor_div(by - subregion.start.y, minification) as usize;
+                        subregion_result[(srx, sry)] = func(&pixel_components.as_slice2d());
+                    }
+                }
+
+                let rx = pow2::floor_div(subregion.start.x - region.start.x, minification) as usize;
+                let ry = pow2::floor_div(subregion.start.y - region.start.y, minification) as usize;
+
+                tx.send((rx, ry, subregion_result)).unwrap();
+            });
+        drop(tx);
+
+        result_assembler.join().unwrap()
+    }
+}
+
 impl<T: Default + Clone + Copy> FrozenGrid<T> {
-    // Intended for small power of 2 factors due to overall complexity. If higher minification 
-    // is required consider an approach with pregenerated mip-maps. While not viable for real-time 
-    // updates it's still somewhat interactive for minification factors <=8 on typical resolutions. 
+    // Intended for small power of 2 factors due to overall complexity. If higher minification
+    // is required consider an approach with pregenerated mip-maps. While not viable for real-time
+    // updates it's still somewhat interactive for minification factors <=8 on typical resolutions.
     // Region must be aligned to minification factor.
     // Minification factor must be compatible with the chunk grid, otherwise the function panics.
     pub fn sample_range2d_small_zoom_out_map<F, U>(
@@ -364,10 +472,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
             pow2::floor_div(region.height(), minification) as usize,
         );
 
-        let mut buffer: Array2D<T> = Array2D::new(
-            minification.into(),
-            minification.into(),
-        );
+        let mut buffer: Array2D<T> = Array2D::new(minification.into(), minification.into());
 
         self.chunker
             .origins_of_intersecting_chunks(region)
@@ -391,8 +496,8 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
                 for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize) {
                     for bx in (subregion.start.x..subregion.end.x).step_by(block_size as usize) {
                         // Fill in the input block for the mapping function.
-                        for y in by..by+block_size {
-                            for x in bx..bx+block_size {
+                        for y in by..by + block_size {
+                            for x in bx..bx + block_size {
                                 let val = chunk[GridPoint::new(x, y)];
 
                                 let dx = (x - bx) as usize;

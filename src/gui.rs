@@ -105,7 +105,7 @@ impl GridRender {
                 self.handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
             },
             Minification(factor) => {
-                let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map(
+                let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
                     &self.params.bounds,
                     factor,
                     |block| {
