@@ -6,6 +6,7 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{Simulation, SimulationLimits};
+use ulam_leapers::util::pow2;
 use ulam_leapers::util::pow2::Pow2;
 
 pub fn run() -> eframe::Result<()> {
@@ -83,8 +84,12 @@ pub fn run() -> eframe::Result<()> {
                                 b += color.b() as i64;
                             }
                         }
-                        let count = (block.width() * block.height()) as i64;
-                        Color32::from_rgb((r / count) as u8, (g / count) as u8, (b / count) as u8)
+                        let count = Pow2::new(block.width() * block.height());
+                        Color32::from_rgb(
+                            pow2::floor_div(r, count) as u8,
+                            pow2::floor_div(g, count) as u8,
+                            pow2::floor_div(b, count) as u8,
+                        )
                     },
                 );
                 let image = ColorImage::new(
@@ -96,7 +101,14 @@ pub fn run() -> eframe::Result<()> {
 
                 let elapsed = timer.elapsed();
 
-                println!("{} {} -> {} {} in {:?}", rect.width(), rect.height(), samples.width(), samples.height(), elapsed);
+                println!(
+                    "{} {} -> {} {} in {:?}",
+                    rect.width(),
+                    rect.height(),
+                    samples.width(),
+                    samples.height(),
+                    elapsed
+                );
             }
 
             if let Some(handle) = &handle {
