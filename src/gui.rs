@@ -7,7 +7,7 @@ use eframe::wgpu::PresentMode;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::simulation::{Game, PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -15,7 +15,7 @@ impl PlayerId {
     pub fn new(id: u8) -> PlayerId {
         PlayerId(id)
     }
-    
+
     pub fn index(self) -> usize {
         self.0 as usize
     }
@@ -139,6 +139,26 @@ pub struct Player {
 
 const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
 
+pub trait Game {
+    fn players(&self) -> &Vec<Player>;
+    fn simulated_turns(&self) -> usize;
+
+    fn complete_shells(&self) -> i32 {
+        let min_shell = self
+            .players()
+            .iter()
+            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
+            .min()
+            .unwrap();
+
+        min_shell
+    }
+
+    fn player_count(&self) -> usize {
+        self.players().len()
+    }
+}
+
 pub struct Simulation {
     players: Vec<Player>,
     grid: Option<Grid<PlayerId>>,
@@ -157,31 +177,22 @@ impl FinalizedSimulation {
         self.grid.memory_usage()
     }
 
-    pub fn complete_shells(&self) -> i32 {
-        let min_shell = self
-            .players
-            .iter()
-            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
-            .min()
-            .unwrap();
-
-        min_shell
-    }
-
-    pub fn player_count(&self) -> usize {
-        self.players.len()
-    }
-
     pub fn empty_cell() -> PlayerId {
         PlayerId::new(0)
     }
 
-    pub fn simulated_turns(&self) -> usize {
-        self.simulated_turns
-    }
-    
     pub fn grid(&self) -> &FrozenGrid<PlayerId> {
         &self.grid
+    }
+}
+
+impl Game for FinalizedSimulation {
+    fn players(&self) -> &Vec<Player> {
+        &self.players
+    }
+
+    fn simulated_turns(&self) -> usize {
+        self.simulated_turns
     }
 }
 
@@ -235,6 +246,16 @@ impl SimulationLimits {
     }
 }
 
+impl Game for Simulation {
+    fn players(&self) -> &Vec<Player> {
+        &self.players
+    }
+
+    fn simulated_turns(&self) -> usize {
+        self.simulated_turns
+    }
+}
+
 impl Simulation {
     pub fn new() -> Simulation {
         Simulation {
@@ -256,10 +277,6 @@ impl Simulation {
             None => 0,
         };
         grid_usage + self.forbiddances.memory_usage()
-    }
-
-    pub fn simulated_turns(&self) -> usize {
-        self.simulated_turns
     }
 
     pub fn add_player(&mut self, attacks: LeaperAttacks) -> PlayerId {
@@ -309,21 +326,6 @@ impl Simulation {
         }
     }
 
-    pub fn complete_shells(&self) -> i32 {
-        let min_shell = self
-            .players
-            .iter()
-            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
-            .min()
-            .unwrap();
-
-        min_shell
-    }
-    
-    pub fn player_count(&self) -> usize {
-        self.players.len()
-    }
-
     fn grid_region_past_modification(&self) -> Option<GridRect> {
         let last_fully_simulated_shell = match self.complete_shells() {
             0 => return None,
@@ -332,7 +334,10 @@ impl Simulation {
 
         let min_point = GridPoint::new(-last_fully_simulated_shell, -last_fully_simulated_shell);
 
-        Some(GridRect::square_with_size(min_point, 2 * last_fully_simulated_shell + 1))
+        Some(GridRect::square_with_size(
+            min_point,
+            2 * last_fully_simulated_shell + 1,
+        ))
     }
 
     fn simulate_single_turn(&mut self, placements: &mut [Vec<GridPoint>]) {
@@ -555,7 +560,7 @@ impl Simulation {
 mod tests {
     use crate::grid::{GridPoint, GridVector};
     use crate::piece::LeaperAttacks;
-    use crate::simulation::{Simulation, SimulationLimits};
+    use crate::simulation::*;
 
     #[test]
     fn empty_cell_distinguishable_from_player() {

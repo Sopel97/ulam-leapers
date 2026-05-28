@@ -1,6 +1,6 @@
 use ulam_leapers::grid::GridVector;
 use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{Simulation, SimulationLimits};
+use ulam_leapers::simulation::{Game, Simulation, SimulationLimits};
 
 const GUI: bool = true;
 
