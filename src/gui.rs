@@ -195,14 +195,13 @@ pub fn run() -> eframe::Result<()> {
             .with_memory_limit(32 * 1024 * 1024 * 1024),
     );
     let end_memory_usage = sim.memory_usage();
-    sim.finalize();
+    let finalized_sim = sim.finalize();
     let elapsed = start.elapsed();
 
-    let simulated_turns = sim.simulated_turns();
-    let complete_shells = sim.complete_shells();
-    let player_count = sim.player_count();
-    let frozen_grid = sim.finalize_to_frozen_grid();
-    let finalized_memory_usage = frozen_grid.memory_usage();
+    let simulated_turns = finalized_sim.simulated_turns();
+    let complete_shells = finalized_sim.complete_shells();
+    let player_count = finalized_sim.player_count();
+    let finalized_memory_usage = finalized_sim.memory_usage();
     println!(
         "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {} MiB.\nFinal memory usage: {} MiB.",
         simulated_turns,
@@ -243,7 +242,7 @@ pub fn run() -> eframe::Result<()> {
             let timer = std::time::Instant::now();
             let updated = grid_render.maybe_update(
                 ui,
-                &frozen_grid,
+                finalized_sim.grid(),
                 &grid_view_control,
                 rect.width() as usize,
                 rect.height() as usize,

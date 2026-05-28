@@ -143,9 +143,46 @@ pub struct Simulation {
     players: Vec<Player>,
     grid: Option<Grid<PlayerId>>,
     forbiddances: SlidingWindow<PlayerIdSet>,
-
     simulated_turns: usize,
-    is_finalized: bool,
+}
+
+pub struct FinalizedSimulation {
+    players: Vec<Player>,
+    grid: FrozenGrid<PlayerId>,
+    simulated_turns: usize,
+}
+
+impl FinalizedSimulation {
+    pub fn memory_usage(&self) -> usize {
+        self.grid.memory_usage()
+    }
+
+    pub fn complete_shells(&self) -> i32 {
+        let min_shell = self
+            .players
+            .iter()
+            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
+            .min()
+            .unwrap();
+
+        min_shell
+    }
+
+    pub fn player_count(&self) -> usize {
+        self.players.len()
+    }
+
+    pub fn empty_cell() -> PlayerId {
+        PlayerId::new(0)
+    }
+
+    pub fn simulated_turns(&self) -> usize {
+        self.simulated_turns
+    }
+    
+    pub fn grid(&self) -> &FrozenGrid<PlayerId> {
+        &self.grid
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -206,7 +243,6 @@ impl Simulation {
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
-            is_finalized: false,
         }
     }
 
@@ -226,15 +262,7 @@ impl Simulation {
         self.simulated_turns
     }
 
-    pub fn is_finalized(&self) -> bool {
-        self.is_finalized
-    }
-
     pub fn add_player(&mut self, attacks: LeaperAttacks) -> PlayerId {
-        if self.is_finalized {
-            panic!("Cannot add players to a finalized simulation.");
-        }
-
         if self.simulated_turns > 0 {
             panic!("Cannot add players to a running simulation.");
         }
@@ -256,10 +284,6 @@ impl Simulation {
     }
 
     pub fn add_player_enemy(&mut self, player: PlayerId, enemy: PlayerId) {
-        if self.is_finalized {
-            panic!("Cannot modify player enemies in a finalized simulation.");
-        }
-
         if self.simulated_turns > 0 {
             panic!("Cannot modify player enemies in a running simulation.");
         }
@@ -276,10 +300,6 @@ impl Simulation {
     }
 
     pub fn add_all_pairwise_player_enemies(&mut self) {
-        if self.is_finalized {
-            panic!("Cannot modify player enemies in a finalized simulation.");
-        }
-
         if self.simulated_turns > 0 {
             panic!("Cannot modify player enemies in a running simulation.");
         }
@@ -365,10 +385,6 @@ impl Simulation {
         &mut self,
         limits: SimulationLimits,
     ) -> Result<SimulationLimit, SimulationError> {
-        if self.is_finalized {
-            return Err(SimulationError::IsFinalized);
-        }
-
         if !limits.any() {
             return Err(SimulationError::InfiniteSimulation);
         }
@@ -526,27 +542,12 @@ impl Simulation {
     }
 
     // Freezes all chunks, deallocates simulation buffers, prohibits further simulation.
-    pub fn finalize(&mut self) {
-        if self.is_finalized {
-            return;
+    pub fn finalize(self) -> FinalizedSimulation {
+        FinalizedSimulation {
+            players: self.players,
+            grid: self.grid.unwrap().into(),
+            simulated_turns: self.simulated_turns,
         }
-
-        match self.grid {
-            Some(ref mut grid) => {
-                grid.freeze_all();
-            }
-            None => {
-                panic!("No grid");
-            }
-        }
-
-        self.forbiddances.clear();
-        self.forbiddances.shrink_to_fit();
-    }
-    
-    pub fn finalize_to_frozen_grid(mut self) -> FrozenGrid<PlayerId> {
-        self.finalize();
-        self.grid.unwrap().into()
     }
 }
 
