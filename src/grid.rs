@@ -1,11 +1,14 @@
 ﻿use crate::collections::array2d::{Array2D, Slice2D};
 use crate::coords::{Point2D, Rect2D, Vector2D};
+use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
+use std::io::{ErrorKind, Read, Write};
+use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
 use std::thread;
@@ -123,12 +126,28 @@ impl<T> CompressedChunk<T> {
     }
 }
 
-pub trait Chunker {
+pub enum StandardChunker {
+    SquareChunker { chunk_size_pow2: u8 },
+}
+
+impl StandardChunker {
+    pub fn into_chunker(self) -> Box<dyn Chunker> {
+        match self {
+            StandardChunker::SquareChunker { chunk_size_pow2 } => Box::new(SquareChunker::new(
+                Pow2::from_exponent(chunk_size_pow2 as usize),
+            )),
+        }
+    }
+}
+
+pub trait Chunker: Send + Sync {
     fn resolve_chunk_origin(&self, _: &GridPoint) -> ChunkOrigin;
     fn resolve_chunk_bounds(&self, _: &GridPoint) -> GridRect;
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
     fn minimum_chunk_alignment(&self) -> usize;
     fn minimum_chunk_extent(&self) -> usize;
+
+    fn as_standard_chunker(&self) -> Option<StandardChunker>;
 }
 
 pub struct SquareChunker {
@@ -177,6 +196,12 @@ impl Chunker for SquareChunker {
 
     fn minimum_chunk_extent(&self) -> usize {
         self.size.into()
+    }
+
+    fn as_standard_chunker(&self) -> Option<StandardChunker> {
+        Some(StandardChunker::SquareChunker {
+            chunk_size_pow2: self.size.exponent(),
+        })
     }
 }
 
@@ -307,7 +332,7 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
 }
 
 pub struct FrozenGrid<T> {
-    chunker: Box<dyn Chunker + Send + Sync>,
+    chunker: Box<dyn Chunker>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     memory_usage: usize,
 }
@@ -327,6 +352,10 @@ impl<T> Into<FrozenGrid<T>> for Grid<T> {
 impl<T> FrozenGrid<T> {
     pub fn memory_usage(&self) -> usize {
         self.memory_usage
+    }
+
+    pub fn chunk_count(&self) -> usize {
+        self.frozen_chunks.len()
     }
 }
 
@@ -571,6 +600,108 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         // and using that for all samples, or even drawing directly as textures.
 
         self.sample_range2d_map(region, |x| *x)
+    }
+}
+
+impl<T> WriteTo for FrozenGrid<T>
+where
+    T: WriteTo,
+{
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.chunker.write_to(writer)?;
+        self.frozen_chunks.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl<T> ReadFrom for FrozenGrid<T>
+where
+    T: ReadFrom,
+{
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let chunker = Box::<dyn Chunker>::read_from(reader)?;
+        let frozen_chunks = BTreeMap::<ChunkOrigin, CompressedChunk<T>>::read_from(reader)?;
+        let memory_usage = frozen_chunks.iter().map(|(_, v)| v.memory_usage()).sum();
+        Ok(FrozenGrid {
+            chunker,
+            frozen_chunks,
+            memory_usage,
+        })
+    }
+}
+
+impl<T> WriteTo for CompressedChunk<T> {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.bounds.write_to(writer)?;
+        self.data.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl<T> ReadFrom for CompressedChunk<T> {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(CompressedChunk {
+            bounds: GridRect::read_from(reader)?,
+            data: Box::<[u8]>::read_from(reader)?,
+            _marker: PhantomData,
+        })
+    }
+}
+
+impl WriteTo for ChunkOrigin {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.0.write_to(writer)
+    }
+}
+
+impl ReadFrom for ChunkOrigin {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(ChunkOrigin(GridPoint::read_from(reader)?))
+    }
+}
+
+impl WriteTo for StandardChunker {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        match self {
+            StandardChunker::SquareChunker { chunk_size_pow2 } => {
+                "SquareChunker".as_bytes().write_to(writer)?;
+                chunk_size_pow2.write_to(writer)
+            }
+        }
+    }
+}
+
+impl ReadFrom for StandardChunker {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let t = Box::<[u8]>::read_from(reader)?;
+        if t.iter().eq("SquareChunker".as_bytes()) {
+            let chunker = StandardChunker::SquareChunker {
+                chunk_size_pow2: u8::read_from(reader)?,
+            };
+            Ok(chunker)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid chunker type.",
+            ))
+        }
+    }
+}
+
+impl WriteTo for Box<dyn Chunker> {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        let standard_chunker = self.as_standard_chunker().ok_or(std::io::Error::new(
+            ErrorKind::InvalidInput,
+            "Trying to write a non-standard Chunker.",
+        ))?;
+        standard_chunker.write_to(writer)
+    }
+}
+
+impl ReadFrom for Box<dyn Chunker> {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let standard_chunker = StandardChunker::read_from(reader)?;
+        Ok(standard_chunker.into_chunker())
     }
 }
 

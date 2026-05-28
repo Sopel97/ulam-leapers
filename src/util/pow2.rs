@@ -29,6 +29,10 @@ impl Pow2 {
     pub const fn floor_mod_mask(&self) -> usize {
         (1usize << self.exponent) - 1
     }
+    
+    pub fn exponent(&self) -> u8 {
+        self.exponent
+    }
 }
 
 impl From<Pow2> for u8 {

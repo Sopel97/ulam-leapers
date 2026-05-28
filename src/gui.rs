@@ -6,8 +6,9 @@ use eframe::epaint::Color32;
 use eframe::wgpu::PresentMode;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect, GridVector};
+use ulam_leapers::io::{WriteTo, ReadFrom};
 use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{Game, PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::simulation::{FinalizedSimulation, Game, PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -210,6 +211,13 @@ pub fn run() -> eframe::Result<()> {
         end_memory_usage / 1024 / 1024,
         finalized_memory_usage / 1024 / 1024
     );
+
+    let start = std::time::Instant::now();
+    let mut serialized = Vec::<u8>::with_capacity(1024);
+    finalized_sim.write_to(&mut serialized).unwrap();
+    let finalized_sim = FinalizedSimulation::read_from(&mut serialized.as_slice()).unwrap();
+    let elapsed = start.elapsed();
+    println!("Serialize -> deserialize roundtrip in {:?}", elapsed);
 
     let mut grid_view_control = GridViewControls {
         min_zoom_pow2: -3,

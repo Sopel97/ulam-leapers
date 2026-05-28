@@ -1,6 +1,8 @@
-﻿use std::cmp;
+﻿use crate::grid::{GridPoint, GridVector};
+use crate::io::{ReadFrom, WriteTo};
+use std::cmp;
+use std::io::{Read, Write};
 use std::ops::*;
-use crate::grid::{GridPoint, GridVector};
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct Point2D<T> {
@@ -130,7 +132,9 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
             (4 * y - 1) * y - x
         } else if x >= ay {
             (4 * x - 3) * x + y
-        } else /* if -x >= ay */ {
+        } else
+        /* if -x >= ay */
+        {
             (4 * x - 1) * x - y
         };
 
@@ -173,7 +177,8 @@ impl UlamSpiralCursor {
             self.current_line += 1;
             self.steps_in_current_direction_left = self.current_line / 2 + 1;
             // Rotate 90 degrees counter-clockwise
-            self.current_direction = GridVector::new(-self.current_direction.y, self.current_direction.x);
+            self.current_direction =
+                GridVector::new(-self.current_direction.y, self.current_direction.x);
         }
     }
 
@@ -184,11 +189,13 @@ impl UlamSpiralCursor {
         }
 
         while (to.0 - self.spiral_position.0) as usize >= self.steps_in_current_direction_left {
-            self.grid_position = self.grid_position + self.current_direction * self.steps_in_current_direction_left as i32;
+            self.grid_position = self.grid_position
+                + self.current_direction * self.steps_in_current_direction_left as i32;
             self.spiral_position.0 += self.steps_in_current_direction_left as i64;
             self.current_line += 1;
             self.steps_in_current_direction_left = self.current_line / 2 + 1;
-            self.current_direction = GridVector::new(-self.current_direction.y, self.current_direction.x);
+            self.current_direction =
+                GridVector::new(-self.current_direction.y, self.current_direction.x);
         }
 
         let diff = (to.0 - self.spiral_position.0) as usize;
@@ -260,13 +267,117 @@ impl<T: Ord + Add<Output = T> + Copy + Clone> Rect2D<T> {
     }
 
     pub fn intersection(&self, other: &Rect2D<T>) -> Option<Rect2D<T>> {
-        let start = Point2D::new(cmp::max(self.start.x, other.start.x), cmp::max(self.start.y, other.start.y));
-        let end = Point2D::new(cmp::min(self.end.x, other.end.x), cmp::min(self.end.y, other.end.y));
+        let start = Point2D::new(
+            cmp::max(self.start.x, other.start.x),
+            cmp::max(self.start.y, other.start.y),
+        );
+        let end = Point2D::new(
+            cmp::min(self.end.x, other.end.x),
+            cmp::min(self.end.y, other.end.y),
+        );
         if start.x < end.x && start.y < end.y {
             Some(Rect2D::with_start_end(start, end))
         } else {
             None
         }
+    }
+}
+
+impl<T> WriteTo for Point2D<T>
+where
+    T: WriteTo,
+{
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.x.write_to(writer)?;
+        self.y.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl<T> ReadFrom for Point2D<T>
+where
+    T: ReadFrom,
+{
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(Point2D {
+            x: T::read_from(reader)?,
+            y: T::read_from(reader)?,
+        })
+    }
+}
+
+impl<T> WriteTo for Vector2D<T>
+where
+    T: WriteTo,
+{
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.x.write_to(writer)?;
+        self.y.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl<T> ReadFrom for Vector2D<T>
+where
+    T: ReadFrom,
+{
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(Vector2D {
+            x: T::read_from(reader)?,
+            y: T::read_from(reader)?,
+        })
+    }
+}
+
+impl<T> WriteTo for Rect2D<T>
+where
+    T: WriteTo,
+{
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.start.write_to(writer)?;
+        self.end.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl<T> ReadFrom for Rect2D<T>
+where
+    T: ReadFrom,
+{
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(Rect2D {
+            start: Point2D::<T>::read_from(reader)?,
+            end: Point2D::<T>::read_from(reader)?,
+        })
+    }
+}
+
+impl WriteTo for UlamSpiralPoint {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.0.write_to(writer)
+    }
+}
+
+impl ReadFrom for UlamSpiralPoint {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(UlamSpiralPoint(i64::read_from(reader)?))
+    }
+}
+
+impl WriteTo for UlamSpiralCursor {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        // The whole structure can be easily restored from just the spiral index,
+        // and it also allows us to avoid any consistency issues.
+        self.spiral_position.write_to(writer)
+    }
+}
+
+impl ReadFrom for UlamSpiralCursor {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let mut cursor = UlamSpiralCursor::new();
+        // TODO: O(1) set instead of advancing by lines.
+        cursor.advance_to(UlamSpiralPoint::read_from(reader)?);
+        Ok(cursor)
     }
 }
 

@@ -1,5 +1,7 @@
 ﻿use crate::grid::{GridPoint, GridVector};
 use std::collections::HashSet;
+use std::io::{Read, Write};
+use crate::io::{ReadFrom, WriteTo};
 
 pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,
@@ -42,6 +44,20 @@ impl LeaperAttacks {
 
     pub fn get_attacks_from(&self, base: &GridPoint) -> impl Iterator<Item = GridPoint> {
         self.attack_vectors.iter().map(move |&v| *base + v)
+    }
+}
+
+impl WriteTo for LeaperAttacks {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.attack_vectors.write_to(writer)
+    }
+}
+
+impl ReadFrom for LeaperAttacks {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(LeaperAttacks{
+            attack_vectors: Vec::<GridVector>::read_from(reader)?
+        })
     }
 }
 

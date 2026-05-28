@@ -7,6 +7,8 @@ pub mod collections {
 }
 pub mod piece;
 pub mod simulation;
+pub mod io;
+
 pub mod algo {
     pub mod bit_transpose {
         pub mod sse2;

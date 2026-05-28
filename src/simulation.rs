@@ -4,9 +4,11 @@ use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
+use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use crate::io::{ReadFrom, WriteTo};
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct PlayerId(u8);
@@ -183,6 +185,10 @@ impl FinalizedSimulation {
 
     pub fn grid(&self) -> &FrozenGrid<PlayerId> {
         &self.grid
+    }
+    
+    pub fn chunk_count(&self) -> usize {
+        self.grid.chunk_count()
     }
 }
 
@@ -553,6 +559,72 @@ impl Simulation {
             grid: self.grid.unwrap().into(),
             simulated_turns: self.simulated_turns,
         }
+    }
+}
+
+impl WriteTo for PlayerId {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.0.write_to(writer)
+    }
+}
+
+impl ReadFrom for PlayerId {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(PlayerId(u8::read_from(reader)?))
+    }
+}
+
+impl WriteTo for PlayerIdSet {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.bits.write_to(writer)
+    }
+}
+
+impl ReadFrom for PlayerIdSet {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(PlayerIdSet {
+            bits: u64::read_from(reader)?
+        })
+    }
+}
+
+impl WriteTo for Player {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.attacks.write_to(writer)?;
+        self.id.write_to(writer)?;
+        self.enemies.write_to(writer)?;
+        self.cursor.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl ReadFrom for Player {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(Self {
+            attacks: LeaperAttacks::read_from(reader)?,
+            id: PlayerId::read_from(reader)?,
+            enemies: PlayerIdSet::read_from(reader)?,
+            cursor: UlamSpiralCursor::read_from(reader)?,
+        })
+    }
+}
+
+impl WriteTo for FinalizedSimulation {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        self.players.write_to(writer)?;
+        self.simulated_turns.write_to(writer)?;
+        self.grid.write_to(writer)?;
+        Ok(())
+    }
+}
+
+impl ReadFrom for FinalizedSimulation {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        Ok(FinalizedSimulation{
+            players: Vec::<Player>::read_from(reader)?,
+            simulated_turns: usize::read_from(reader)?,
+            grid: FrozenGrid::<PlayerId>::read_from(reader)?,
+        })
     }
 }
 
