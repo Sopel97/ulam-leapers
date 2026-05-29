@@ -1,8 +1,10 @@
 ﻿pub mod grid_explorer;
+mod simulation_creator;
 
 use eframe::egui::Ui;
 use eframe::{Frame, egui};
 use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::simulation_creator::SimulationCreator;
 
 pub trait Subwindow {
     fn name(&self) -> String;
@@ -85,7 +87,7 @@ impl App {
             state: State::default(),
         };
 
-        slf.add_tab(Box::new(GridExplorer::new()));
+        slf.add_tab(Box::new(SimulationCreator::new()));
 
         slf
     }
