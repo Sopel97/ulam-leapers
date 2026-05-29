@@ -16,7 +16,7 @@ enum Zoom {
 }
 
 use Zoom::*;
-use crate::gui::Tab;
+use crate::gui::Subwindow;
 
 #[derive(Clone, PartialEq)]
 struct GridRenderParameters {
@@ -194,7 +194,7 @@ pub struct GridExplorer {
     grid_render: GridRender,
 }
 
-impl Tab for GridExplorer {
+impl Subwindow for GridExplorer {
     fn name(&self) -> String {
         "Explorer".to_owned()
     }

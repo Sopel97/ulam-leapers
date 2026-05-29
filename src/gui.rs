@@ -4,9 +4,11 @@ use eframe::egui::Ui;
 use eframe::{Frame, egui};
 use crate::gui::grid_explorer::GridExplorer;
 
-pub trait Tab {
+pub trait Subwindow {
     fn name(&self) -> String;
     fn ui(&mut self, ui: &mut egui::Ui);
+    fn is_closeable(&self) -> bool { true }
+    fn on_close(&mut self) {}
 }
 
 #[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -32,8 +34,14 @@ impl TabIdAllocator {
     }
 }
 
+pub struct Tab {
+    id: TabId,
+    is_closed: bool,
+    subwindow: Box<dyn Subwindow>,
+}
+
 pub struct State {
-    tabs: Vec<(TabId, Box<dyn Tab>)>,
+    tabs: Vec<Tab>,
     tab_id_allocator: TabIdAllocator,
     selected_tab_id: TabId,
 }
@@ -54,6 +62,8 @@ pub struct App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut Frame) {
+        self.drop_closed_tabs();
+
         egui::Panel::top("main_panel")
             .frame(egui::Frame::new().inner_margin(4))
             .show_inside(ui, |ui| {
@@ -80,9 +90,22 @@ impl App {
         slf
     }
 
-    pub fn add_tab(&mut self, tab: Box<dyn Tab>) {
+    pub fn drop_closed_tabs(&mut self) {
+        for tab in &mut self.state.tabs {
+            if tab.is_closed {
+                tab.subwindow.on_close();
+            }
+        }
+        self.state.tabs.retain(|t| !t.is_closed);
+    }
+
+    pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>) {
         let id = self.state.tab_id_allocator.next();
-        self.state.tabs.push((id, tab));
+        self.state.tabs.push(Tab {
+            id,
+            subwindow,
+            is_closed: false
+        });
         if self.state.selected_tab_id == TabIdAllocator::invalid_id() {
             self.state.selected_tab_id = id;
         }
@@ -90,21 +113,30 @@ impl App {
 
     pub fn tab_bar(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
         let mut selected_tab_id = self.state.selected_tab_id;
-        for (id, tab) in self.state.tabs.iter_mut() {
+        for tab in self.state.tabs.iter_mut() {
+            ui.separator();
+
             if ui
-                .selectable_label(selected_tab_id == *id, tab.name())
+                .selectable_label(selected_tab_id == tab.id, tab.subwindow.name())
                 .clicked()
             {
-                selected_tab_id = *id;
+                selected_tab_id = tab.id;
             }
+
+            if tab.subwindow.is_closeable() && tab.id == self.state.selected_tab_id {
+                if ui.small_button("✖").clicked() {
+                    tab.is_closed = true;
+                }
+            }
+            ui.separator();
         }
         self.state.selected_tab_id = selected_tab_id;
     }
 
-    pub fn show_selected_tab(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
-        for (id, tab) in self.state.tabs.iter_mut() {
-            if *id == self.state.selected_tab_id {
-                tab.ui(ui);
+    pub fn show_selected_tab(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        for tab in self.state.tabs.iter_mut() {
+            if tab.id == self.state.selected_tab_id {
+                tab.subwindow.ui(ui);
             }
         }
     }
