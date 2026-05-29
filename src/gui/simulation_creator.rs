@@ -250,21 +250,25 @@ impl SimulationCreator {
                     // Limits
                     ui.group(|ui| {
                         ui.label("Limits:");
+                        ui.label("Turns:");
                         ui.add(
                             Slider::new(&mut self.state.limits.turns_m, MIN_TURNS_M..=MAX_TURNS_M)
                                 .integer()
                                 .logarithmic(true)
-                                .text("Turns (mil)"),
+                                .suffix(" mil"),
                         );
+
+                        ui.label("Complete shells:");
                         ui.add(
                             Slider::new(
                                 &mut self.state.limits.complete_shells,
                                 MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
                             )
                             .integer()
-                            .logarithmic(true)
-                            .text("Complete shells"),
+                            .logarithmic(true),
                         );
+
+                        ui.label("Complete shells:");
                         ui.add(
                             Slider::new(
                                 &mut self.state.limits.memory_usage_gib,
@@ -272,7 +276,7 @@ impl SimulationCreator {
                             )
                             .integer()
                             .logarithmic(true)
-                            .text("Memory usage (GiB)"),
+                            .suffix(" GiB"),
                         );
                     });
                 });
