@@ -116,7 +116,15 @@ impl GridRender {
         match self.params.zoom {
             Magnification(_factor) => {
                 let samples: Array2D<Color32> = frozen_grid
-                    .sample_range2d_map(&self.params.bounds, |v| self.params.colors[v.index()]);
+                    // We use sample_range2d_small_zoom_out_map_par with no minification
+                    // because it's parallelized.
+                    // Not actually faster in our current case ona a 1080p window,
+                    // however it may be faster on larger displays or with differently shaped chunks.
+                    // Should not be meaningfully slower in fast cases and will speed up slow cases.
+                    .sample_range2d_small_zoom_out_map_par(
+                        &self.params.bounds,
+                        Pow2::new(1),
+                        |v| self.params.colors[v[(0, 0)].index()]);
                 let image = ColorImage::new(
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
