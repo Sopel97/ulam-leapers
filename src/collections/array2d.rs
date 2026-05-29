@@ -73,6 +73,14 @@ impl<T> Index<(usize, usize)> for Slice2D<'_, T> {
     }
 }
 
+impl<T> Slice2D<'_, T> {
+    pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
+        unsafe {
+            self.data.get_unchecked(y * self.stride + x)
+        }
+    }
+}
+
 impl<T> Index<(usize, usize)> for MutSlice2D<'_, T> {
     type Output = T;
 
@@ -87,6 +95,21 @@ impl<T> IndexMut<(usize, usize)> for MutSlice2D<'_, T> {
     }
 }
 
+
+impl<T> MutSlice2D<'_, T> {
+    pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
+        unsafe {
+            self.data.get_unchecked(y * self.stride + x)
+        }
+    }
+
+    pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
+        unsafe {
+            self.data.get_unchecked_mut(y * self.stride + x)
+        }
+    }
+}
+
 impl<T> Array2D<T> {
     pub fn width(&self) -> usize {
         self.width
@@ -94,6 +117,18 @@ impl<T> Array2D<T> {
 
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
+        unsafe {
+            self.data.get_unchecked(y * self.width + x)
+        }
+    }
+
+    pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
+        unsafe {
+            self.data.get_unchecked_mut(y * self.width + x)
+        }
     }
 }
 

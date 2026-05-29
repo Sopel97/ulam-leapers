@@ -74,6 +74,20 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     }
 }
 
+impl<T> Chunk<T> {
+    pub unsafe fn get_unchecked(&self, index: GridPoint) -> &T {
+        let xx = index.x - self.bounds.start.x;
+        let yy = index.y - self.bounds.start.y;
+        unsafe { self.cells.get_unchecked(xx as usize, yy as usize) }
+    }
+
+    pub unsafe fn get_unchecked_mut(&mut self, index: GridPoint) -> &mut T {
+        let xx = index.x - self.bounds.start.x;
+        let yy = index.y - self.bounds.start.y;
+        unsafe { self.cells.get_unchecked_mut(xx as usize, yy as usize) }
+    }
+}
+
 // Generic over T because we want to preserve type information of the underlying data.
 pub struct CompressedChunk<T> {
     bounds: GridRect,
@@ -360,6 +374,15 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
+    // Intended for small power of 2 factors due to overall complexity. If higher minification
+    // is required consider an approach with pregenerated mip-maps. While not viable for real-time
+    // updates it's still somewhat interactive for minification factors <=8 on typical resolutions.
+    // Region must be aligned to minification factor.
+    // Minification factor must be compatible with the chunk grid, otherwise the function panics.
+    // This function utilizes a thread pool for parallelism.
+    //
+    // IMPORTANT: There is a little bit of unsafe Array2D accesses
+    //            because it is around 30% faster overall.
     pub fn sample_range2d_small_zoom_out_map_par<F, U>(
         &self,
         region: &GridRect,
@@ -398,7 +421,12 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
             while let Ok((rx, ry, subregion_result)) = rx.recv() {
                 for y in 0..subregion_result.height() {
                     for x in 0..subregion_result.width() {
-                        result[(rx + x, ry + y)] = subregion_result[(x, y)];
+                        // SAFETY: The producer of these indices is trusted.
+                        //         We're just doing simple copying here.
+                        unsafe {
+                            *result.get_unchecked_mut(rx + x, ry + y) =
+                                *subregion_result.get_unchecked(x, y);
+                        }
                     }
                 }
             }
@@ -438,18 +466,28 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                         // Fill in the input block for the mapping function.
                         for y in by..by + block_size {
                             for x in bx..bx + block_size {
-                                let val = chunk[GridPoint::new(x, y)];
+                                // SAFETY: We are iterating a known existing chunk, as the subregion
+                                //         was computed based on its bounds.
+                                let val = unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
 
                                 let dx = (x - bx) as usize;
                                 let dy = (y - by) as usize;
-                                pixel_components[(dx, dy)] = val;
+
+                                // SAFETY: Explicitly iterating within the block.
+                                unsafe {
+                                    *pixel_components.get_unchecked_mut(dx, dy) = *val;
+                                }
                             }
                         }
 
                         // Map the block and store into the actual result.
                         let srx = pow2::floor_div(bx - subregion.start.x, minification) as usize;
                         let sry = pow2::floor_div(by - subregion.start.y, minification) as usize;
-                        subregion_result[(srx, sry)] = func(&pixel_components.as_slice2d());
+                        // SAFETY: Explicitly iterating within the subregion.
+                        unsafe {
+                            *subregion_result.get_unchecked_mut(srx, sry) =
+                                func(&pixel_components.as_slice2d());
+                        }
                     }
                 }
 
@@ -470,6 +508,9 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
     // updates it's still somewhat interactive for minification factors <=8 on typical resolutions.
     // Region must be aligned to minification factor.
     // Minification factor must be compatible with the chunk grid, otherwise the function panics.
+    //
+    // IMPORTANT: There is a little bit of unsafe Array2D accesses
+    //            because it is around 30% faster overall.
     pub fn sample_range2d_small_zoom_out_map<F, U>(
         &self,
         region: &GridRect,
@@ -527,18 +568,27 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
                         // Fill in the input block for the mapping function.
                         for y in by..by + block_size {
                             for x in bx..bx + block_size {
-                                let val = chunk[GridPoint::new(x, y)];
+                                // SAFETY: We are iterating a known existing chunk, as the subregion
+                                //         was computed based on its bounds.
+                                let val = unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
 
                                 let dx = (x - bx) as usize;
                                 let dy = (y - by) as usize;
-                                buffer[(dx, dy)] = val;
+
+                                // SAFETY: Explicitly iterating within the block.
+                                unsafe {
+                                    *buffer.get_unchecked_mut(dx, dy) = *val;
+                                }
                             }
                         }
 
                         // Map the block and store into the actual result.
                         let rx = pow2::floor_div(bx - region.start.x, minification) as usize;
                         let ry = pow2::floor_div(by - region.start.y, minification) as usize;
-                        result[(rx, ry)] = func(&buffer.as_slice2d());
+                        // SAFETY: The subregion is being iterated explicitly.
+                        unsafe {
+                            *result.get_unchecked_mut(rx, ry) = func(&buffer.as_slice2d());
+                        }
                     }
                 }
             });
@@ -546,6 +596,8 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         result
     }
 
+    // IMPORTANT: There is a little bit of unsafe Array2D accesses
+    //            because it is around 30% faster overall.
     pub fn sample_range2d_map<F, U>(&self, region: &GridRect, func: F) -> Array2D<U>
     where
         F: Fn(&T) -> U,
@@ -568,11 +620,17 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
 
                 for y in subregion.start.y..subregion.end.y {
                     for x in subregion.start.x..subregion.end.x {
-                        let val = chunk[GridPoint::new(x, y)];
+                        // SAFETY: We are iterating a known existing chunk, as the subregion
+                        //         was computed based on its bounds.
+                        let val = unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
 
                         let dx = (x - region.start.x) as usize;
                         let dy = (y - region.start.y) as usize;
-                        result[(dx, dy)] = func(&val);
+
+                        // SAFETY: Explicitly iterating within the region.
+                        unsafe {
+                            *result.get_unchecked_mut(dx, dy) = func(val);
+                        }
                     }
                 }
             });

@@ -134,7 +134,8 @@ impl GridRender {
                         let mut b: i64 = 0;
                         for y in 0..block.height() {
                             for x in 0..block.width() {
-                                let color = self.params.colors[block[(x, y)].index()];
+                                // SAFETY: Explicitly iterating within bounds.
+                                let color = unsafe { self.params.colors[block.get_unchecked(x, y).index()] };
                                 r += color.r() as i64;
                                 g += color.g() as i64;
                                 b += color.b() as i64;

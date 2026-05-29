@@ -31,6 +31,18 @@ impl<T> AlignedBoxedSlice<T> {
     pub fn as_mut_slice(&mut self) -> &mut [T] {
         &mut self.storage[self.begin..self.end]
     }
+
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        unsafe {
+            self.storage.get_unchecked(index + self.begin)
+        }
+    }
+
+    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        unsafe {
+            self.storage.get_unchecked_mut(index + self.begin)
+        }
+    }
 }
 
 impl<T> Index<usize> for AlignedBoxedSlice<T> {
