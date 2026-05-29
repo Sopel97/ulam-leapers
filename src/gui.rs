@@ -34,6 +34,7 @@ fn default_player_colors() -> Vec<Color32> {
         Color32::GREEN,
         Color32::CYAN,
         Color32::MAGENTA,
+        Color32::BROWN,
     ]
 }
 
