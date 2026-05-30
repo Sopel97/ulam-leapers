@@ -4,7 +4,7 @@ use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect, GridVector};
-use ulam_leapers::io::{WriteTo, ReadFrom};
+use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{FinalizedSimulation, Game, PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
@@ -15,8 +15,8 @@ enum Zoom {
     Minification(Pow2),
 }
 
-use Zoom::*;
 use crate::gui::Subwindow;
+use Zoom::*;
 
 #[derive(Clone, PartialEq)]
 struct GridRenderParameters {
@@ -49,22 +49,8 @@ impl Default for GridRenderParameters {
     }
 }
 
-struct GridRender {
-    params: GridRenderParameters,
-    handle: Option<TextureHandle>,
-}
-
-impl Default for GridRender {
-    fn default() -> Self {
-        GridRender {
-            params: GridRenderParameters::default(),
-            handle: None,
-        }
-    }
-}
-
-impl GridRender {
-    fn controls_to_params(
+impl GridRenderParameters {
+    pub fn from_controls(
         controls: &GridViewControls,
         viewport_width: usize,
         viewport_height: usize,
@@ -113,7 +99,23 @@ impl GridRender {
             zoom,
         }
     }
+}
 
+struct GridRender {
+    params: GridRenderParameters,
+    handle: Option<TextureHandle>,
+}
+
+impl Default for GridRender {
+    fn default() -> Self {
+        GridRender {
+            params: GridRenderParameters::default(),
+            handle: None,
+        }
+    }
+}
+
+impl GridRender {
     fn update(&mut self, ui: &Ui, frozen_grid: &FrozenGrid<PlayerId>) {
         match self.params.zoom {
             Magnification(_factor) => {
@@ -126,7 +128,8 @@ impl GridRender {
                     .sample_range2d_small_zoom_out_map_par(
                         &self.params.bounds,
                         Pow2::new(1),
-                        |v| self.params.colors[v[(0, 0)].index()]);
+                        |v| self.params.colors[v[(0, 0)].index()],
+                    );
                 let image = ColorImage::new(
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
@@ -145,7 +148,9 @@ impl GridRender {
                         for y in 0..block.height() {
                             for x in 0..block.width() {
                                 // SAFETY: Explicitly iterating within bounds.
-                                let color = unsafe { self.params.colors[block.get_unchecked(x, y).index()] };
+                                let color = unsafe {
+                                    self.params.colors[block.get_unchecked(x, y).index()]
+                                };
                                 r += color.r() as i64;
                                 g += color.g() as i64;
                                 b += color.b() as i64;
@@ -173,11 +178,8 @@ impl GridRender {
         &mut self,
         ui: &Ui,
         frozen_grid: &FrozenGrid<PlayerId>,
-        controls: &GridViewControls,
-        viewport_width: usize,
-        viewport_height: usize,
+        new_params: GridRenderParameters,
     ) -> bool {
-        let new_params = Self::controls_to_params(controls, viewport_width, viewport_height);
         if self.params != new_params {
             self.params = new_params;
             self.update(ui, frozen_grid);
@@ -220,9 +222,11 @@ impl Subwindow for GridExplorer {
             let updated = self.grid_render.maybe_update(
                 ui,
                 self.finalized_sim.grid(),
-                &self.grid_view_controls,
-                rect.width() as usize,
-                rect.height() as usize,
+                GridRenderParameters::from_controls(
+                    &self.grid_view_controls,
+                    rect.width() as usize,
+                    rect.height() as usize,
+                ),
             );
             let elapsed = timer.elapsed();
 
@@ -409,16 +413,16 @@ impl GridViewControls {
                 &mut self.origin_x,
                 -self.complete_shells as f32..=self.complete_shells as f32,
             )
-                .text("X")
-                .drag_value_speed(coord_drag_speed),
+            .text("X")
+            .drag_value_speed(coord_drag_speed),
         );
         ui.add(
             egui::Slider::new(
                 &mut self.origin_y,
                 -self.complete_shells as f32..=self.complete_shells as f32,
             )
-                .text("Y")
-                .drag_value_speed(coord_drag_speed),
+            .text("Y")
+            .drag_value_speed(coord_drag_speed),
         );
 
         for player_id in 0..=self.player_count {
