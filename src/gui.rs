@@ -1,5 +1,6 @@
 ﻿pub mod grid_explorer;
 mod simulation_creator;
+mod grid_render;
 
 use eframe::egui::Ui;
 use eframe::{Frame, egui};

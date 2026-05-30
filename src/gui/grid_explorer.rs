@@ -1,201 +1,15 @@
-﻿use eframe::egui;
-use eframe::egui::{ColorImage, Rect, Sense, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode, Ui};
+﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::grid_render::{default_player_colors, GridRender, GridRenderParameters};
+use crate::gui::Subwindow;
+use eframe::egui;
+use eframe::egui::{Rect, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
-use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect, GridVector};
+use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{FinalizedSimulation, Game, PlayerId, Simulation, SimulationLimits};
-use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Zoom {
-    Magnification(Pow2),
-    Minification(Pow2),
-}
-
-use crate::gui::Subwindow;
-use Zoom::*;
-
-#[derive(Clone, PartialEq)]
-struct GridRenderParameters {
-    bounds: GridRect,
-    colors: Vec<Color32>,
-    zoom: Zoom,
-}
-
-fn default_player_colors() -> Vec<Color32> {
-    vec![
-        Color32::WHITE,
-        Color32::BLACK,
-        Color32::RED,
-        Color32::BLUE,
-        Color32::YELLOW,
-        Color32::GREEN,
-        Color32::CYAN,
-        Color32::MAGENTA,
-        Color32::BROWN,
-    ]
-}
-
-impl Default for GridRenderParameters {
-    fn default() -> Self {
-        GridRenderParameters {
-            bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
-            colors: default_player_colors()[..1].to_vec(),
-            zoom: Zoom::Magnification(Pow2::new(1)),
-        }
-    }
-}
-
-impl GridRenderParameters {
-    pub fn from_controls(
-        controls: &GridViewControls,
-        viewport_width: usize,
-        viewport_height: usize,
-    ) -> GridRenderParameters {
-        let zoom = match controls.zoom_pow2 {
-            e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
-            e @ ..0 => Minification(Pow2::from_exponent((-e) as usize)),
-        };
-
-        let bounds = match zoom {
-            Magnification(factor) => {
-                let origin_x = controls.origin_x as i32;
-                let origin_y = controls.origin_y as i32;
-
-                GridRect::with_size(
-                    GridPoint::new(
-                        origin_x - floor_div(viewport_width / 2, factor) as i32,
-                        origin_y - floor_div(viewport_height / 2, factor) as i32,
-                    ),
-                    floor_div(viewport_width as i32, factor),
-                    floor_div(viewport_height as i32, factor),
-                )
-            }
-            Minification(factor) => {
-                // We have to ensure proper alignment for the sampling.
-                let origin_x = floor_to_multiple(controls.origin_x as i32, factor);
-                let origin_y = floor_to_multiple(controls.origin_y as i32, factor);
-                let factor_i32: i32 = factor.into();
-
-                GridRect::with_size(
-                    GridPoint::new(
-                        floor_to_multiple(origin_x, factor)
-                            - viewport_width as i32 / 2 * factor_i32,
-                        floor_to_multiple(origin_y, factor)
-                            - viewport_height as i32 / 2 * factor_i32,
-                    ),
-                    viewport_width as i32 * factor_i32,
-                    viewport_height as i32 * factor_i32,
-                )
-            }
-        };
-
-        GridRenderParameters {
-            bounds,
-            colors: controls.player_colors.clone(),
-            zoom,
-        }
-    }
-}
-
-struct GridRender {
-    params: GridRenderParameters,
-    handle: Option<TextureHandle>,
-}
-
-impl Default for GridRender {
-    fn default() -> Self {
-        GridRender {
-            params: GridRenderParameters::default(),
-            handle: None,
-        }
-    }
-}
-
-impl GridRender {
-    fn update(&mut self, ctx: &egui::Context, frozen_grid: &FrozenGrid<PlayerId>) {
-        let texture_options = TextureOptions {
-            magnification: TextureFilter::Nearest,
-            minification: TextureFilter::Linear,
-            wrap_mode: TextureWrapMode::ClampToEdge,
-            mipmap_mode: None,
-        };
-        
-        match self.params.zoom {
-            Magnification(_factor) => {
-                let samples: Array2D<Color32> = frozen_grid
-                    // We use sample_range2d_small_zoom_out_map_par with no minification
-                    // because it's parallelized.
-                    // Not actually faster in our current case ona a 1080p window,
-                    // however it may be faster on larger displays or with differently shaped chunks.
-                    // Should not be meaningfully slower in fast cases and will speed up slow cases.
-                    .sample_range2d_small_zoom_out_map_par(
-                        &self.params.bounds,
-                        Pow2::new(1),
-                        |v| self.params.colors[v[(0, 0)].index()],
-                    );
-                let image = ColorImage::new(
-                    [samples.width(), samples.height()],
-                    samples.as_flat_slice().to_vec(),
-                );
-                self.handle = Some(ctx.load_texture("name", image, texture_options));
-            }
-            Minification(factor) => {
-                let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
-                    &self.params.bounds,
-                    factor,
-                    |block| {
-                        // Crude area interpolation without gamma correction.
-                        let mut r: i64 = 0;
-                        let mut g: i64 = 0;
-                        let mut b: i64 = 0;
-                        for y in 0..block.height() {
-                            for x in 0..block.width() {
-                                // SAFETY: Explicitly iterating within bounds.
-                                let color = unsafe {
-                                    self.params.colors[block.get_unchecked(x, y).index()]
-                                };
-                                r += color.r() as i64;
-                                g += color.g() as i64;
-                                b += color.b() as i64;
-                            }
-                        }
-                        let count = Pow2::new(block.width() * block.height());
-                        Color32::from_rgb(
-                            floor_div(r, count) as u8,
-                            floor_div(g, count) as u8,
-                            floor_div(b, count) as u8,
-                        )
-                    },
-                );
-                let image = ColorImage::new(
-                    [samples.width(), samples.height()],
-                    samples.as_flat_slice().to_vec(),
-                );
-                self.handle = Some(ctx.load_texture("name", image, texture_options));
-            }
-        }
-    }
-
-    // Returns true if an update was actually performed (needed), false otherwise.
-    pub fn maybe_update(
-        &mut self,
-        ctx: &egui::Context,
-        frozen_grid: &FrozenGrid<PlayerId>,
-        new_params: GridRenderParameters,
-    ) -> bool {
-        if self.params != new_params {
-            self.params = new_params;
-            self.update(ctx, frozen_grid);
-            true
-        } else {
-            false
-        }
-    }
-}
+use ulam_leapers::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub struct GridExplorer {
     grid_view_controls: GridViewControls,
@@ -208,7 +22,7 @@ impl Subwindow for GridExplorer {
         "Explorer".to_owned()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
+    fn ui(&mut self, ui: &mut Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::Window::new("grid_view_control")
                 .scroll(false)
@@ -223,14 +37,13 @@ impl Subwindow for GridExplorer {
             let painter = ui.painter_at(rect);
 
             // background
-            painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
+            painter.rect_filled(rect, 0.0, Color32::WHITE);
 
             let timer = std::time::Instant::now();
             let updated = self.grid_render.maybe_update(
                 ui.ctx(),
                 self.finalized_sim.grid(),
-                GridRenderParameters::from_controls(
-                    &self.grid_view_controls,
+                self.grid_view_controls.to_render_params(
                     rect.width() as usize,
                     rect.height() as usize,
                 ),
@@ -247,7 +60,7 @@ impl Subwindow for GridExplorer {
                 );
             }
 
-            if let Some(handle) = &self.grid_render.handle {
+            if let Some(handle) = self.grid_render.handle() {
                 // y-flip via uv
                 painter.image(
                     handle.id(),
@@ -346,6 +159,56 @@ impl Default for GridViewControls {
 }
 
 impl GridViewControls {
+    pub fn to_render_params(
+        &self,
+        viewport_width: usize,
+        viewport_height: usize,
+    ) -> GridRenderParameters {
+        let zoom = match self.zoom_pow2 {
+            e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
+            e @ ..0 => Minification(Pow2::from_exponent((-e) as usize)),
+        };
+
+        let bounds = match zoom {
+            Magnification(factor) => {
+                let origin_x = self.origin_x as i32;
+                let origin_y = self.origin_y as i32;
+
+                GridRect::with_size(
+                    GridPoint::new(
+                        origin_x - floor_div(viewport_width / 2, factor) as i32,
+                        origin_y - floor_div(viewport_height / 2, factor) as i32,
+                    ),
+                    floor_div(viewport_width as i32, factor),
+                    floor_div(viewport_height as i32, factor),
+                )
+            }
+            Minification(factor) => {
+                // We have to ensure proper alignment for the sampling.
+                let origin_x = floor_to_multiple(self.origin_x as i32, factor);
+                let origin_y = floor_to_multiple(self.origin_y as i32, factor);
+                let factor_i32: i32 = factor.into();
+
+                GridRect::with_size(
+                    GridPoint::new(
+                        floor_to_multiple(origin_x, factor)
+                            - viewport_width as i32 / 2 * factor_i32,
+                        floor_to_multiple(origin_y, factor)
+                            - viewport_height as i32 / 2 * factor_i32,
+                    ),
+                    viewport_width as i32 * factor_i32,
+                    viewport_height as i32 * factor_i32,
+                )
+            }
+        };
+
+        GridRenderParameters::new(
+            bounds,
+            self.player_colors.clone(),
+            zoom,
+        )
+    }
+
     fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect) {
         let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover());
 
@@ -398,7 +261,7 @@ impl GridViewControls {
         self.origin_y = self.origin_y.clamp(-bounds, bounds);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
+    fn ui(&mut self, ui: &mut Ui) {
         ui.heading("Controls");
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
