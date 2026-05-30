@@ -116,7 +116,7 @@ impl Default for GridRender {
 }
 
 impl GridRender {
-    fn update(&mut self, ui: &Ui, frozen_grid: &FrozenGrid<PlayerId>) {
+    fn update(&mut self, ctx: &egui::Context, frozen_grid: &FrozenGrid<PlayerId>) {
         match self.params.zoom {
             Magnification(_factor) => {
                 let samples: Array2D<Color32> = frozen_grid
@@ -134,7 +134,7 @@ impl GridRender {
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
                 );
-                self.handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
+                self.handle = Some(ctx.load_texture("name", image, TextureOptions::NEAREST));
             }
             Minification(factor) => {
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
@@ -168,7 +168,7 @@ impl GridRender {
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
                 );
-                self.handle = Some(ui.load_texture("name", image, TextureOptions::NEAREST));
+                self.handle = Some(ctx.load_texture("name", image, TextureOptions::NEAREST));
             }
         }
     }
@@ -176,13 +176,13 @@ impl GridRender {
     // Returns true if an update was actually performed (needed), false otherwise.
     pub fn maybe_update(
         &mut self,
-        ui: &Ui,
+        ctx: &egui::Context,
         frozen_grid: &FrozenGrid<PlayerId>,
         new_params: GridRenderParameters,
     ) -> bool {
         if self.params != new_params {
             self.params = new_params;
-            self.update(ui, frozen_grid);
+            self.update(ctx, frozen_grid);
             true
         } else {
             false
@@ -220,7 +220,7 @@ impl Subwindow for GridExplorer {
 
             let timer = std::time::Instant::now();
             let updated = self.grid_render.maybe_update(
-                ui,
+                ui.ctx(),
                 self.finalized_sim.grid(),
                 GridRenderParameters::from_controls(
                     &self.grid_view_controls,
