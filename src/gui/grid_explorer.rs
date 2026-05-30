@@ -1,5 +1,5 @@
 ﻿use eframe::egui;
-use eframe::egui::{ColorImage, Rect, Sense, TextureHandle, TextureOptions, Ui};
+use eframe::egui::{ColorImage, Rect, Sense, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use ulam_leapers::collections::array2d::Array2D;
@@ -117,6 +117,13 @@ impl Default for GridRender {
 
 impl GridRender {
     fn update(&mut self, ctx: &egui::Context, frozen_grid: &FrozenGrid<PlayerId>) {
+        let texture_options = TextureOptions {
+            magnification: TextureFilter::Nearest,
+            minification: TextureFilter::Linear,
+            wrap_mode: TextureWrapMode::ClampToEdge,
+            mipmap_mode: None,
+        };
+        
         match self.params.zoom {
             Magnification(_factor) => {
                 let samples: Array2D<Color32> = frozen_grid
@@ -134,7 +141,7 @@ impl GridRender {
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
                 );
-                self.handle = Some(ctx.load_texture("name", image, TextureOptions::NEAREST));
+                self.handle = Some(ctx.load_texture("name", image, texture_options));
             }
             Minification(factor) => {
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
@@ -168,7 +175,7 @@ impl GridRender {
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
                 );
-                self.handle = Some(ctx.load_texture("name", image, TextureOptions::NEAREST));
+                self.handle = Some(ctx.load_texture("name", image, texture_options));
             }
         }
     }
