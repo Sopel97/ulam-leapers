@@ -3,8 +3,18 @@ use crate::util::align::MemoryAlignment;
 
 pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,
+    align: MemoryAlignment,
     begin: usize,
     end: usize,
+}
+
+impl<T> Clone for AlignedBoxedSlice<T>
+where T: Default + Copy {
+    fn clone(&self) -> Self {
+        let mut other = Self::new(self.end - self.begin, self.align);
+        other.as_mut_slice().copy_from_slice(&self.as_slice());
+        other
+    }
 }
 
 impl<T: Default + Clone> AlignedBoxedSlice<T> {
@@ -17,6 +27,7 @@ impl<T: Default + Clone> AlignedBoxedSlice<T> {
 
         AlignedBoxedSlice {
             storage,
+            align,
             begin: aligned_offset,
             end: aligned_offset + size,
         }

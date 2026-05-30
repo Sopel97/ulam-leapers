@@ -1,11 +1,16 @@
 ﻿use crate::gui::Subwindow;
+use crate::gui::grid_render::default_player_colors;
 use eframe::egui;
-use eframe::egui::{Checkbox, ScrollArea, Slider, Ui, Vec2, Vec2b};
+use eframe::egui::{
+    Checkbox, Color32, ColorImage, Rect, ScrollArea, Slider, TextureFilter, TextureOptions,
+    TextureWrapMode, Ui, Vec2, Vec2b, pos2,
+};
+use eframe::epaint::TextureHandle;
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::grid::GridVector;
+use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
 
@@ -22,6 +27,11 @@ const MAX_COMPLETE_SHELLS: usize = 1_000_000;
 const MIN_MEMORY_USAGE_GIB: usize = 1;
 const MAX_MEMORY_USAGE_GIB: usize = 1024;
 
+const MIN_PREVIEW_SHELLS: usize = 100;
+const DEFAULT_PREVIEW_SHELLS: usize = 250;
+const MAX_PREVIEW_SHELLS: usize = 1000;
+
+#[derive(PartialEq, Clone)]
 struct PlayerConfigState {
     id: usize,
     attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
@@ -93,6 +103,7 @@ impl Default for PlayerConfigState {
     }
 }
 
+#[derive(PartialEq, Clone)]
 struct EnemyConfigState {
     enemy_map: Array2D<bool>,
     is_enemy_map_symmetric: bool,
@@ -116,11 +127,14 @@ impl Default for EnemyConfigState {
 
 impl EnemyConfigState {
     // Vec<(attacker, attacked)>
-    pub fn pairs(&self) -> Vec<(PlayerId, PlayerId)> {
+    pub fn pairs(&self, player_count: usize) -> Vec<(PlayerId, PlayerId)> {
         let mut res = vec![];
 
-        for y in 0..self.enemy_map.height() {
-            for x in 0..self.enemy_map.width() {
+        assert!(player_count <= self.enemy_map.width());
+        assert!(player_count <= self.enemy_map.height());
+
+        for y in 0..player_count {
+            for x in 0..player_count {
                 if self.enemy_map[(x, y)] {
                     res.push((PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8)));
                 }
@@ -145,6 +159,7 @@ impl EnemyConfigState {
     }
 }
 
+#[derive(PartialEq, Clone)]
 struct LimitsState {
     memory_usage_gib: usize,
     turns_m: usize,
@@ -161,24 +176,27 @@ impl Default for LimitsState {
     }
 }
 
-struct State {
+#[derive(PartialEq, Clone)]
+struct CreationState {
     player_count: usize,
     player_configs: Vec<PlayerConfigState>,
     enemy_config: EnemyConfigState,
     limits: LimitsState,
+    preview_shells: usize,
 }
 
-impl Default for State {
+impl Default for CreationState {
     fn default() -> Self {
         let mut player_configs = Vec::with_capacity(MAX_PLAYER_COUNT);
         for id in 0..MAX_PLAYER_COUNT {
             player_configs.push(PlayerConfigState::with_id(id + 1));
         }
-        State {
+        CreationState {
             player_count: DEFAULT_PLAYER_COUNT,
             player_configs,
             enemy_config: Default::default(),
             limits: Default::default(),
+            preview_shells: DEFAULT_PREVIEW_SHELLS,
         }
     }
 }
@@ -186,12 +204,21 @@ impl Default for State {
 enum SimulationCreatorWorkerJob {
     Stop,
     CancelAll,
+    GeneratePreview(Simulation, egui::Context, usize),
 }
 
-enum SimulationCreatorWorkerResult {}
+enum SimulationCreatorWorkerResult {
+    PreviewImage(TextureHandle),
+}
 
 pub struct SimulationCreator {
-    state: State,
+    state: CreationState,
+    last_rendered_state: Option<CreationState>,
+
+    // TODO: maybe integrate with GridRender, though the fact that we are splitting
+    //       the work into a worker thread complicates this. May not be worth it unless
+    //       GridRender gains more functionality.
+    preview_texture_handle: Option<TextureHandle>,
 
     worker: Option<JoinHandle<()>>,
     worker_jobs: mpsc::Sender<SimulationCreatorWorkerJob>,
@@ -204,7 +231,10 @@ impl SimulationCreator {
         let (result_sender, result_receiver) = mpsc::channel();
 
         Self {
-            state: State::default(),
+            state: CreationState::default(),
+            last_rendered_state: None,
+
+            preview_texture_handle: None,
 
             // IMPORTANT: The worker skips jobs and only focuses on the most recent one
             // TODO: clearer abstraction for this.
@@ -231,6 +261,52 @@ impl SimulationCreator {
                         SimulationCreatorWorkerJob::CancelAll => {
                             while job_receiver.try_recv().is_ok() {}
                         }
+                        SimulationCreatorWorkerJob::GeneratePreview(
+                            mut simulation,
+                            mut ctx,
+                            shells,
+                        ) => {
+                            if shells == 0 {
+                                continue;
+                            }
+
+                            let timer = std::time::Instant::now();
+                            let limits = SimulationLimits::new().with_complete_shell_limit(shells);
+                            let _ = simulation.simulate(limits);
+                            let finalized = simulation.finalize();
+                            let frozen_grid = finalized.grid();
+
+                            let colors = default_player_colors();
+                            let bounds = GridRect::with_size(
+                                GridPoint::new(-(shells as i32), -(shells as i32)),
+                                (shells * 2 + 1) as i32,
+                                (shells * 2 + 1) as i32,
+                            );
+                            let samples: Array2D<Color32> =
+                                frozen_grid.sample_range2d_map(&bounds, |v| colors[v.index()]);
+                            let image = ColorImage::new(
+                                [samples.width(), samples.height()],
+                                samples.as_flat_slice().to_vec(),
+                            );
+
+                            let texture_options = TextureOptions {
+                                magnification: TextureFilter::Nearest,
+                                minification: TextureFilter::Linear,
+                                wrap_mode: TextureWrapMode::ClampToEdge,
+                                mipmap_mode: None,
+                            };
+                            let handle = ctx.load_texture("name", image, texture_options);
+
+                            result_sender
+                                .send(SimulationCreatorWorkerResult::PreviewImage(handle))
+                                .unwrap();
+
+                            // The UI should now receive the preview texture, but it's reactive
+                            // so we should force a repaint.
+                            ctx.request_repaint();
+
+                            let elapsed = timer.elapsed();
+                        }
                     }
                 }
             })),
@@ -247,7 +323,7 @@ impl SimulationCreator {
             sim.add_player(LeaperAttacks::from_offsets(attacks));
         }
 
-        let enemy_map = self.state.enemy_config.pairs();
+        let enemy_map = self.state.enemy_config.pairs(self.state.player_count);
         for (attacker, attacked) in enemy_map {
             sim.add_player_enemy(attacker, attacked);
         }
@@ -283,6 +359,8 @@ impl Subwindow for SimulationCreator {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
+        self.maybe_update_preview(ui.ctx());
+
         egui::Panel::left("player_setup_panel")
             .resizable(false)
             .show_inside(ui, |ui| {
@@ -299,10 +377,78 @@ impl Subwindow for SimulationCreator {
                     self.show_player_configs(ui);
                 });
             });
+
+        egui::CentralPanel::no_frame().show_inside(ui, |ui| {
+            egui::Frame::default().show(ui, |ui| {
+                ui.add(
+                    Slider::new(
+                        &mut self.state.preview_shells,
+                        MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS,
+                    )
+                        .integer()
+                        .text("Preview shells"),
+                );
+            });
+
+            egui::Frame::default().show(ui, |ui| {
+                let rect = ui.max_rect();
+
+                let mut last_result = None;
+                while let Ok(result) = self.worker_results.try_recv() {
+                    last_result = Some(result);
+                }
+
+                match last_result {
+                    None => { /* No new preview */ }
+                    Some(SimulationCreatorWorkerResult::PreviewImage(handle)) => {
+                        self.preview_texture_handle = Some(handle);
+                    }
+                }
+
+                if let Some(handle) = &self.preview_texture_handle {
+                    // y-flip via uv
+                    let painter = ui.painter_at(rect);
+                    let target_rect_size = rect.width().min(rect.height());
+                    let target_rect =
+                        Rect::from_center_size(rect.center(), Vec2::splat(target_rect_size));
+                    painter.image(
+                        handle.id(),
+                        target_rect,
+                        Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
+                        Color32::WHITE,
+                    );
+                }
+            });
+        });
     }
 }
 
 impl SimulationCreator {
+    fn maybe_update_preview(&mut self, ctx: &egui::Context) {
+        let needs_update = match &self.last_rendered_state {
+            None => true,
+            Some(last_state) => {
+                // Ignore limit config because it doesn't affect the preview.
+                last_state.player_count != self.state.player_count
+                    || last_state.player_configs != self.state.player_configs
+                    || last_state.enemy_config != self.state.enemy_config
+                    || last_state.preview_shells != self.state.preview_shells
+            }
+        };
+
+        if needs_update {
+            let (simulation, _) = self.to_simulation();
+            self.worker_jobs
+                .send(SimulationCreatorWorkerJob::GeneratePreview(
+                    simulation,
+                    ctx.clone(),
+                    self.state.preview_shells,
+                ))
+                .unwrap();
+            self.last_rendered_state = Some(self.state.clone());
+        }
+    }
+
     fn show_player_configs(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
             ScrollArea::new(Vec2b::new(false, true))
@@ -398,12 +544,6 @@ impl SimulationCreator {
                             .suffix(" GiB"),
                         );
                     });
-                });
-            });
-
-            egui::Frame::default().show(ui, |ui| {
-                ui.group(|ui| {
-                    ui.label("Preview: TODO");
                 });
             });
         });

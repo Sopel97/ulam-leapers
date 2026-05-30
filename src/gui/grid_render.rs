@@ -1,7 +1,6 @@
 ﻿use eframe::egui;
 use eframe::egui::{Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode};
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::coords::Rect2D;
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect};
 use ulam_leapers::simulation::PlayerId;
 use ulam_leapers::util::pow2::{floor_div, Pow2};
@@ -49,7 +48,7 @@ impl Default for GridRenderParameters {
         GridRenderParameters {
             bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
             colors: default_player_colors()[..1].to_vec(),
-            zoom: Zoom::Magnification(Pow2::new(1)),
+            zoom: Magnification(Pow2::new(1)),
         }
     }
 }
