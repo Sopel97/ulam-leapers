@@ -1,6 +1,8 @@
 ﻿use crate::gui::Subwindow;
 use eframe::egui;
-use eframe::egui::{Checkbox, Id, ScrollArea, Slider, Ui, Vec2, Vec2b};
+use eframe::egui::{Checkbox, ScrollArea, Slider, Ui, Vec2, Vec2b};
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
 
 const MIN_PLAYER_COUNT: usize = 1;
@@ -146,14 +148,73 @@ impl Default for State {
     }
 }
 
+enum SimulationCreatorWorkerJob {
+    Stop,
+    CancelAll,
+}
+
+enum SimulationCreatorWorkerResult {
+
+}
+
 pub struct SimulationCreator {
     state: State,
+
+    worker: Option<JoinHandle<()>>,
+    worker_jobs: mpsc::Sender<SimulationCreatorWorkerJob>,
+    worker_results: mpsc::Receiver<SimulationCreatorWorkerResult>,
 }
 
 impl SimulationCreator {
     pub fn new() -> Self {
+        let (job_sender, job_receiver) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::channel();
+
         Self {
             state: State::default(),
+
+            // IMPORTANT: The worker skips jobs and only focuses on the most recent one
+            // TODO: clearer abstraction for this.
+            worker: Some(std::thread::spawn(move || {
+                let job_receiver = job_receiver;
+                let result_sender = result_sender;
+                loop {
+                    let mut job = job_receiver.recv().unwrap();
+                    if let SimulationCreatorWorkerJob::Stop = job {
+                        break;
+                    }
+
+                    // Consume jobs as long as there is something newer.
+                    while let Ok(newer) = job_receiver.try_recv() {
+                        job = newer;
+
+                        if let SimulationCreatorWorkerJob::Stop = job {
+                            break;
+                        }
+                    }
+
+                    match job {
+                        SimulationCreatorWorkerJob::Stop => break,
+                        SimulationCreatorWorkerJob::CancelAll => {
+                            while job_receiver.try_recv().is_ok() {}
+                        },
+                    }
+                }
+            })),
+            worker_jobs: job_sender,
+            worker_results: result_receiver,
+        }
+    }
+}
+
+impl Drop for SimulationCreator {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            self.worker_jobs.send(SimulationCreatorWorkerJob::CancelAll).unwrap();
+            self.worker_jobs.send(SimulationCreatorWorkerJob::Stop).unwrap();
+            if let Err(e) = worker.join() {
+                eprintln!("Failed to join worker: {:?}", e);
+            }
         }
     }
 }
