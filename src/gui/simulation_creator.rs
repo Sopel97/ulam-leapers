@@ -1,9 +1,13 @@
 ﻿use crate::gui::Subwindow;
 use eframe::egui;
 use eframe::egui::{Checkbox, ScrollArea, Slider, Ui, Vec2, Vec2b};
+use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
+use ulam_leapers::grid::GridVector;
+use ulam_leapers::piece::LeaperAttacks;
+use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -61,6 +65,22 @@ impl PlayerConfigState {
             }
         }
     }
+
+    pub fn attack_offsets(&self) -> HashSet<GridVector> {
+        let mut offsets = HashSet::<GridVector>::new();
+        for y in 0..self.attack_map.height() {
+            for x in 0..self.attack_map.width() {
+                if self.attack_map[(x, y)] {
+                    offsets.insert(GridVector::new(
+                        (x as i32) - MAX_PIECE_RANGE as i32,
+                        // Flip y because UI is rendered top to bottom while the grid's y points up.
+                        -((y as i32) - MAX_PIECE_RANGE as i32),
+                    ));
+                }
+            }
+        }
+        offsets
+    }
 }
 
 impl Default for PlayerConfigState {
@@ -95,6 +115,21 @@ impl Default for EnemyConfigState {
 }
 
 impl EnemyConfigState {
+    // Vec<(attacker, attacked)>
+    pub fn pairs(&self) -> Vec<(PlayerId, PlayerId)> {
+        let mut res = vec![];
+
+        for y in 0..self.enemy_map.height() {
+            for x in 0..self.enemy_map.width() {
+                if self.enemy_map[(x, y)] {
+                    res.push((PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8)));
+                }
+            }
+        }
+
+        res
+    }
+
     pub fn apply_enabled_symmetrically(&mut self) {
         for y in 0..self.enemy_map.height() {
             for x in 0..self.enemy_map.width() {
@@ -153,9 +188,7 @@ enum SimulationCreatorWorkerJob {
     CancelAll,
 }
 
-enum SimulationCreatorWorkerResult {
-
-}
+enum SimulationCreatorWorkerResult {}
 
 pub struct SimulationCreator {
     state: State,
@@ -197,7 +230,7 @@ impl SimulationCreator {
                         SimulationCreatorWorkerJob::Stop => break,
                         SimulationCreatorWorkerJob::CancelAll => {
                             while job_receiver.try_recv().is_ok() {}
-                        },
+                        }
                     }
                 }
             })),
@@ -205,13 +238,38 @@ impl SimulationCreator {
             worker_results: result_receiver,
         }
     }
+
+    pub fn to_simulation(&self) -> (Simulation, SimulationLimits) {
+        let mut sim = Simulation::new();
+
+        for player_config in self.state.player_configs[..self.state.player_count].iter() {
+            let attacks = player_config.attack_offsets();
+            sim.add_player(LeaperAttacks::from_offsets(attacks));
+        }
+
+        let enemy_map = self.state.enemy_config.pairs();
+        for (attacker, attacked) in enemy_map {
+            sim.add_player_enemy(attacker, attacked);
+        }
+
+        let limits = SimulationLimits::new()
+            .with_memory_limit(self.state.limits.memory_usage_gib * 1024 * 1024 * 1024)
+            .with_turn_limit(self.state.limits.turns_m * 1_000_000)
+            .with_complete_shell_limit(self.state.limits.complete_shells);
+
+        (sim, limits)
+    }
 }
 
 impl Drop for SimulationCreator {
     fn drop(&mut self) {
         if let Some(worker) = self.worker.take() {
-            self.worker_jobs.send(SimulationCreatorWorkerJob::CancelAll).unwrap();
-            self.worker_jobs.send(SimulationCreatorWorkerJob::Stop).unwrap();
+            self.worker_jobs
+                .send(SimulationCreatorWorkerJob::CancelAll)
+                .unwrap();
+            self.worker_jobs
+                .send(SimulationCreatorWorkerJob::Stop)
+                .unwrap();
             if let Err(e) = worker.join() {
                 eprintln!("Failed to join worker: {:?}", e);
             }

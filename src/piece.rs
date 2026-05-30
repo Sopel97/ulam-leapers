@@ -26,6 +26,12 @@ fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
 }
 
 impl LeaperAttacks {
+    pub fn from_offsets(offsets: HashSet<GridVector>) -> Self {
+        Self {
+            attack_vectors: offsets.into_iter().collect()
+        }
+    }
+    
     pub fn from_canonical(v: &GridVector) -> LeaperAttacks {
         LeaperAttacks {
             attack_vectors: symmetries(v).collect(),
