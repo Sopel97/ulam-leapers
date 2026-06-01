@@ -433,6 +433,10 @@ impl Simulation {
             };
         }
 
+        if limits.turns.is_some_and(|v| v <= self.simulated_turns) {
+            return Ok(SimulationLimit::Turns);
+        }
+
         if limits.memory.is_some_and(|v| self.memory_usage() >= v) {
             return Ok(SimulationLimit::Memory);
         }
@@ -520,7 +524,7 @@ impl Simulation {
 
         let mut progress = SimulationProgress::default();
         let mut step = 0;
-        let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX);
+        let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX) - self.simulated_turns;
         let mut hit_limit = SimulationLimit::Turns;
         while turns_to_simulate > 0 {
             let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
@@ -785,7 +789,7 @@ mod tests {
         assert_eq!(grid[GridPoint::new(1, 0)], p2);
         assert_eq!(grid[GridPoint::new(0, 1)], p2);
 
-        sim.simulate(SimulationLimits::new().with_turn_limit(3))
+        sim.simulate(SimulationLimits::new().with_turn_limit(5))
             .unwrap();
 
         assert_eq!(sim.simulated_turns, 5);
