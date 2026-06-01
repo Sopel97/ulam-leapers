@@ -1,16 +1,17 @@
 ﻿pub mod grid_explorer;
-mod simulation_creator;
 mod grid_render;
+mod simulation_creator;
 
+use crate::gui::simulation_creator::SimulationCreator;
 use eframe::egui::Ui;
 use eframe::{Frame, egui};
-use crate::gui::grid_explorer::GridExplorer;
-use crate::gui::simulation_creator::SimulationCreator;
 
 pub trait Subwindow {
     fn name(&self) -> String;
-    fn ui(&mut self, ui: &mut egui::Ui);
-    fn is_closeable(&self) -> bool { true }
+    fn ui(&mut self, ui: &mut Ui);
+    fn is_closeable(&self) -> bool {
+        true
+    }
     fn on_close(&mut self) {}
 }
 
@@ -107,14 +108,14 @@ impl App {
         self.state.tabs.push(Tab {
             id,
             subwindow,
-            is_closed: false
+            is_closed: false,
         });
         if self.state.selected_tab_id == TabIdAllocator::invalid_id() {
             self.state.selected_tab_id = id;
         }
     }
 
-    pub fn tab_bar(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
+    pub fn tab_bar(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let mut selected_tab_id = self.state.selected_tab_id;
         for tab in self.state.tabs.iter_mut() {
             ui.separator();
@@ -126,10 +127,11 @@ impl App {
                 selected_tab_id = tab.id;
             }
 
-            if tab.subwindow.is_closeable() && tab.id == self.state.selected_tab_id {
-                if ui.small_button("✖").clicked() {
-                    tab.is_closed = true;
-                }
+            if tab.subwindow.is_closeable()
+                && tab.id == self.state.selected_tab_id
+                && ui.small_button("✖").clicked()
+            {
+                tab.is_closed = true;
             }
             ui.separator();
         }
