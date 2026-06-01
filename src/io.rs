@@ -30,7 +30,7 @@ impl<T> WriteTo for Vec<T>
     where T: WriteTo
 {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write(&self.len().to_le_bytes())?;
+        writer.write_all(&self.len().to_le_bytes())?;
         for player in self.iter() {
             player.write_to(writer)?;
         }
