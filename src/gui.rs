@@ -6,9 +6,16 @@ use crate::gui::simulation_creator::SimulationCreator;
 use eframe::egui::Ui;
 use eframe::{Frame, egui};
 
+pub enum SubwindowResult {
+    Keep(Box<dyn Subwindow>),
+    Spawn((Box<dyn Subwindow>, Vec<Box<dyn Subwindow>>)),
+    Replace(Box<dyn Subwindow>),
+    Close,
+}
+
 pub trait Subwindow {
     fn name(&self) -> String;
-    fn ui(&mut self, ui: &mut Ui);
+    fn ui(self: Box<Self>, ui: &mut Ui) -> SubwindowResult;
     fn is_closeable(&self) -> bool {
         true
     }
@@ -38,10 +45,16 @@ impl TabIdAllocator {
     }
 }
 
+#[derive(Default)]
+enum SubwindowState {
+    #[default]
+    Closed,
+    Active(Box<dyn Subwindow>),
+}
+
 pub struct Tab {
     id: TabId,
-    is_closed: bool,
-    subwindow: Box<dyn Subwindow>,
+    subwindow: SubwindowState,
 }
 
 pub struct State {
@@ -77,8 +90,10 @@ impl eframe::App for App {
                 });
             });
 
+        self.drop_closed_tabs();
+
         egui::CentralPanel::no_frame().show_inside(ui, |ui| {
-            self.show_selected_tab(ui, frame);
+            self.process_selected_tab(ui, frame);
         });
     }
 }
@@ -95,20 +110,14 @@ impl App {
     }
 
     pub fn drop_closed_tabs(&mut self) {
-        for tab in &mut self.state.tabs {
-            if tab.is_closed {
-                tab.subwindow.on_close();
-            }
-        }
-        self.state.tabs.retain(|t| !t.is_closed);
+        self.state.tabs.retain(|tab| !matches!(tab.subwindow, SubwindowState::Closed));
     }
 
     pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>) {
         let id = self.state.tab_id_allocator.next();
         self.state.tabs.push(Tab {
             id,
-            subwindow,
-            is_closed: false,
+            subwindow: SubwindowState::Active(subwindow),
         });
         if self.state.selected_tab_id == TabIdAllocator::invalid_id() {
             self.state.selected_tab_id = id;
@@ -118,30 +127,74 @@ impl App {
     pub fn tab_bar(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let mut selected_tab_id = self.state.selected_tab_id;
         for tab in self.state.tabs.iter_mut() {
-            ui.separator();
+            let mut do_close = false;
+            match tab.subwindow {
+                SubwindowState::Active(ref mut subwindow) => {
+                    ui.separator();
 
-            if ui
-                .selectable_label(selected_tab_id == tab.id, tab.subwindow.name())
-                .clicked()
-            {
-                selected_tab_id = tab.id;
+                    if ui
+                        .selectable_label(selected_tab_id == tab.id, subwindow.name())
+                        .clicked()
+                    {
+                        selected_tab_id = tab.id;
+                    }
+
+                    if subwindow.is_closeable()
+                        && tab.id == self.state.selected_tab_id
+                        && ui.small_button("✖").clicked()
+                    {
+                        subwindow.on_close();
+                        do_close = true;
+                    }
+                    ui.separator();
+                }
+                SubwindowState::Closed => {}
             }
 
-            if tab.subwindow.is_closeable()
-                && tab.id == self.state.selected_tab_id
-                && ui.small_button("✖").clicked()
-            {
-                tab.is_closed = true;
+            if do_close {
+                tab.subwindow = SubwindowState::Closed;
             }
-            ui.separator();
         }
+
         self.state.selected_tab_id = selected_tab_id;
     }
 
-    pub fn show_selected_tab(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+    pub fn process_selected_tab(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        let mut selected_tab = None;
         for tab in self.state.tabs.iter_mut() {
             if tab.id == self.state.selected_tab_id {
-                tab.subwindow.ui(ui);
+                selected_tab = Some(tab);
+                break;
+            }
+        }
+
+        if let Some(tab) = selected_tab {
+            let mut pending_children = vec![];
+            let subwindow = std::mem::take(&mut tab.subwindow);
+            tab.subwindow = match subwindow {
+                SubwindowState::Active(subwindow) => {
+                    match subwindow.ui(ui) {
+                        SubwindowResult::Keep(kept) => {
+                            SubwindowState::Active(kept)
+                        }
+                        SubwindowResult::Spawn((kept, mut children)) => {
+                            pending_children.append(&mut children);
+                            SubwindowState::Active(kept)
+                        }
+                        SubwindowResult::Replace(replacement) => {
+                            // Same as Kept, but it's valuable to have a syntactic distinction.
+                            SubwindowState::Active(replacement)
+                        }
+                        SubwindowResult::Close => {
+                            SubwindowState::Closed
+                        }
+                    }
+                },
+                SubwindowState::Closed => SubwindowState::Closed
+            };
+
+            for pending_child in pending_children {
+                self.add_tab(pending_child);
             }
         }
     }

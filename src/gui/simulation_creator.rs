@@ -1,4 +1,4 @@
-﻿use crate::gui::Subwindow;
+﻿use crate::gui::{Subwindow, SubwindowResult};
 use crate::gui::grid_render::default_player_colors;
 use eframe::egui;
 use eframe::egui::{
@@ -13,6 +13,7 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
+use crate::gui::SubwindowResult::Keep;
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -355,7 +356,7 @@ impl Subwindow for SimulationCreator {
         "Creator".to_owned()
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
+    fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         self.maybe_update_preview(ui.ctx());
 
         egui::Panel::left("player_setup_panel")
@@ -417,6 +418,8 @@ impl Subwindow for SimulationCreator {
                 }
             });
         });
+        
+        Keep(self)
     }
 }
 
