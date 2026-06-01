@@ -194,6 +194,13 @@ impl Game for FinalizedSimulation {
     }
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct SimulationProgress {
+    memory_usage: usize,
+    turns: usize,
+    complete_shells: usize,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SimulationError {
     IsFinalized,
@@ -402,6 +409,16 @@ impl Simulation {
         &mut self,
         limits: SimulationLimits,
     ) -> Result<SimulationLimit, SimulationError> {
+        self.simulate_with_callback(limits, |_| {})
+    }
+
+    pub fn simulate_with_callback<F: Fn(SimulationProgress) + Sized>(
+        &mut self,
+        limits: SimulationLimits,
+        progress_callback: F,
+    )
+        -> Result<SimulationLimit, SimulationError>
+    {
         if !limits.any() {
             return Err(SimulationError::InfiniteSimulation);
         }
@@ -501,6 +518,7 @@ impl Simulation {
             grid
         });
 
+        let mut progress = SimulationProgress::default();
         let mut step = 0;
         let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX);
         let mut hit_limit = SimulationLimit::Turns;
@@ -524,12 +542,13 @@ impl Simulation {
                 job_tx.send(Job::Compress(region)).unwrap();
             }
 
-            if let Some(memory_limit) = limits.memory
-                && step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1
+            if step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1
             {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
-                if total >= memory_limit {
+                progress.memory_usage = total;
+
+                if limits.memory.is_some_and(|limit| { total >= limit }) {
                     hit_limit = SimulationLimit::Memory;
                     break;
                 }
@@ -537,15 +556,16 @@ impl Simulation {
                 job_tx.send(Job::MemoryUsage).unwrap();
             }
 
+            progress.complete_shells = self.complete_shells() as usize;
             if limits
                 .complete_shells
-                .is_some_and(|v| self.complete_shells() as usize >= v)
+                .is_some_and(|v| progress.complete_shells >= v)
             {
                 hit_limit = SimulationLimit::CompleteShells;
                 break;
             }
 
-            if limits.stop_flag.iter().any(|v| {
+            if limits.stop_flag.as_ref().is_some_and(|v| {
                 v.load(Ordering::Relaxed)
             }) {
                 hit_limit = SimulationLimit::StopFlag;
@@ -554,8 +574,11 @@ impl Simulation {
 
             self.update_forbiddances_origin();
 
+            progress.turns += turns_to_simulate_this_step;
             turns_to_simulate -= turns_to_simulate_this_step;
             step += 1;
+
+            progress_callback(progress);
         }
 
         // Send final message to terminate the worker thread and get the grid back.
