@@ -215,6 +215,7 @@ pub enum SimulationLimit {
     StopFlag,
 }
 
+#[derive(Clone)]
 pub struct SimulationLimits {
     memory: Option<usize>,
     turns: Option<usize>,

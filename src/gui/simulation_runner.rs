@@ -1,7 +1,8 @@
 ﻿use crate::gui::{Subwindow, SubwindowResult};
+use eframe::egui;
 use eframe::egui::Ui;
-use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use ulam_leapers::simulation::{
     FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits,
@@ -9,8 +10,13 @@ use ulam_leapers::simulation::{
 };
 
 enum SimulationRunnerWorkerJob {
-    Simulate(Simulation, SimulationLimits, Arc<Mutex<SimulationProgress>>),
-    Finalize(Simulation),
+    Simulate(
+        Simulation,
+        SimulationLimits,
+        Arc<Mutex<SimulationProgress>>,
+        egui::Context,
+    ),
+    Finalize(Simulation, egui::Context),
 }
 
 enum SimulationRunnerWorkerResult {
@@ -52,9 +58,15 @@ impl SimulationRunner {
                     let job = job_receiver.recv().unwrap();
 
                     match job {
-                        SimulationRunnerWorkerJob::Simulate(mut simulation, limits, progress) => {
+                        SimulationRunnerWorkerJob::Simulate(
+                            mut simulation,
+                            limits,
+                            progress,
+                            ctx,
+                        ) => {
                             let progress_callback = |p| {
                                 *progress.lock().unwrap() = p;
+                                ctx.request_repaint();
                             };
                             let result =
                                 simulation.simulate_with_callback(limits, progress_callback);
@@ -81,13 +93,15 @@ impl SimulationRunner {
                                         .unwrap();
                                 }
                             };
+                            ctx.request_repaint();
                         }
-                        SimulationRunnerWorkerJob::Finalize(simulation) => {
+                        SimulationRunnerWorkerJob::Finalize(simulation, ctx) => {
                             result_sender
                                 .send(SimulationRunnerWorkerResult::Finalized(
                                     simulation.finalize(),
                                 ))
                                 .unwrap();
+                            ctx.request_repaint();
                         }
                     };
                 }
