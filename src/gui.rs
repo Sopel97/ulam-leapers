@@ -1,6 +1,7 @@
 ﻿pub mod grid_explorer;
 mod grid_render;
 mod simulation_creator;
+mod simulation_runner;
 
 use crate::gui::simulation_creator::SimulationCreator;
 use eframe::egui::Ui;
