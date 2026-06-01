@@ -1,8 +1,9 @@
 ﻿use crate::gui::SubwindowResult::{Keep, Replace};
 use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{ProgressBar, Slider, Ui};
+use eframe::egui::{ProgressBar, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -19,6 +20,7 @@ enum SimulationRunnerWorkerJob {
         egui::Context,
     ),
     Finalize(Simulation, egui::Context),
+    Stop,
 }
 
 enum SimulationRunnerWorkerResult {
@@ -32,6 +34,7 @@ enum SimulationRunnerState {
     Idle(SimulationRunnerWorkerResult),
     Simulating,
     Finalizing,
+    Closing,
 }
 
 pub struct SimulationRunner {
@@ -113,6 +116,7 @@ impl SimulationRunner {
                                 .unwrap();
                             ctx.request_repaint();
                         }
+                        SimulationRunnerWorkerJob::Stop => break,
                     };
                 }
             })),
@@ -122,13 +126,22 @@ impl SimulationRunner {
     }
 }
 
+impl Drop for SimulationRunner {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            self.worker_jobs
+                .send(SimulationRunnerWorkerJob::Stop)
+                .unwrap();
+            if let Err(e) = worker.join() {
+                eprintln!("Failed to join worker: {:?}", e);
+            }
+        }
+    }
+}
+
 impl Subwindow for SimulationRunner {
     fn name(&self) -> String {
         "SimulationRunner".to_string()
-    }
-
-    fn is_closeable(&self) -> bool {
-        false
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
@@ -158,61 +171,67 @@ impl Subwindow for SimulationRunner {
                         ui.spinner();
                         SimulationRunnerState::Finalizing
                     }
-                    SimulationRunnerState::Idle(state) => {
-                        match state {
-                            SimulationRunnerWorkerResult::Paused(simulation) => {
-                                if ui.button("Resume simulation").clicked() {
-                                    self.stop_flag.store(false, Ordering::SeqCst);
-                                    self.worker_jobs
-                                        .send(SimulationRunnerWorkerJob::Simulate(
-                                            simulation,
-                                            self.limits.clone(),
-                                            self.progress.clone(),
-                                            ui.ctx().clone(),
-                                        ))
-                                        .unwrap();
-                                    SimulationRunnerState::Simulating
-                                } else {
-                                    SimulationRunnerState::Idle(
-                                        SimulationRunnerWorkerResult::Paused(simulation),
-                                    )
-                                }
-                            }
-                            SimulationRunnerWorkerResult::Finished(simulation) => {
+                    SimulationRunnerState::Idle(state) => match state {
+                        SimulationRunnerWorkerResult::Paused(simulation) => {
+                            if ui.button("Resume simulation").clicked() {
+                                self.stop_flag.store(false, Ordering::SeqCst);
                                 self.worker_jobs
-                                    .send(SimulationRunnerWorkerJob::Finalize(
+                                    .send(SimulationRunnerWorkerJob::Simulate(
                                         simulation,
+                                        self.limits.clone(),
+                                        self.progress.clone(),
                                         ui.ctx().clone(),
                                     ))
                                     .unwrap();
-                                SimulationRunnerState::Finalizing
-                            }
-                            SimulationRunnerWorkerResult::Errored(_simulation, error) => {
-                                panic!("Simulation error {:?}", error);
-                            }
-                            SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
-                                if ui.button("Explore").clicked() {
-                                    submit_to_explorer = true;
-                                }
-                                SimulationRunnerState::Idle(
-                                    SimulationRunnerWorkerResult::Finalized(finalized_simulation),
-                                )
+                                SimulationRunnerState::Simulating
+                            } else {
+                                SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                                    simulation,
+                                ))
                             }
                         }
-                    }
+                        SimulationRunnerWorkerResult::Finished(simulation) => {
+                            self.worker_jobs
+                                .send(SimulationRunnerWorkerJob::Finalize(
+                                    simulation,
+                                    ui.ctx().clone(),
+                                ))
+                                .unwrap();
+                            SimulationRunnerState::Finalizing
+                        }
+                        SimulationRunnerWorkerResult::Errored(_simulation, error) => {
+                            panic!("Simulation error {:?}", error);
+                        }
+                        SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
+                            if ui.button("Explore").clicked() {
+                                submit_to_explorer = true;
+                            }
+                            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                                finalized_simulation,
+                            ))
+                        }
+                    },
+                    SimulationRunnerState::Closing => panic!("Invalid state.")
                 }
             });
         });
 
-        if submit_to_explorer
-            && let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+        if submit_to_explorer {
+            if let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
                 finalized_simulation,
-            )) = self.simulation_state
-        {
-            Replace(Box::new(GridExplorer::new(finalized_simulation)))
+            )) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::Closing)
+            {
+                Replace(Box::new(GridExplorer::new(finalized_simulation)))
+            } else {
+                panic!("Tried submitting to explorer while in an unsuitable state.")
+            }
         } else {
             Keep(self)
         }
+    }
+
+    fn is_closeable(&self) -> bool {
+        false
     }
 }
 
