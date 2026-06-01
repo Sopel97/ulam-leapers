@@ -12,7 +12,7 @@ impl<T> Clone for AlignedBoxedSlice<T>
 where T: Default + Copy {
     fn clone(&self) -> Self {
         let mut other = Self::new(self.end - self.begin, self.align);
-        other.as_mut_slice().copy_from_slice(&self.as_slice());
+        other.as_mut_slice().copy_from_slice(self.as_slice());
         other
     }
 }
@@ -43,12 +43,24 @@ impl<T> AlignedBoxedSlice<T> {
         &mut self.storage[self.begin..self.end]
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    /// 
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
         unsafe {
             self.storage.get_unchecked(index + self.begin)
         }
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         unsafe {
             self.storage.get_unchecked_mut(index + self.begin)

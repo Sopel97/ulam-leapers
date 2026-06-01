@@ -109,13 +109,13 @@ impl GridExplorer {
         finalized_sim.write_to(&mut serialized).unwrap();
         let finalized_sim = FinalizedSimulation::read_from(&mut serialized.as_slice()).unwrap();
         let elapsed = start.elapsed();
-        println!("Serialize -> deserialize roundtrip in {:?}", elapsed);
+        println!("Serialize -> deserialize round-trip in {:?}", elapsed);
 
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: -3,
             max_zoom_pow2: 3,
-            complete_shells: complete_shells.clone(),
-            player_count: player_count.clone(),
+            complete_shells,
+            player_count,
             player_colors: default_player_colors()[..=player_count].to_vec(),
             ..Default::default()
         };

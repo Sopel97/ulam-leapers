@@ -263,14 +263,13 @@ impl SimulationCreator {
                         }
                         SimulationCreatorWorkerJob::GeneratePreview(
                             mut simulation,
-                            mut ctx,
+                            ctx,
                             shells,
                         ) => {
                             if shells == 0 {
                                 continue;
                             }
 
-                            let timer = std::time::Instant::now();
                             let limits = SimulationLimits::new().with_complete_shell_limit(shells);
                             let _ = simulation.simulate(limits);
                             let finalized = simulation.finalize();
@@ -304,8 +303,6 @@ impl SimulationCreator {
                             // The UI should now receive the preview texture, but it's reactive
                             // so we should force a repaint.
                             ctx.request_repaint();
-
-                            let elapsed = timer.elapsed();
                         }
                     }
                 }
@@ -385,8 +382,8 @@ impl Subwindow for SimulationCreator {
                         &mut self.state.preview_shells,
                         MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS,
                     )
-                        .integer()
-                        .text("Preview shells"),
+                    .integer()
+                    .text("Preview shells"),
                 );
             });
 
@@ -484,10 +481,9 @@ impl SimulationCreator {
                                     "Symmetric",
                                 )
                                 .changed()
+                                && self.state.enemy_config.is_enemy_map_symmetric
                             {
-                                if self.state.enemy_config.is_enemy_map_symmetric {
-                                    self.state.enemy_config.apply_enabled_symmetrically();
-                                }
+                                self.state.enemy_config.apply_enabled_symmetrically();
                             }
                         });
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -501,11 +497,10 @@ impl SimulationCreator {
                                                 "",
                                             )
                                             .changed()
+                                            && self.state.enemy_config.is_enemy_map_symmetric
                                         {
-                                            if self.state.enemy_config.is_enemy_map_symmetric {
-                                                self.state.enemy_config.copy_symmetrically(x, y);
-                                            }
-                                        };
+                                            self.state.enemy_config.copy_symmetrically(x, y);
+                                        }
                                     }
                                 });
                             }
@@ -564,10 +559,9 @@ impl SimulationCreator {
                         if ui
                             .checkbox(&mut player_config.is_attack_map_symmetric, "Symmetric")
                             .changed()
+                            && player_config.is_attack_map_symmetric
                         {
-                            if player_config.is_attack_map_symmetric {
-                                player_config.apply_enabled_symmetrically();
-                            }
+                            player_config.apply_enabled_symmetrically();
                         }
                     });
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -583,11 +577,10 @@ impl SimulationCreator {
                                         ),
                                     )
                                     .changed()
+                                    && player_config.is_attack_map_symmetric
                                 {
-                                    if player_config.is_attack_map_symmetric {
-                                        player_config.copy_symmetrically(x, y);
-                                    }
-                                };
+                                    player_config.copy_symmetrically(x, y);
+                                }
                             }
                         });
                     }

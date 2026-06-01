@@ -1,6 +1,7 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
+use crate::io::{ReadFrom, WriteTo};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
@@ -8,9 +9,8 @@ use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use crate::io::{ReadFrom, WriteTo};
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default)]
 pub struct PlayerId(u8);
 
 impl PlayerId {
@@ -20,12 +20,6 @@ impl PlayerId {
 
     pub fn index(self) -> usize {
         self.0 as usize
-    }
-}
-
-impl Default for PlayerId {
-    fn default() -> Self {
-        PlayerId(0)
     }
 }
 
@@ -146,14 +140,11 @@ pub trait Game {
     fn simulated_turns(&self) -> usize;
 
     fn complete_shells(&self) -> i32 {
-        let min_shell = self
-            .players()
+        self.players()
             .iter()
             .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
             .min()
-            .unwrap();
-
-        min_shell
+            .unwrap()
     }
 
     fn player_count(&self) -> usize {
@@ -186,7 +177,7 @@ impl FinalizedSimulation {
     pub fn grid(&self) -> &FrozenGrid<PlayerId> {
         &self.grid
     }
-    
+
     pub fn chunk_count(&self) -> usize {
         self.grid.chunk_count()
     }
@@ -252,6 +243,12 @@ impl SimulationLimits {
     }
 }
 
+impl Default for SimulationLimits {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Game for Simulation {
     fn players(&self) -> &Vec<Player> {
         &self.players
@@ -311,11 +308,11 @@ impl Simulation {
             panic!("Cannot modify player enemies in a running simulation.");
         }
 
-        if player.0 as usize >= self.players.len() + 1 {
+        if player.0 as usize > self.players.len() {
             panic!("Player is out of bounds");
         }
 
-        if enemy.0 as usize >= self.players.len() + 1 {
+        if enemy.0 as usize > self.players.len() {
             panic!("Enemy player is out of bounds");
         }
 
@@ -512,18 +509,18 @@ impl Simulation {
             // We don't want to be doing it too often because it requires a whole chunk to be
             // outside the active area and the chunks are large; reduces redundant searches
             // for no longer active chunks.
-            if step % COMPRESSION_INTERVAL_STEPS == COMPRESSION_INTERVAL_STEPS - 1 {
-                if let Some(region) = self.grid_region_past_modification() {
-                    job_tx.send(Job::Compress(region)).unwrap();
-                }
+            if step % COMPRESSION_INTERVAL_STEPS == COMPRESSION_INTERVAL_STEPS - 1
+                && let Some(region) = self.grid_region_past_modification()
+            {
+                job_tx.send(Job::Compress(region)).unwrap();
             }
 
-            if limits.memory.is_some()
+            if let Some(memory_limit) = limits.memory
                 && step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1
             {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
-                if total >= limits.memory.unwrap() {
+                if total >= memory_limit {
                     hit_limit = SimulationLimit::Memory;
                     break;
                 }
@@ -562,6 +559,12 @@ impl Simulation {
     }
 }
 
+impl Default for Simulation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WriteTo for PlayerId {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.0.write_to(writer)
@@ -583,7 +586,7 @@ impl WriteTo for PlayerIdSet {
 impl ReadFrom for PlayerIdSet {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         Ok(PlayerIdSet {
-            bits: u64::read_from(reader)?
+            bits: u64::read_from(reader)?,
         })
     }
 }
@@ -620,7 +623,7 @@ impl WriteTo for FinalizedSimulation {
 
 impl ReadFrom for FinalizedSimulation {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(FinalizedSimulation{
+        Ok(FinalizedSimulation {
             players: Vec::<Player>::read_from(reader)?,
             simulated_turns: usize::read_from(reader)?,
             grid: FrozenGrid::<PlayerId>::read_from(reader)?,

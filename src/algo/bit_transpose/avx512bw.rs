@@ -2,7 +2,7 @@
 unsafe fn bit_transpose_avx512bw_impl(input: &[u8], output: &mut [u8]) {
     use std::arch::x86_64::*;
 
-    if input.len() % 64 != 0 {
+    if !input.len().is_multiple_of(64) {
         panic!("input size must be divisible by 64");
     }
 

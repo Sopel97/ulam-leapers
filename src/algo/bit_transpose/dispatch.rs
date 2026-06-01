@@ -16,19 +16,19 @@ pub fn bit_transpose(input: &[u8], output: &mut [u8]) {
         {
             if is_x86_feature_detected!("avx512bw") {
                 return unsafe {
-                    std::mem::transmute(avx512bw::bit_transpose_avx512bw as *const ())
+                    std::mem::transmute::<*const (), for<'a, 'b> fn(&'a [u8], &'b mut [u8])>(avx512bw::bit_transpose_avx512bw as *const ())
                 };
             }
 
             if is_x86_feature_detected!("avx2") {
                 return unsafe {
-                    std::mem::transmute(avx2::bit_transpose_avx2 as *const ())
+                    std::mem::transmute::<*const (), for<'a, 'b> fn(&'a [u8], &'b mut [u8])>(avx2::bit_transpose_avx2 as *const ())
                 };
             }
 
             if is_x86_feature_detected!("sse2") {
                 return unsafe {
-                    std::mem::transmute(sse2::bit_transpose_sse2 as *const ())
+                    std::mem::transmute::<*const (), for<'a, 'b> fn(&'a [u8], &'b mut [u8])>(sse2::bit_transpose_sse2 as *const ())
                 };
             }
         }
@@ -48,7 +48,7 @@ pub fn inv_bit_transpose(input: &[u8], output: &mut [u8]) {
 
             if is_x86_feature_detected!("sse2") {
                 return unsafe {
-                    std::mem::transmute(sse2::inv_bit_transpose_sse2 as *const ())
+                    std::mem::transmute::<*const (), for<'a, 'b> fn(&'a [u8], &'b mut [u8])>(sse2::inv_bit_transpose_sse2 as *const ())
                 };
             }
         }

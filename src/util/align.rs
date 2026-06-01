@@ -12,7 +12,7 @@ impl MemoryAlignment {
     
     pub fn extra_elements<T>(&self) -> usize {
         let elem_size = size_of::<T>();
-        (self.0 + elem_size - 1) / elem_size // ceil_div
+        self.0.div_ceil(elem_size)
     }
     
     pub fn align_ptr(&self, ptr: usize) -> usize {

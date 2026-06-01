@@ -106,6 +106,12 @@ impl<T> Index<(usize, usize)> for Slice2D<'_, T> {
 }
 
 impl<T> Slice2D<'_, T> {
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.stride + x) }
     }
@@ -126,10 +132,22 @@ impl<T> IndexMut<(usize, usize)> for MutSlice2D<'_, T> {
 }
 
 impl<T> MutSlice2D<'_, T> {
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.stride + x) }
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
         unsafe { self.data.get_unchecked_mut(y * self.stride + x) }
     }
@@ -144,16 +162,28 @@ impl<T> Array2D<T> {
         self.height
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.width + x) }
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
         unsafe { self.data.get_unchecked_mut(y * self.width + x) }
     }
 }
 
-impl<'a, T> Array2D<T> {
+impl<T> Array2D<T> {
     pub fn row_slice(&self, y: usize) -> &'_ [T] {
         &self.data.as_slice()[y * self.width..(y + 1) * self.width]
     }

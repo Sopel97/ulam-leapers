@@ -45,9 +45,11 @@ impl MortonCurveTransform {
         let side_size: usize = self.size.into();
         let chunk_size: usize = side_size * side_size;
 
-        for d in 0..chunk_size {
+        assert_eq!(output.len(), chunk_size);
+
+        for (d, item) in output.iter_mut().enumerate() {
             let (x, y) = self.d_to_xy_table[d];
-            output[d] = input[(x as usize, y as usize)];
+            *item = input[(x as usize, y as usize)];
         }
     }
 
@@ -86,9 +88,11 @@ impl MortonCurveTransform {
         let side_size: usize = self.size.into();
         let chunk_size: usize = side_size * side_size;
 
-        for d in 0..chunk_size {
+        assert_eq!(input.len(), chunk_size);
+
+        for (d, item) in input.iter().enumerate() {
             let (x, y) = self.d_to_xy_table[d];
-            output[(x as usize, y as usize)] = input[d];
+            output[(x as usize, y as usize)] = *item;
         }
     }
 

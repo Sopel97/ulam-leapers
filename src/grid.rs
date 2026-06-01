@@ -75,12 +75,24 @@ impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
 }
 
 impl<T> Chunk<T> {
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked(&self, index: GridPoint) -> &T {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
         unsafe { self.cells.get_unchecked(xx as usize, yy as usize) }
     }
 
+    /// # Safety
+    ///
+    /// Calling this method with an out-of-bounds index is *[undefined behavior]*
+    /// even if the resulting reference is not used.
+    ///
+    /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     pub unsafe fn get_unchecked_mut(&mut self, index: GridPoint) -> &mut T {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
@@ -92,7 +104,7 @@ impl<T> Chunk<T> {
 pub struct CompressedChunk<T> {
     bounds: GridRect,
     data: Box<[u8]>,
-    _marker: std::marker::PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> From<&Chunk<T>> for CompressedChunk<T> {
@@ -107,7 +119,7 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         CompressedChunk {
             bounds: chunk.bounds,
             data: compressed,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
@@ -180,8 +192,8 @@ impl Chunker for SquareChunker {
         let y = point.y;
 
         // arithmetic shift provides floored division by a power of 2
-        let cx = pow2::floor_to_multiple(x, self.size);
-        let cy = pow2::floor_to_multiple(y, self.size);
+        let cx = floor_to_multiple(x, self.size);
+        let cy = floor_to_multiple(y, self.size);
 
         ChunkOrigin(GridPoint::new(cx, cy))
     }
@@ -305,7 +317,7 @@ impl<T: Default + Clone + Copy> Grid<T> {
         })
     }
 
-    pub fn set_multiple(&mut self, indices: &Vec<GridPoint>, value: T) {
+    pub fn set_multiple(&mut self, indices: &[GridPoint], value: T) {
         if indices.is_empty() {
             return;
         }
@@ -351,14 +363,14 @@ pub struct FrozenGrid<T> {
     memory_usage: usize,
 }
 
-impl<T> Into<FrozenGrid<T>> for Grid<T> {
-    fn into(mut self) -> FrozenGrid<T> {
-        self.freeze_all();
+impl<T> From<Grid<T>> for FrozenGrid<T> {
+    fn from(mut value: Grid<T>) -> FrozenGrid<T> {
+        value.freeze_all();
 
         FrozenGrid {
-            chunker: self.chunker,
-            frozen_chunks: self.frozen_chunks,
-            memory_usage: self.frozen_chunks_memory_usage,
+            chunker: value.chunker,
+            frozen_chunks: value.frozen_chunks,
+            memory_usage: value.frozen_chunks_memory_usage,
         }
     }
 }
@@ -393,11 +405,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
         F: Fn(&Slice2D<T>) -> U + Send + Sync,
         U: Default + Clone + Copy + Send + Sync + 'static,
     {
-        if pow2::floor_mod(region.start.x, minification) != 0
-            || pow2::floor_mod(region.start.y, minification) != 0
-            || pow2::floor_mod(region.end.x, minification) != 0
-            || pow2::floor_mod(region.end.y, minification) != 0
-        {
+        if !region.is_aligned_to_pow2(minification) {
             panic!("Region is not aligned to the minification factor.");
         }
 
@@ -411,7 +419,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
 
         let (tx, rx) = mpsc::channel::<(usize, usize, Array2D<U>)>();
 
-        let region_clone = region.clone();
+        let region_clone = *region;
         let result_assembler = thread::spawn(move || {
             let mut result: Array2D<U> = Array2D::new(
                 pow2::floor_div(region_clone.width(), minification) as usize,
@@ -443,11 +451,8 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                     .bounds()
                     .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
-
-                assert_eq!(pow2::floor_mod(subregion.start.x, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.start.y, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.end.x, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.end.y, minification), 0);
+                
+                assert!(subregion.is_aligned_to_pow2(minification));
 
                 let chunk = Chunk::from(compressed_chunk);
 
@@ -521,11 +526,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         F: Fn(&Slice2D<T>) -> U,
         U: Default + Clone + Copy,
     {
-        if pow2::floor_mod(region.start.x, minification) != 0
-            || pow2::floor_mod(region.start.y, minification) != 0
-            || pow2::floor_mod(region.end.x, minification) != 0
-            || pow2::floor_mod(region.end.y, minification) != 0
-        {
+        if !region.is_aligned_to_pow2(minification) {
             panic!("Region is not aligned to the minification factor.");
         }
 
@@ -554,10 +555,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
                     .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
 
-                assert_eq!(pow2::floor_mod(subregion.start.x, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.start.y, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.end.x, minification), 0);
-                assert_eq!(pow2::floor_mod(subregion.end.y, minification), 0);
+                assert!(subregion.is_aligned_to_pow2(minification));
 
                 let chunk = Chunk::from(compressed_chunk);
 
@@ -679,7 +677,7 @@ where
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let chunker = Box::<dyn Chunker>::read_from(reader)?;
         let frozen_chunks = BTreeMap::<ChunkOrigin, CompressedChunk<T>>::read_from(reader)?;
-        let memory_usage = frozen_chunks.iter().map(|(_, v)| v.memory_usage()).sum();
+        let memory_usage = frozen_chunks.values().map(|v| v.memory_usage()).sum();
         Ok(FrozenGrid {
             chunker,
             frozen_chunks,
@@ -739,7 +737,7 @@ impl ReadFrom for StandardChunker {
             Ok(chunker)
         } else {
             Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
+                ErrorKind::InvalidData,
                 "Invalid chunker type.",
             ))
         }

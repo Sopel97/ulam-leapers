@@ -53,18 +53,10 @@ impl Default for GridRenderParameters {
     }
 }
 
+#[derive(Default)]
 pub struct GridRender {
     params: GridRenderParameters,
     handle: Option<TextureHandle>,
-}
-
-impl Default for GridRender {
-    fn default() -> Self {
-        GridRender {
-            params: GridRenderParameters::default(),
-            handle: None,
-        }
-    }
 }
 
 impl GridRender {

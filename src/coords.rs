@@ -1,5 +1,7 @@
 ﻿use crate::grid::{GridPoint, GridVector};
 use crate::io::{ReadFrom, WriteTo};
+use crate::util::pow2;
+use crate::util::pow2::Pow2;
 use std::cmp;
 use std::io::{Read, Write};
 use std::ops::*;
@@ -157,6 +159,12 @@ pub struct UlamSpiralCursor {
     steps_in_current_direction_left: usize,
 }
 
+impl Default for UlamSpiralCursor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UlamSpiralCursor {
     pub fn new() -> UlamSpiralCursor {
         UlamSpiralCursor {
@@ -228,6 +236,18 @@ impl<T: Add<Output = T> + Clone + Copy> Rect2D<T> {
 
     pub fn with_start_end(start: Point2D<T>, end: Point2D<T>) -> Rect2D<T> {
         Rect2D::<T> { start, end }
+    }
+}
+
+impl<
+    T: BitAnd<Output = T> + From<u8> + Shl<Output = T> + Sub<Output = T> + PartialEq<T> + Clone + Copy,
+> Rect2D<T>
+{
+    pub fn is_aligned_to_pow2(&self, align: Pow2) -> bool {
+        pow2::floor_mod(self.start.x, align) == T::from(0)
+            && pow2::floor_mod(self.start.y, align) == T::from(0)
+            && pow2::floor_mod(self.end.x, align) == T::from(0)
+            && pow2::floor_mod(self.end.y, align) == T::from(0)
     }
 }
 
