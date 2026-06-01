@@ -1,7 +1,8 @@
-﻿use crate::gui::{Subwindow, SubwindowResult};
+﻿use crate::gui::SubwindowResult::Keep;
+use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::Ui;
-use std::sync::atomic::AtomicBool;
+use eframe::egui::{ProgressBar, Slider, Ui};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use ulam_leapers::simulation::{
@@ -26,8 +27,14 @@ enum SimulationRunnerWorkerResult {
     Finalized(FinalizedSimulation),
 }
 
+enum SimulationRunnerState {
+    Idle(SimulationRunnerWorkerResult),
+    Simulating,
+    Finalizing,
+}
+
 struct SimulationRunner {
-    paused_simulation: Option<Simulation>,
+    simulation_state: SimulationRunnerState,
     limits: SimulationLimits,
     stop_flag: Arc<AtomicBool>,
 
@@ -46,7 +53,9 @@ impl SimulationRunner {
         limits = limits.with_stop_flag_limit(stop_flag.clone());
 
         Self {
-            paused_simulation: Some(sim),
+            simulation_state: SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                sim,
+            )),
             limits,
             stop_flag,
 
@@ -121,5 +130,74 @@ impl Subwindow for SimulationRunner {
         false
     }
 
-    fn ui(self: Box<Self>, ui: &mut Ui) -> SubwindowResult {}
+    fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
+        egui::CentralPanel::no_frame().show_inside(ui, |ui| {
+            egui::Frame::default().show(ui, |ui| {
+                while let Ok(result) = self.worker_results.try_recv() {
+                    self.simulation_state = SimulationRunnerState::Idle(result);
+                }
+
+                let old_simulation_state = std::mem::replace(
+                    &mut self.simulation_state,
+                    SimulationRunnerState::Simulating,
+                );
+                self.simulation_state = match old_simulation_state {
+                    SimulationRunnerState::Simulating => {
+                        // TODO: progress bars
+                        if ui.button("Pause simulation").clicked() {
+                            self.stop_flag.store(true, Ordering::SeqCst);
+                        }
+                        SimulationRunnerState::Simulating
+                    }
+                    SimulationRunnerState::Finalizing => {
+                        ui.label("Finalizing simulation...");
+                        ui.spinner();
+                        SimulationRunnerState::Finalizing
+                    }
+                    SimulationRunnerState::Idle(state) => {
+                        match state {
+                            SimulationRunnerWorkerResult::Paused(simulation) => {
+                                if ui.button("Resume simulation").clicked() {
+                                    self.stop_flag.store(false, Ordering::SeqCst);
+                                    self.worker_jobs
+                                        .send(SimulationRunnerWorkerJob::Simulate(
+                                            simulation,
+                                            self.limits.clone(),
+                                            self.progress.clone(),
+                                            ui.ctx().clone(),
+                                        ))
+                                        .unwrap();
+                                    SimulationRunnerState::Simulating
+                                } else {
+                                    SimulationRunnerState::Idle(
+                                        SimulationRunnerWorkerResult::Paused(simulation),
+                                    )
+                                }
+                            }
+                            SimulationRunnerWorkerResult::Finished(simulation) => {
+                                self.worker_jobs
+                                    .send(SimulationRunnerWorkerJob::Finalize(
+                                        simulation,
+                                        ui.ctx().clone(),
+                                    ))
+                                    .unwrap();
+                                SimulationRunnerState::Finalizing
+                            }
+                            SimulationRunnerWorkerResult::Errored(_simulation, error) => {
+                                panic!("Simulation error {:?}", error);
+                            }
+                            SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
+                                SimulationRunnerState::Idle(
+                                    SimulationRunnerWorkerResult::Finalized(finalized_simulation),
+                                )
+                                // TODO: And whatever UI we need
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        Keep(self)
+    }
 }
