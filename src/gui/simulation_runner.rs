@@ -207,16 +207,36 @@ impl SimulationRunner {
     fn show_progress(ui: &mut Ui, limits: &SimulationLimits, progress: SimulationProgress) {
         ui.vertical(|ui| {
             if let Some(turns) = limits.turns() {
+                ui.label(format!(
+                    "Turns {}M / {}M",
+                    progress.turns() / 1_000_000,
+                    turns / 1_000_000
+                ));
                 let t = (progress.turns() as f32 / turns as f32).clamp(0.0, 1.0);
-                ui.add(ProgressBar::new(t).text("Turns"));
+                ui.add(ProgressBar::new(t).show_percentage());
             }
             if let Some(memory) = limits.memory() {
+                const MiB: usize = 1024 * 1024;
+                ui.label(format!(
+                    "Memory {}MiB / {}MiB",
+                    progress.memory_usage() / MiB,
+                    memory / MiB
+                ));
                 let t = (progress.memory_usage() as f32 / memory as f32).clamp(0.0, 1.0);
-                ui.add(ProgressBar::new(t).text("Memory"));
+                ui.add(ProgressBar::new(t).show_percentage());
             }
             if let Some(shells) = limits.complete_shells() {
+                ui.label(format!(
+                    "Complete shells {} / {}",
+                    progress.complete_shells(),
+                    shells
+                ));
                 let t = (progress.complete_shells() as f32 / shells as f32).clamp(0.0, 1.0);
-                ui.add(ProgressBar::new(t).text("Complete shells"));
+                ui.add(
+                    ProgressBar::new(t)
+                        .text("Complete shells")
+                        .show_percentage(),
+                );
             }
         });
     }
