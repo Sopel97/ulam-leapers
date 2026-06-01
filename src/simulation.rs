@@ -8,6 +8,7 @@ use std::cmp::min;
 use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default)]
@@ -204,12 +205,14 @@ pub enum SimulationLimit {
     Memory,
     Turns,
     CompleteShells,
+    StopFlag,
 }
 
 pub struct SimulationLimits {
     memory: Option<usize>,
     turns: Option<usize>,
     complete_shells: Option<usize>,
+    stop_flag: Option<Arc<AtomicBool>>,
 }
 
 // NOTE: Only the turn limit is accurate. Other limits are checked on best effort basis as they
@@ -220,6 +223,7 @@ impl SimulationLimits {
             memory: None,
             turns: None,
             complete_shells: None,
+            stop_flag: None,
         }
     }
 
@@ -235,6 +239,11 @@ impl SimulationLimits {
 
     pub fn with_complete_shell_limit(mut self, limit: usize) -> Self {
         self.complete_shells = Some(limit);
+        self
+    }
+
+    pub fn with_stop_flag_limit(mut self, stop_flag: Arc<AtomicBool>) -> Self {
+        self.stop_flag = Some(stop_flag);
         self
     }
 
@@ -533,6 +542,13 @@ impl Simulation {
                 .is_some_and(|v| self.complete_shells() as usize >= v)
             {
                 hit_limit = SimulationLimit::CompleteShells;
+                break;
+            }
+
+            if limits.stop_flag.iter().any(|v| {
+                v.load(Ordering::Relaxed)
+            }) {
+                hit_limit = SimulationLimit::StopFlag;
                 break;
             }
 
