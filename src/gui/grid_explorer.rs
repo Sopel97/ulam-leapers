@@ -1,16 +1,14 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
 use crate::gui::grid_render::{default_player_colors, GridRender, GridRenderParameters};
+use crate::gui::SubwindowResult::Keep;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{Rect, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
-use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
-use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
+use ulam_leapers::grid::{GridPoint, GridRect};
+use ulam_leapers::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
-use crate::gui::SubwindowResult::Keep;
 
 pub struct GridExplorer {
     grid_view_controls: GridViewControls,

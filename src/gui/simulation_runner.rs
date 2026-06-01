@@ -1,6 +1,5 @@
 ﻿use crate::gui::SubwindowResult::{Keep, Replace};
 use crate::gui::grid_explorer::GridExplorer;
-use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{ProgressBar, Ui};
@@ -248,11 +247,11 @@ impl SimulationRunner {
                 ui.add(ProgressBar::new(t).show_percentage());
             }
             if let Some(memory) = limits.memory() {
-                const MiB: usize = 1024 * 1024;
+                const MEBIBYTE: usize = 1024 * 1024;
                 ui.label(format!(
                     "Memory {}MiB / {}MiB",
-                    progress.memory_usage() / MiB,
-                    memory / MiB
+                    progress.memory_usage() / MEBIBYTE,
+                    memory / MEBIBYTE
                 ));
                 let t = (progress.memory_usage() as f32 / memory as f32).clamp(0.0, 1.0);
                 ui.add(ProgressBar::new(t).show_percentage());
