@@ -1,4 +1,5 @@
-﻿use crate::gui::SubwindowResult::Keep;
+﻿use crate::gui::SubwindowResult::{Keep, Replace};
+use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{ProgressBar, Slider, Ui};
@@ -131,6 +132,8 @@ impl Subwindow for SimulationRunner {
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
+        let mut submit_to_explorer = false;
+
         egui::CentralPanel::no_frame().show_inside(ui, |ui| {
             egui::Frame::default().show(ui, |ui| {
                 while let Ok(result) = self.worker_results.try_recv() {
@@ -188,10 +191,12 @@ impl Subwindow for SimulationRunner {
                                 panic!("Simulation error {:?}", error);
                             }
                             SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
+                                if ui.button("Explore").clicked() {
+                                    submit_to_explorer = true;
+                                }
                                 SimulationRunnerState::Idle(
                                     SimulationRunnerWorkerResult::Finalized(finalized_simulation),
                                 )
-                                // TODO: And whatever UI we need
                             }
                         }
                     }
@@ -199,7 +204,15 @@ impl Subwindow for SimulationRunner {
             });
         });
 
-        Keep(self)
+        if submit_to_explorer
+            && let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                finalized_simulation,
+            )) = self.simulation_state
+        {
+            Replace(Box::new(GridExplorer::new(finalized_simulation)))
+        } else {
+            Keep(self)
+        }
     }
 }
 

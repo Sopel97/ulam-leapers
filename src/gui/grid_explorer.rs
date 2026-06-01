@@ -77,47 +77,12 @@ impl Subwindow for GridExplorer {
 }
 
 impl GridExplorer {
-    pub fn new() -> Self {
-        let mut sim = Simulation::new();
-        let p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        let p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
-        sim.add_player_enemy(p1, p2);
-        sim.add_player_enemy(p2, p1);
-
-        let start = std::time::Instant::now();
-        let _ = sim.simulate(
-            SimulationLimits::new()
-                .with_turn_limit(100_000_000)
-                .with_memory_limit(32 * 1024 * 1024 * 1024),
-        );
-        let end_memory_usage = sim.memory_usage();
-        let finalized_sim = sim.finalize();
-        let elapsed = start.elapsed();
-
-        let simulated_turns = finalized_sim.simulated_turns();
-        let complete_shells = finalized_sim.complete_shells();
-        let player_count = finalized_sim.player_count();
-        let finalized_memory_usage = finalized_sim.memory_usage();
-        println!(
-            "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {} MiB.\nFinal memory usage: {} MiB.",
-            simulated_turns,
-            elapsed,
-            complete_shells,
-            end_memory_usage / 1024 / 1024,
-            finalized_memory_usage / 1024 / 1024
-        );
-
-        let start = std::time::Instant::now();
-        let mut serialized = Vec::<u8>::with_capacity(1024);
-        finalized_sim.write_to(&mut serialized).unwrap();
-        let finalized_sim = FinalizedSimulation::read_from(&mut serialized.as_slice()).unwrap();
-        let elapsed = start.elapsed();
-        println!("Serialize -> deserialize round-trip in {:?}", elapsed);
-
+    pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
+        let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: -3,
             max_zoom_pow2: 3,
-            complete_shells,
+            complete_shells: finalized_simulation.complete_shells(),
             player_count,
             player_colors: default_player_colors()[..=player_count].to_vec(),
             ..Default::default()
@@ -127,7 +92,7 @@ impl GridExplorer {
 
         Self {
             grid_render,
-            finalized_sim,
+            finalized_sim: finalized_simulation,
             grid_view_controls,
         }
     }
