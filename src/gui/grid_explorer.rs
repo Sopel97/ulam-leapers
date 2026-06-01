@@ -182,12 +182,12 @@ impl GridViewControls {
 
         if response.hovered() {
             let mut new_zoom_pow2 = self.zoom_pow2;
-            let middle_pos = (rect.min + rect.max.to_vec2()) * 0.5f32;
+            let middle_pos = (rect.max - rect.min.to_vec2()) * 0.5f32;
             let mouse = response
                 .hover_pos()
                 .map(|pos| {
                     // Invert y to match world coordinates.
-                    pos2(pos.x, rect.height() - pos.y) - rect.min.to_vec2()
+                    pos2(pos.x - rect.min.x, rect.height() - (pos.y - rect.min.y))
                 })
                 .unwrap_or(middle_pos)
                 - middle_pos;
