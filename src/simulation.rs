@@ -201,6 +201,20 @@ pub struct SimulationProgress {
     complete_shells: usize,
 }
 
+impl SimulationProgress {
+    pub fn memory_usage(&self) -> usize {
+        self.memory_usage
+    }
+
+    pub fn turns(&self) -> usize {
+        self.turns
+    }
+
+    pub fn complete_shells(&self) -> usize {
+        self.complete_shells
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SimulationError {
     IsFinalized,
@@ -257,6 +271,22 @@ impl SimulationLimits {
 
     pub fn any(&self) -> bool {
         self.memory.is_some() || self.turns.is_some() || self.complete_shells.is_some()
+    }
+
+    pub fn memory(&self) -> Option<usize> {
+        self.memory
+    }
+
+    pub fn turns(&self) -> Option<usize> {
+        self.turns
+    }
+
+    pub fn complete_shells(&self) -> Option<usize> {
+        self.complete_shells
+    }
+
+    pub fn stop_flag(&self) -> &Option<Arc<AtomicBool>> {
+        &self.stop_flag
     }
 }
 
@@ -579,10 +609,11 @@ impl Simulation {
 
             self.update_forbiddances_origin();
 
-            progress.turns += turns_to_simulate_this_step;
             turns_to_simulate -= turns_to_simulate_this_step;
             step += 1;
 
+            progress.turns = self.simulated_turns;
+            
             progress_callback(progress);
         }
 

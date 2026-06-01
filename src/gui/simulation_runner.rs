@@ -33,7 +33,7 @@ enum SimulationRunnerState {
     Finalizing,
 }
 
-struct SimulationRunner {
+pub struct SimulationRunner {
     simulation_state: SimulationRunnerState,
     limits: SimulationLimits,
     stop_flag: Arc<AtomicBool>,
@@ -45,7 +45,7 @@ struct SimulationRunner {
 }
 
 impl SimulationRunner {
-    fn new(sim: Simulation, mut limits: SimulationLimits) -> Self {
+    pub fn new(sim: Simulation, mut limits: SimulationLimits) -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
 
@@ -143,7 +143,8 @@ impl Subwindow for SimulationRunner {
                 );
                 self.simulation_state = match old_simulation_state {
                     SimulationRunnerState::Simulating => {
-                        // TODO: progress bars
+                        let progress = *self.progress.lock().unwrap();
+                        Self::show_progress(ui, &self.limits, progress);
                         if ui.button("Pause simulation").clicked() {
                             self.stop_flag.store(true, Ordering::SeqCst);
                         }
@@ -199,5 +200,24 @@ impl Subwindow for SimulationRunner {
         });
 
         Keep(self)
+    }
+}
+
+impl SimulationRunner {
+    fn show_progress(ui: &mut Ui, limits: &SimulationLimits, progress: SimulationProgress) {
+        ui.vertical(|ui| {
+            if let Some(turns) = limits.turns() {
+                let t = (progress.turns() as f32 / turns as f32).clamp(0.0, 1.0);
+                ui.add(ProgressBar::new(t).text("Turns"));
+            }
+            if let Some(memory) = limits.memory() {
+                let t = (progress.memory_usage() as f32 / memory as f32).clamp(0.0, 1.0);
+                ui.add(ProgressBar::new(t).text("Memory"));
+            }
+            if let Some(shells) = limits.complete_shells() {
+                let t = (progress.complete_shells() as f32 / shells as f32).clamp(0.0, 1.0);
+                ui.add(ProgressBar::new(t).text("Complete shells"));
+            }
+        });
     }
 }

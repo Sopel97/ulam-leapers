@@ -13,7 +13,8 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
-use crate::gui::SubwindowResult::Keep;
+use crate::gui::simulation_runner::SimulationRunner;
+use crate::gui::SubwindowResult::{Keep, Replace};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -212,6 +213,10 @@ enum SimulationCreatorWorkerResult {
     PreviewImage(TextureHandle),
 }
 
+enum SimulationCreatorAction {
+    Submit,
+}
+
 pub struct SimulationCreator {
     state: CreationState,
     last_rendered_state: Option<CreationState>,
@@ -357,6 +362,8 @@ impl Subwindow for SimulationCreator {
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
+        let mut submit = false;
+        
         self.maybe_update_preview(ui.ctx());
 
         egui::Panel::left("player_setup_panel")
@@ -372,7 +379,12 @@ impl Subwindow for SimulationCreator {
                         .text("Player count"),
                     );
 
-                    self.show_player_configs(ui);
+                    match self.show_player_configs(ui) {
+                        Some(SimulationCreatorAction::Submit) => {
+                            submit = true;
+                        },
+                        None => {}
+                    };
                 });
             });
 
@@ -418,8 +430,13 @@ impl Subwindow for SimulationCreator {
                 }
             });
         });
-        
-        Keep(self)
+
+        if submit {
+            let (simulation, limits) = self.to_simulation();
+            Replace(Box::new(SimulationRunner::new(simulation, limits)))
+        } else {
+            Keep(self)
+        }
     }
 }
 
@@ -449,7 +466,10 @@ impl SimulationCreator {
         }
     }
 
-    fn show_player_configs(&mut self, ui: &mut Ui) {
+    #[must_use]
+    fn show_player_configs(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
+        let mut submit = false;
+
         ui.horizontal_top(|ui| {
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
@@ -542,9 +562,22 @@ impl SimulationCreator {
                             .suffix(" GiB"),
                         );
                     });
+
+                    // Actions
+                    ui.group(|ui| {
+                        if ui.button("Start").clicked() {
+                            submit = true;
+                        }
+                    });
                 });
             });
         });
+
+        if submit {
+            Some(SimulationCreatorAction::Submit)
+        } else {
+            None
+        }
     }
 
     fn show_player_config(ui: &mut Ui, player_config: &mut PlayerConfigState) {
