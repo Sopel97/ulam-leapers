@@ -3,9 +3,13 @@ mod grid_render;
 mod simulation_creator;
 mod simulation_runner;
 
+use std::path::PathBuf;
 use crate::gui::simulation_creator::SimulationCreator;
 use eframe::egui::Ui;
 use eframe::{Frame, egui};
+use ulam_leapers::io::ReadFrom;
+use ulam_leapers::simulation::{FinalizedSimulation, Simulation};
+use crate::gui::grid_explorer::GridExplorer;
 
 pub enum SubwindowResult {
     Keep(Box<dyn Subwindow>),
@@ -78,6 +82,16 @@ pub struct App {
     state: State,
 }
 
+impl App {
+    fn try_open_simulation(path: PathBuf) -> Result<Box<dyn Subwindow>, std::io::Error> {
+        GridExplorer::load_from_file(path).map(|v| Box::new(v) as Box<dyn Subwindow>)
+    }
+
+    fn try_open_simulations(paths: Vec<PathBuf>) -> Vec<Result<Box<dyn Subwindow>, std::io::Error>> {
+        paths.into_iter().map(Self::try_open_simulation).collect()
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut Frame) {
         let mut tabs_to_spawn: Vec<Box<dyn Subwindow>> = vec![];
@@ -93,7 +107,16 @@ impl eframe::App for App {
                             tabs_to_spawn.push(Box::new(SimulationCreator::new()));
                         }
                         if ui.button("Explorer").clicked() {
-                            // TODO: load from file, spawn explorer
+                            let paths = rfd::FileDialog::new().add_filter("Ulam Leapers Simulation", &["uls"]).pick_files();
+                            if let Some(paths) = paths {
+                                let results = Self::try_open_simulations(paths);
+                                for result in results {
+                                    match result {
+                                        Ok(subwindow) => { tabs_to_spawn.push(subwindow); }
+                                        Err(err) => { eprintln!("Error opening simulation: {}", err); }
+                                    }
+                                }
+                            }
                         }
                     });
 

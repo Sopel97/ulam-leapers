@@ -6,9 +6,10 @@ use eframe::egui;
 use eframe::egui::{Rect, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
-use std::io::BufWriter;
+use std::io::{BufWriter, Read};
+use std::path::PathBuf;
 use ulam_leapers::grid::{GridPoint, GridRect};
-use ulam_leapers::io::WriteTo;
+use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
@@ -110,6 +111,15 @@ impl GridExplorer {
             grid_view_controls,
             save_state: SaveState::NotSaved,
         }
+    }
+
+    pub(crate) fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
+        let file = std::fs::File::open(path)?;
+        let mut reader = std::io::BufReader::new(file);
+        let simulation = FinalizedSimulation::read_from(&mut reader)?;
+        let mut explorer = GridExplorer::new(simulation);
+        explorer.save_state = SaveState::Saved;
+        Ok(explorer)
     }
 }
 
@@ -224,7 +234,6 @@ impl GridViewControls {
                 // Last pointed coords needs to be more precise.
                 // Use the actual bounds from rendering.
                 // Interpolate within the viewport.
-                let old_scale = (self.zoom_pow2 as f32).exp2();
                 let render_params =
                     self.to_render_params(rect.width() as usize, rect.height() as usize);
                 let tx = mouse.x / rect.width();
