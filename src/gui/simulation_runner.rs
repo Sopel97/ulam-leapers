@@ -1,15 +1,17 @@
-﻿use crate::gui::SubwindowResult::{Keep, Replace};
-use crate::gui::grid_explorer::GridExplorer;
+﻿use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::SubwindowResult::{Keep, Replace};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{ProgressBar, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 use ulam_leapers::simulation::{
     FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits,
     SimulationProgress,
 };
+use ulam_leapers::util::time;
 
 enum SimulationRunnerWorkerJob {
     Simulate(
@@ -37,10 +39,75 @@ enum SimulationRunnerState {
     Closing,
 }
 
+struct ProgressTracker {
+    speed_averaging_window: Duration,
+    start_time: std::time::Instant,
+    last_progress_update_time: std::time::Instant,
+    curr_progress: SimulationProgress,
+    average_turns_per_second: f64,
+}
+
+impl ProgressTracker {
+    pub fn new() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            speed_averaging_window: Duration::from_secs(3),
+            start_time: now,
+            last_progress_update_time: now,
+            curr_progress: SimulationProgress::default(),
+            average_turns_per_second: 0.0,
+        }
+    }
+
+    pub fn current_progress(&self) -> SimulationProgress {
+        self.curr_progress
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        let now = std::time::Instant::now();
+        now.duration_since(self.start_time)
+    }
+
+    pub fn eta_to_turns(&self, turns: usize) -> Option<Duration> {
+        if turns <= self.curr_progress.turns() {
+            return Some(Duration::from_secs(0));
+        }
+
+        if self.average_turns_per_second.is_finite() && self.average_turns_per_second > 0.0 {
+            let turns_diff = turns - self.curr_progress.turns();
+            let eta_secs = turns_diff as f64 / self.average_turns_per_second;
+            Some(Duration::from_secs_f64(eta_secs))
+        } else {
+            None
+        }
+    }
+
+    pub fn turns_per_second(&self) -> f64 {
+        self.average_turns_per_second
+    }
+
+    pub fn on_new_progress(&mut self, new_progress: SimulationProgress) {
+        if new_progress.turns() < self.curr_progress.turns() {
+            panic!("Progress went backwards.");
+        }
+
+        let now = std::time::Instant::now();
+        let duration_since_last_update = now.duration_since(self.last_progress_update_time);
+        // The fraction of the new diff that needs to be replaced in the accumulator.
+        let t = (duration_since_last_update.as_secs_f64() / self.speed_averaging_window.as_secs_f64()).min(1.0);
+        let turns_diff = new_progress.turns() - self.curr_progress.turns();
+        let instant_turns_per_second = turns_diff as f64 / duration_since_last_update.as_secs_f64();
+        self.average_turns_per_second = self.average_turns_per_second * (1.0-t) + instant_turns_per_second * t;
+        self.last_progress_update_time = now;
+        self.curr_progress = new_progress;
+    }
+}
+
 pub struct SimulationRunner {
     simulation_state: SimulationRunnerState,
     limits: SimulationLimits,
     stop_flag: Arc<AtomicBool>,
+    progress_tracker: ProgressTracker,
 
     progress: Arc<Mutex<SimulationProgress>>,
     worker: Option<JoinHandle<()>>,
@@ -60,6 +127,7 @@ impl SimulationRunner {
             simulation_state: SimulationRunnerState::Init(sim),
             limits,
             stop_flag,
+            progress_tracker: ProgressTracker::new(),
 
             progress: Default::default(),
             worker: Some(std::thread::spawn(move || {
@@ -170,8 +238,9 @@ impl Subwindow for SimulationRunner {
                 };
 
                 let progress = *self.progress.lock().unwrap();
-                Self::show_progress(ui, &self.limits, progress);
-                
+                self.progress_tracker.on_new_progress(progress);
+                Self::show_progress(ui, &self.limits, &self.progress_tracker);
+
                 self.simulation_state = match old_simulation_state {
                     SimulationRunnerState::Init(simulation) => {
                         start_simulation(simulation, ui);
@@ -245,13 +314,20 @@ impl Subwindow for SimulationRunner {
 }
 
 impl SimulationRunner {
-    fn show_progress(ui: &mut Ui, limits: &SimulationLimits, progress: SimulationProgress) {
+    fn show_progress(ui: &mut Ui, limits: &SimulationLimits, progress_tracker: &ProgressTracker) {
+        let progress = progress_tracker.current_progress();
         ui.vertical(|ui| {
             if let Some(turns) = limits.turns() {
+                let eta = progress_tracker.eta_to_turns(turns);
+                let elapsed = progress_tracker.elapsed();
+                let turns_per_second_mil = progress_tracker.turns_per_second() / (1024 * 1024) as f64;
                 ui.label(format!(
-                    "Turns {}M / {}M",
+                    "Turns {}M / {}M, {}M per second, Elapsed: {}, ETA: {}",
                     progress.turns() / 1_000_000,
-                    turns / 1_000_000
+                    turns / 1_000_000,
+                    turns_per_second_mil as i64,
+                    time::format_duration_hhmmss(elapsed),
+                    time::format_opt_duration_hhmmss(eta),
                 ));
                 let t = (progress.turns() as f32 / turns as f32).clamp(0.0, 1.0);
                 ui.add(ProgressBar::new(t).show_percentage());

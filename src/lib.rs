@@ -22,6 +22,7 @@ pub mod util {
     pub mod align;
     pub mod pow2;
     pub mod memory;
+    pub mod time;
 }
 pub mod compression {
     pub mod rle;
