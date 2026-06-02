@@ -93,7 +93,20 @@ impl<T: Default> Index<isize> for SlidingWindow<T> {
     }
 }
 
+impl<T: Default + Clone> SlidingWindow<T> {
+    #[cold]
+    fn index_mut_resize(&mut self, needed_index: usize) {
+        // We overallocate a little to hit this call less often, batch more.
+        let mut new_size = max(2, self.elements.len());
+        while new_size <= needed_index {
+            new_size += new_size / 2;
+        }
+        self.elements.resize(new_size, T::default());
+    }
+}
+
 impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
+    #[inline(always)]
     fn index_mut(&mut self, index: isize) -> &mut Self::Output {
         if index < self.origin {
             panic!("Index is before the origin.");
@@ -101,12 +114,7 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
 
         let actual_idx = (index - self.origin) as usize;
         if actual_idx >= self.elements.len() {
-            // We overallocate a little to hit this call less often, batch more.
-            let mut new_size = max(2, self.elements.len());
-            while new_size <= actual_idx {
-                new_size += new_size / 2;
-            }
-            self.elements.resize(new_size, T::default());
+            self.index_mut_resize(actual_idx);
         }
 
         &mut self.elements[actual_idx]
