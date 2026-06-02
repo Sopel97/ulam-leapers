@@ -55,24 +55,12 @@ impl Subwindow for GridExplorer {
             // background
             painter.rect_filled(rect, 0.0, Color32::WHITE);
 
-            let timer = std::time::Instant::now();
-            let updated = self.grid_render.maybe_update(
+            let _updated = self.grid_render.maybe_update(
                 ui.ctx(),
                 self.finalized_sim.grid(),
                 self.grid_view_controls
                     .to_render_params(rect.width() as usize, rect.height() as usize),
             );
-            let elapsed = timer.elapsed();
-
-            if updated {
-                println!(
-                    "{}x -> {} {} in {:?}",
-                    2f32.powf(self.grid_view_controls.zoom_pow2 as f32),
-                    rect.width() as usize,
-                    rect.height() as usize,
-                    elapsed
-                );
-            }
 
             if let Some(handle) = self.grid_render.handle() {
                 // y-flip via uv
