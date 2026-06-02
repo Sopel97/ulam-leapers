@@ -169,14 +169,15 @@ impl Subwindow for SimulationRunner {
                         .unwrap();
                 };
 
+                let progress = *self.progress.lock().unwrap();
+                Self::show_progress(ui, &self.limits, progress);
+                
                 self.simulation_state = match old_simulation_state {
                     SimulationRunnerState::Init(simulation) => {
                         start_simulation(simulation, ui);
                         SimulationRunnerState::Simulating
                     }
                     SimulationRunnerState::Simulating => {
-                        let progress = *self.progress.lock().unwrap();
-                        Self::show_progress(ui, &self.limits, progress);
                         if ui.button("Pause simulation").clicked() {
                             self.stop_flag.store(true, Ordering::SeqCst);
                         }
