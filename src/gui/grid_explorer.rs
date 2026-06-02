@@ -23,7 +23,7 @@ impl Subwindow for GridExplorer {
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::Window::new("grid_view_control")
+            egui::Window::new("Controls")
                 .scroll(false)
                 .resizable([false, false]) // resizable so we can shrink if the text edit grows
                 .constrain_to(ui.available_rect_before_wrap())
@@ -80,6 +80,8 @@ impl GridExplorer {
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: -3,
             max_zoom_pow2: 3,
+            turns: finalized_simulation.simulated_turns(),
+            memory_usage: finalized_simulation.memory_usage(),
             complete_shells: finalized_simulation.complete_shells(),
             player_count,
             player_colors: default_player_colors()[..=player_count].to_vec(),
@@ -99,6 +101,8 @@ impl GridExplorer {
 pub struct GridViewControls {
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
+    turns: usize,
+    memory_usage: usize,
     complete_shells: i32,
     player_count: usize,
     player_colors: Vec<Color32>,
@@ -113,6 +117,8 @@ impl Default for GridViewControls {
         GridViewControls {
             min_zoom_pow2: 0,
             max_zoom_pow2: 0,
+            turns: 0,
+            memory_usage: 0,
             complete_shells: 0,
             player_count: 0,
             player_colors: default_player_colors()[..1].to_vec(),
@@ -228,6 +234,11 @@ impl GridViewControls {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
+        ui.heading("Info");
+        ui.label(format!("Turns: {}M", self.turns / 1000 / 1000));
+        ui.label(format!("Complete shells: {}", self.complete_shells));
+        ui.label(format!("Size: {}MiB", self.memory_usage / 1024 / 1024));
+
         ui.heading("Controls");
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
