@@ -111,6 +111,10 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
         // We might try Morton transform and bit-transposition later,
         // but for now zstd can reduce the size to pretty much zero for the test-case.
+        // Transposition may also be worth testing, the patterns seem to follow the direction
+        // of the spiral, so transposing chunks to have access align more with the spiral direction
+        // could help. It doesn't help general simulation performance but some preliminary
+        // testing shows it can impact compression by quite a bit.
         // We use default level 3 compression because higher levels don't seem to have an impact.
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
         let compressed = zstd::encode_all(raw_uncompressed, 3)
