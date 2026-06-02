@@ -390,6 +390,7 @@ impl Simulation {
         ))
     }
 
+    #[inline(always)]
     fn simulate_single_turn(&mut self, placements: &mut [Vec<GridPoint>]) {
         for player in self.players.iter_mut() {
             // In a lot of cases we can place the piece immediately where we currently are,
