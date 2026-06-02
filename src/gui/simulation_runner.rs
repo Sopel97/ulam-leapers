@@ -2,7 +2,7 @@
 use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{ProgressBar, Ui};
+use eframe::egui::{Button, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -247,20 +247,16 @@ impl Subwindow for SimulationRunner {
                         .unwrap();
                 };
 
-                let progress = *self.progress.lock().unwrap();
-                if progress != self.last_progress {
-                    self.progress_tracker.on_new_progress(progress);
-                    self.last_progress = progress;
-                }
-                Self::show_progress(ui, &self.limits, &self.progress_tracker);
-
                 self.simulation_state = match old_simulation_state {
                     SimulationRunnerState::Init(simulation) => {
                         start_simulation(simulation, ui);
                         SimulationRunnerState::Simulating
                     }
                     SimulationRunnerState::Simulating => {
-                        if ui.button("Pause simulation").clicked() {
+                        if ui
+                            .add(Button::new(RichText::new("Pause simulation").heading()))
+                            .clicked()
+                        {
                             self.stop_flag.store(true, Ordering::SeqCst);
                         }
                         SimulationRunnerState::Simulating
@@ -272,7 +268,10 @@ impl Subwindow for SimulationRunner {
                     }
                     SimulationRunnerState::Idle(state) => match state {
                         SimulationRunnerWorkerResult::Paused(simulation) => {
-                            if ui.button("Resume simulation").clicked() {
+                            if ui
+                                .add(Button::new(RichText::new("Resume simulation").heading()))
+                                .clicked()
+                            {
                                 start_simulation(simulation, ui);
                                 SimulationRunnerState::Simulating
                             } else {
@@ -294,7 +293,10 @@ impl Subwindow for SimulationRunner {
                             panic!("Simulation error {:?}", error);
                         }
                         SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
-                            if ui.button("Explore").clicked() {
+                            if ui
+                                .add(Button::new(RichText::new("Explore").heading()))
+                                .clicked()
+                            {
                                 submit_to_explorer = true;
                             }
                             SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
@@ -303,7 +305,14 @@ impl Subwindow for SimulationRunner {
                         }
                     },
                     SimulationRunnerState::Closing => panic!("Invalid state."),
+                };
+
+                let progress = *self.progress.lock().unwrap();
+                if progress != self.last_progress {
+                    self.progress_tracker.on_new_progress(progress);
+                    self.last_progress = progress;
                 }
+                Self::show_progress(ui, &self.limits, &self.progress_tracker);
             });
         });
 
