@@ -27,6 +27,10 @@ impl GridRenderParameters {
             zoom,
         }
     }
+
+    pub fn bounds(&self) -> GridRect {
+        self.bounds
+    }
 }
 
 pub fn default_player_colors() -> Vec<Color32> {

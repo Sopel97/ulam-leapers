@@ -121,6 +121,7 @@ pub struct GridViewControls {
     complete_shells: i32,
     player_count: usize,
     player_colors: Vec<Color32>,
+    last_pointed_coords: GridPoint,
 
     zoom_pow2: i32,
     origin_x: f32,
@@ -137,6 +138,7 @@ impl Default for GridViewControls {
             complete_shells: 0,
             player_count: 0,
             player_colors: default_player_colors()[..1].to_vec(),
+            last_pointed_coords: GridPoint::new(0, 0),
 
             zoom_pow2: 0,
             origin_x: 0f32,
@@ -204,8 +206,9 @@ impl GridViewControls {
                     // Invert y to match world coordinates.
                     pos2(pos.x - rect.min.x, rect.height() - (pos.y - rect.min.y))
                 })
-                .unwrap_or(middle_pos)
-                - middle_pos;
+                .unwrap_or(middle_pos);
+
+            let mouse_relative_to_center = mouse - middle_pos;
 
             ui.input(|i| {
                 for event in &i.events {
@@ -217,16 +220,33 @@ impl GridViewControls {
 
             new_zoom_pow2 = new_zoom_pow2.clamp(self.min_zoom_pow2, self.max_zoom_pow2);
 
+            {
+                // Last pointed coords needs to be more precise.
+                // Use the actual bounds from rendering.
+                // Interpolate within the viewport.
+                let old_scale = (self.zoom_pow2 as f32).exp2();
+                let render_params =
+                    self.to_render_params(rect.width() as usize, rect.height() as usize);
+                let tx = mouse.x / rect.width();
+                let ty = mouse.y / rect.height();
+                let mouse_world_x = render_params.bounds().start.x as f32 * (1.0 - tx)
+                    + render_params.bounds().end.x as f32 * tx;
+                let mouse_world_y = render_params.bounds().start.y as f32 * (1.0 - ty)
+                    + render_params.bounds().end.y as f32 * ty;
+                self.last_pointed_coords =
+                    GridPoint::new(mouse_world_x.floor() as i32, mouse_world_y.floor() as i32);
+            }
+
             // Reproject with respect to the origin
             if new_zoom_pow2 != self.zoom_pow2 {
                 let old_scale = (self.zoom_pow2 as f32).exp2();
                 let new_scale = (new_zoom_pow2 as f32).exp2();
 
-                let mouse_world_x = self.origin_x + mouse.x / old_scale;
-                let mouse_world_y = self.origin_y + mouse.y / old_scale;
+                let mouse_world_x = self.origin_x + mouse_relative_to_center.x / old_scale;
+                let mouse_world_y = self.origin_y + mouse_relative_to_center.y / old_scale;
 
-                self.origin_x = mouse_world_x - mouse.x / new_scale;
-                self.origin_y = mouse_world_y - mouse.y / new_scale;
+                self.origin_x = mouse_world_x - mouse_relative_to_center.x / new_scale;
+                self.origin_y = mouse_world_y - mouse_relative_to_center.y / new_scale;
 
                 self.zoom_pow2 = new_zoom_pow2;
             }
@@ -244,15 +264,33 @@ impl GridViewControls {
         self.origin_y = self.origin_y.clamp(-bounds, bounds);
     }
 
-    fn ui(&mut self, ui: &mut Ui, finalized_simulation: &FinalizedSimulation, save_state: &mut SaveState) {
+    fn ui(
+        &mut self,
+        ui: &mut Ui,
+        finalized_simulation: &FinalizedSimulation,
+        save_state: &mut SaveState,
+    ) {
         ui.heading("Info");
         ui.label(format!("Turns: {}M", self.turns / 1000 / 1000));
         ui.label(format!("Complete shells: {}", self.complete_shells));
-        ui.label(format!("Size in memory: {}MiB", self.memory_usage / 1024 / 1024));
+        ui.label(format!(
+            "Size in memory: {}MiB",
+            self.memory_usage / 1024 / 1024
+        ));
+        ui.label(format!(
+            "Pointer: {}, {}",
+            self.last_pointed_coords.x, self.last_pointed_coords.y
+        ));
         match save_state {
-            SaveState::NotSaved => { ui.label("Simulation is not saved!"); }
-            SaveState::Errored(err) => { ui.label(format!("Error while saving simulation: {}", err)); }
-            SaveState::Saved => { ui.label("Simulation is saved!"); }
+            SaveState::NotSaved => {
+                ui.label("Simulation is not saved!");
+            }
+            SaveState::Errored(err) => {
+                ui.label(format!("Error while saving simulation: {}", err));
+            }
+            SaveState::Saved => {
+                ui.label("Simulation is saved!");
+            }
         };
         if ui.button("Save simulation").clicked()
             && let Some(path) = rfd::FileDialog::new()
