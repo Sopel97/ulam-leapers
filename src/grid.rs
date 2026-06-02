@@ -328,12 +328,10 @@ impl<T: Default + Clone + Copy> Grid<T> {
 
         let mut last_chunk = self.get_or_create_chunk_containing(&indices[0]);
         for index in indices.iter() {
-            if last_chunk.contains_point(index) {
-                last_chunk[*index] = value;
-            } else {
+            if !last_chunk.contains_point(index) {
                 last_chunk = self.get_or_create_chunk_containing(index);
-                last_chunk[*index] = value;
             }
+            last_chunk[*index] = value;
         }
     }
 }
