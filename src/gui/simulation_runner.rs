@@ -334,7 +334,7 @@ impl SimulationRunner {
                 if progress.turns() >= turns {
                     let elapsed = progress_tracker.active_time_elapsed();
                     let turns_per_second_mil =
-                        progress.turns() as f64 / elapsed.as_secs_f64() / (1024.0 * 1024.0);
+                        progress.turns() as f64 / elapsed.as_secs_f64() / (1000.0 * 1000.0);
                     ui.label(format!(
                         "Finished {}M turns in {} at {}M turns per second.",
                         progress.turns() / 1_000_000,
@@ -345,7 +345,7 @@ impl SimulationRunner {
                     let eta = progress_tracker.eta_to_turns(turns);
                     let elapsed = progress_tracker.active_time_elapsed();
                     let turns_per_second_mil =
-                        progress_tracker.turns_per_second() / (1024.0 * 1024.0);
+                        progress_tracker.turns_per_second() / (1000.0 * 1000.0);
                     ui.label(format!(
                         "Turns {}M / {}M, {}M per second, Elapsed: {}, ETA: {}",
                         progress.turns() / 1_000_000,
