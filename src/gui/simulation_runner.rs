@@ -127,6 +127,7 @@ impl SimulationRunner {
 impl Drop for SimulationRunner {
     fn drop(&mut self) {
         if let Some(worker) = self.worker.take() {
+            self.stop_flag.store(true, Ordering::SeqCst);
             self.worker_jobs
                 .send(SimulationRunnerWorkerJob::Stop)
                 .unwrap();
