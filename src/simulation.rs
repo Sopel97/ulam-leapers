@@ -692,7 +692,9 @@ impl WriteTo for FinalizedSimulation {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.players.write_to(writer)?;
         self.simulated_turns.write_to(writer)?;
-        self.grid.write_to(writer)?;
+        // When all chunks are finalized we can compress them even more as a sequence.
+        let mut encoder = zstd::Encoder::new(writer, 3)?;
+        self.grid.write_to(&mut encoder)?;
         Ok(())
     }
 }
@@ -702,7 +704,7 @@ impl ReadFrom for FinalizedSimulation {
         Ok(FinalizedSimulation {
             players: Vec::<Player>::read_from(reader)?,
             simulated_turns: usize::read_from(reader)?,
-            grid: FrozenGrid::<PlayerId>::read_from(reader)?,
+            grid: FrozenGrid::<PlayerId>::read_from(&mut zstd::Decoder::new(reader)?)?,
         })
     }
 }
