@@ -247,6 +247,15 @@ impl Subwindow for SimulationRunner {
                         .unwrap();
                 };
 
+                let finalize_simulation = |sim, ui: &mut Ui| {
+                    self.worker_jobs
+                        .send(SimulationRunnerWorkerJob::Finalize(
+                            sim,
+                            ui.ctx().clone(),
+                        ))
+                        .unwrap();
+                };
+
                 self.simulation_state = match old_simulation_state {
                     SimulationRunnerState::Init(simulation) => {
                         start_simulation(simulation, ui);
@@ -274,6 +283,9 @@ impl Subwindow for SimulationRunner {
                             {
                                 start_simulation(simulation, ui);
                                 SimulationRunnerState::Simulating
+                            } else if ui.add(Button::new(RichText::new("Stop and finalize").heading())).clicked() {
+                                finalize_simulation(simulation, ui);
+                                SimulationRunnerState::Finalizing
                             } else {
                                 SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
                                     simulation,
@@ -281,12 +293,7 @@ impl Subwindow for SimulationRunner {
                             }
                         }
                         SimulationRunnerWorkerResult::Finished(simulation) => {
-                            self.worker_jobs
-                                .send(SimulationRunnerWorkerJob::Finalize(
-                                    simulation,
-                                    ui.ctx().clone(),
-                                ))
-                                .unwrap();
+                            finalize_simulation(simulation, ui);
                             SimulationRunnerState::Finalizing
                         }
                         SimulationRunnerWorkerResult::Errored(_simulation, error) => {
