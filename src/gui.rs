@@ -8,7 +8,6 @@ use crate::gui::simulation_creator::SimulationCreator;
 use eframe::egui::Ui;
 use eframe::{Frame, egui};
 use ulam_leapers::io::ReadFrom;
-use ulam_leapers::simulation::{FinalizedSimulation, Simulation};
 use crate::gui::grid_explorer::GridExplorer;
 
 pub enum SubwindowResult {

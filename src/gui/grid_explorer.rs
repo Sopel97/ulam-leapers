@@ -1,17 +1,17 @@
-﻿use crate::gui::SubwindowResult::Keep;
-use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRender, GridRenderParameters, default_player_colors};
+﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::grid_render::{default_player_colors, GridRender, GridRenderParameters};
+use crate::gui::SubwindowResult::Keep;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
-use std::io::{BufWriter, Read};
+use std::io::BufWriter;
 use std::path::PathBuf;
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub enum SaveState {
     NotSaved,
@@ -265,7 +265,7 @@ impl GridViewControls {
         // Set origin to current pointer placement scaled to the size of the whole grid.
         // Allows going to any region on the grid, useful for large grids.
         if response.clicked_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Secondary) {
-            let (mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
+            let (_mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
 
             let tx = mouse_relative_to_center.x / rect.width() * 2.0;
             let ty = mouse_relative_to_center.y / rect.height() * 2.0;
