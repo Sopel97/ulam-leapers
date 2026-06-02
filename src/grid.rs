@@ -59,6 +59,7 @@ impl<T: Default + Clone> Chunk<T> {
 impl<T: Default> Index<GridPoint> for Chunk<T> {
     type Output = T;
 
+    #[inline(always)]
     fn index(&self, index: GridPoint) -> &Self::Output {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
@@ -67,6 +68,7 @@ impl<T: Default> Index<GridPoint> for Chunk<T> {
 }
 
 impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
+    #[inline(always)]
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
@@ -81,6 +83,7 @@ impl<T> Chunk<T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: GridPoint) -> &T {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
@@ -93,6 +96,7 @@ impl<T> Chunk<T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: GridPoint) -> &mut T {
         let xx = index.x - self.bounds.start.x;
         let yy = index.y - self.bounds.start.y;
@@ -309,6 +313,7 @@ impl<T: Default + Clone + Copy> Grid<T> {
         self.get_frozen_chunk_at(&origin)
     }
 
+    #[inline(always)]
     pub fn get_or_create_chunk_containing(&mut self, point: &GridPoint) -> &mut Chunk<T> {
         let origin = self.chunker.resolve_chunk_origin(point);
         if self.frozen_chunks.contains_key(&origin) {
@@ -353,6 +358,7 @@ impl<T: Default + Clone + Copy> Index<GridPoint> for Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
+    #[inline(always)]
     fn index_mut(&mut self, point: GridPoint) -> &mut Self::Output {
         let chunk: &mut Chunk<T> = self.get_or_create_chunk_containing(&point);
         &mut chunk[point]

@@ -65,12 +65,14 @@ impl<T: Default + Clone> Array2D<T> {
 impl<T> Index<(usize, usize)> for Array2D<T> {
     type Output = T;
 
+    #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
         &self.data[y * self.width + x]
     }
 }
 
 impl<T> IndexMut<(usize, usize)> for Array2D<T> {
+    #[inline(always)]
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
         &mut self.data[y * self.width + x]
     }
@@ -100,6 +102,7 @@ pub type MutSlice2D<'a, T> = Slice2DInternal<'a, T, &'a mut [T]>;
 impl<T> Index<(usize, usize)> for Slice2D<'_, T> {
     type Output = T;
 
+    #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
         &self.data[y * self.stride + x]
     }
@@ -112,6 +115,7 @@ impl<T> Slice2D<'_, T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.stride + x) }
     }
@@ -120,12 +124,14 @@ impl<T> Slice2D<'_, T> {
 impl<T> Index<(usize, usize)> for MutSlice2D<'_, T> {
     type Output = T;
 
+    #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
         &self.data[y * self.stride + x]
     }
 }
 
 impl<T> IndexMut<(usize, usize)> for MutSlice2D<'_, T> {
+    #[inline(always)]
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
         &mut self.data[y * self.stride + x]
     }
@@ -138,6 +144,7 @@ impl<T> MutSlice2D<'_, T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.stride + x) }
     }
@@ -148,6 +155,7 @@ impl<T> MutSlice2D<'_, T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
         unsafe { self.data.get_unchecked_mut(y * self.stride + x) }
     }
@@ -168,6 +176,7 @@ impl<T> Array2D<T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
         unsafe { self.data.get_unchecked(y * self.width + x) }
     }
@@ -178,6 +187,7 @@ impl<T> Array2D<T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
         unsafe { self.data.get_unchecked_mut(y * self.width + x) }
     }

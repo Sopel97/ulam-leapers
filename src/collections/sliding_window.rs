@@ -79,6 +79,7 @@ impl<T: Default> SlidingWindow<T> {
 impl<T: Default> Index<isize> for SlidingWindow<T> {
     type Output = T;
 
+    #[inline(always)]
     fn index(&self, index: isize) -> &Self::Output {
         if index < self.origin {
             return &self.out_of_bounds_value;

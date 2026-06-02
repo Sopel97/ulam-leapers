@@ -49,6 +49,7 @@ impl<T> AlignedBoxedSlice<T> {
     /// even if the resulting reference is not used.
     /// 
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
         unsafe {
             self.storage.get_unchecked(index + self.begin)
@@ -61,6 +62,7 @@ impl<T> AlignedBoxedSlice<T> {
     /// even if the resulting reference is not used.
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+    #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
         unsafe {
             self.storage.get_unchecked_mut(index + self.begin)
@@ -70,13 +72,15 @@ impl<T> AlignedBoxedSlice<T> {
 
 impl<T> Index<usize> for AlignedBoxedSlice<T> {
     type Output = T;
-    
+
+    #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
         &self.storage[index + self.begin]
     }
 }
 
 impl<T> IndexMut<usize> for AlignedBoxedSlice<T> {
+    #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.storage[index + self.begin]
     }
