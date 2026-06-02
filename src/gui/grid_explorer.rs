@@ -3,7 +3,7 @@ use crate::gui::grid_render::Zoom::{Magnification, Minification};
 use crate::gui::grid_render::{GridRender, GridRenderParameters, default_player_colors};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Rect, Sense, Ui};
+use eframe::egui::{Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::io::{BufWriter, Read};
@@ -205,10 +205,9 @@ impl GridViewControls {
     }
 
     fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect) {
-        let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover());
+        let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover() | Sense::click());
 
-        if response.hovered() {
-            let mut new_zoom_pow2 = self.zoom_pow2;
+        let get_mouse_pos_in_grid_space = |response: &Response| {
             let middle_pos = (rect.max - rect.min.to_vec2()) * 0.5f32;
             let mouse = response
                 .hover_pos()
@@ -219,6 +218,12 @@ impl GridViewControls {
                 .unwrap_or(middle_pos);
 
             let mouse_relative_to_center = mouse - middle_pos;
+            (mouse, mouse_relative_to_center)
+        };
+
+        if response.hovered() {
+            let mut new_zoom_pow2 = self.zoom_pow2;
+            let (mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
 
             ui.input(|i| {
                 for event in &i.events {
@@ -261,11 +266,24 @@ impl GridViewControls {
             }
         }
 
+        // Drag keeping origin at the pointer.
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
             let zoom_scale = 0.5f32.powf(self.zoom_pow2 as f32);
             self.origin_x -= zoom_scale * delta.x;
             self.origin_y += zoom_scale * delta.y;
+        }
+
+        // Set origin to current pointer placement scaled to the size of the whole grid.
+        // Allows going to any region on the grid, useful for large grids.
+        if response.clicked_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Secondary) {
+            let (mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
+
+            let tx = mouse_relative_to_center.x / rect.width() * 2.0;
+            let ty = mouse_relative_to_center.y / rect.height() * 2.0;
+
+            self.origin_x = tx * self.complete_shells as f32;
+            self.origin_y = ty * self.complete_shells as f32;
         }
 
         let bounds = self.complete_shells as f32;
