@@ -31,6 +31,7 @@ enum SimulationRunnerWorkerResult {
 
 enum SimulationRunnerState {
     Idle(SimulationRunnerWorkerResult),
+    Init(Simulation),
     Simulating,
     Finalizing,
     Closing,
@@ -56,9 +57,7 @@ impl SimulationRunner {
         limits = limits.with_stop_flag_limit(stop_flag.clone());
 
         Self {
-            simulation_state: SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
-                sim,
-            )),
+            simulation_state: SimulationRunnerState::Init(sim),
             limits,
             stop_flag,
 
@@ -156,7 +155,24 @@ impl Subwindow for SimulationRunner {
                     &mut self.simulation_state,
                     SimulationRunnerState::Simulating,
                 );
+
+                let start_simulation = |sim, ui: &mut Ui| {
+                    self.stop_flag.store(false, Ordering::SeqCst);
+                    self.worker_jobs
+                        .send(SimulationRunnerWorkerJob::Simulate(
+                            sim,
+                            self.limits.clone(),
+                            self.progress.clone(),
+                            ui.ctx().clone(),
+                        ))
+                        .unwrap();
+                };
+
                 self.simulation_state = match old_simulation_state {
+                    SimulationRunnerState::Init(simulation) => {
+                        start_simulation(simulation, ui);
+                        SimulationRunnerState::Simulating
+                    }
                     SimulationRunnerState::Simulating => {
                         let progress = *self.progress.lock().unwrap();
                         Self::show_progress(ui, &self.limits, progress);
@@ -173,15 +189,7 @@ impl Subwindow for SimulationRunner {
                     SimulationRunnerState::Idle(state) => match state {
                         SimulationRunnerWorkerResult::Paused(simulation) => {
                             if ui.button("Resume simulation").clicked() {
-                                self.stop_flag.store(false, Ordering::SeqCst);
-                                self.worker_jobs
-                                    .send(SimulationRunnerWorkerJob::Simulate(
-                                        simulation,
-                                        self.limits.clone(),
-                                        self.progress.clone(),
-                                        ui.ctx().clone(),
-                                    ))
-                                    .unwrap();
+                                start_simulation(simulation, ui);
                                 SimulationRunnerState::Simulating
                             } else {
                                 SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
