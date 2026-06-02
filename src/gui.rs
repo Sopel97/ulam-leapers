@@ -80,16 +80,31 @@ pub struct App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, frame: &mut Frame) {
+        let mut tabs_to_spawn: Vec<Box<dyn Subwindow>> = vec![];
+
         self.drop_closed_tabs();
 
         egui::Panel::top("main_panel")
             .frame(egui::Frame::new().inner_margin(4))
             .show_inside(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    ui.menu_button("New", |ui| {
+                        if ui.button("Creator").clicked() {
+                            tabs_to_spawn.push(Box::new(SimulationCreator::new()));
+                        }
+                        if ui.button("Explorer").clicked() {
+                            // TODO: load from file, spawn explorer
+                        }
+                    });
+
                     ui.visuals_mut().button_frame = false;
                     self.tab_bar(ui, frame)
                 });
             });
+
+        for tab in tabs_to_spawn {
+            self.add_tab(tab);
+        }
 
         self.drop_closed_tabs();
 
@@ -147,7 +162,6 @@ impl App {
                         subwindow.on_close();
                         do_close = true;
                     }
-                    ui.separator();
                 }
                 SubwindowState::Closed => {}
             }
