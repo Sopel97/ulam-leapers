@@ -1,10 +1,10 @@
-﻿use crate::gui::grid_explorer::GridExplorer;
-use crate::gui::SubwindowResult::{Keep, Replace};
+﻿use crate::gui::SubwindowResult::{Keep, Replace};
+use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{ProgressBar, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use ulam_leapers::simulation::{
@@ -51,7 +51,7 @@ impl ProgressTracker {
     pub fn new() -> Self {
         let now = std::time::Instant::now();
         Self {
-            speed_averaging_window: Duration::from_secs(3),
+            speed_averaging_window: Duration::from_secs(10),
             start_time: now,
             last_progress_update_time: now,
             curr_progress: SimulationProgress::default(),
@@ -66,6 +66,10 @@ impl ProgressTracker {
     pub fn elapsed(&self) -> Duration {
         let now = std::time::Instant::now();
         now.duration_since(self.start_time)
+    }
+
+    pub fn active_time_elapsed(&self) -> Duration {
+        self.last_progress_update_time - self.start_time
     }
 
     pub fn eta_to_turns(&self, turns: usize) -> Option<Duration> {
@@ -93,11 +97,15 @@ impl ProgressTracker {
 
         let now = std::time::Instant::now();
         let duration_since_last_update = now.duration_since(self.last_progress_update_time);
-        // The fraction of the new diff that needs to be replaced in the accumulator.
-        let t = (duration_since_last_update.as_secs_f64() / self.speed_averaging_window.as_secs_f64()).min(1.0);
+        // exponential moving average
+        // adjust tau early on for faster convergence
+        let tau = ((now - self.start_time).as_secs_f64() * 0.2)
+            .min(self.speed_averaging_window.as_secs_f64());
+        let alpha = 1.0 - (-duration_since_last_update.as_secs_f64() / tau).exp();
         let turns_diff = new_progress.turns() - self.curr_progress.turns();
         let instant_turns_per_second = turns_diff as f64 / duration_since_last_update.as_secs_f64();
-        self.average_turns_per_second = self.average_turns_per_second * (1.0-t) + instant_turns_per_second * t;
+        self.average_turns_per_second =
+            self.average_turns_per_second * (1.0 - alpha) + instant_turns_per_second * alpha;
         self.last_progress_update_time = now;
         self.curr_progress = new_progress;
     }
@@ -110,6 +118,7 @@ pub struct SimulationRunner {
     progress_tracker: ProgressTracker,
 
     progress: Arc<Mutex<SimulationProgress>>,
+    last_progress: SimulationProgress,
     worker: Option<JoinHandle<()>>,
     worker_jobs: mpsc::Sender<SimulationRunnerWorkerJob>,
     worker_results: mpsc::Receiver<SimulationRunnerWorkerResult>,
@@ -130,6 +139,7 @@ impl SimulationRunner {
             progress_tracker: ProgressTracker::new(),
 
             progress: Default::default(),
+            last_progress: Default::default(),
             worker: Some(std::thread::spawn(move || {
                 let job_receiver = job_receiver;
                 let result_sender = result_sender;
@@ -238,7 +248,10 @@ impl Subwindow for SimulationRunner {
                 };
 
                 let progress = *self.progress.lock().unwrap();
-                self.progress_tracker.on_new_progress(progress);
+                if progress != self.last_progress {
+                    self.progress_tracker.on_new_progress(progress);
+                    self.last_progress = progress;
+                }
                 Self::show_progress(ui, &self.limits, &self.progress_tracker);
 
                 self.simulation_state = match old_simulation_state {
@@ -289,7 +302,7 @@ impl Subwindow for SimulationRunner {
                             ))
                         }
                     },
-                    SimulationRunnerState::Closing => panic!("Invalid state.")
+                    SimulationRunnerState::Closing => panic!("Invalid state."),
                 }
             });
         });
@@ -318,17 +331,30 @@ impl SimulationRunner {
         let progress = progress_tracker.current_progress();
         ui.vertical(|ui| {
             if let Some(turns) = limits.turns() {
-                let eta = progress_tracker.eta_to_turns(turns);
-                let elapsed = progress_tracker.elapsed();
-                let turns_per_second_mil = progress_tracker.turns_per_second() / (1024 * 1024) as f64;
-                ui.label(format!(
-                    "Turns {}M / {}M, {}M per second, Elapsed: {}, ETA: {}",
-                    progress.turns() / 1_000_000,
-                    turns / 1_000_000,
-                    turns_per_second_mil as i64,
-                    time::format_duration_hhmmss(elapsed),
-                    time::format_opt_duration_hhmmss(eta),
-                ));
+                if progress.turns() >= turns {
+                    let elapsed = progress_tracker.active_time_elapsed();
+                    let turns_per_second_mil =
+                        progress.turns() as f64 / elapsed.as_secs_f64() / (1024.0 * 1024.0);
+                    ui.label(format!(
+                        "Finished {}M turns in {} at {}M turns per second.",
+                        progress.turns() / 1_000_000,
+                        time::format_duration_hhmmss(elapsed),
+                        turns_per_second_mil as i64,
+                    ));
+                } else {
+                    let eta = progress_tracker.eta_to_turns(turns);
+                    let elapsed = progress_tracker.active_time_elapsed();
+                    let turns_per_second_mil =
+                        progress_tracker.turns_per_second() / (1024.0 * 1024.0);
+                    ui.label(format!(
+                        "Turns {}M / {}M, {}M per second, Elapsed: {}, ETA: {}",
+                        progress.turns() / 1_000_000,
+                        turns / 1_000_000,
+                        turns_per_second_mil as i64,
+                        time::format_duration_hhmmss(elapsed),
+                        time::format_opt_duration_hhmmss(eta),
+                    ));
+                }
                 let t = (progress.turns() as f32 / turns as f32).clamp(0.0, 1.0);
                 ui.add(ProgressBar::new(t).show_percentage());
             }

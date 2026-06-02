@@ -194,7 +194,7 @@ impl Game for FinalizedSimulation {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq)]
 pub struct SimulationProgress {
     memory_usage: usize,
     turns: usize,
