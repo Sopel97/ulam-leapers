@@ -101,7 +101,7 @@ impl GridExplorer {
         }
     }
 
-    pub(crate) fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
+    pub fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
         let file = std::fs::File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
         let simulation = FinalizedSimulation::read_from(&mut reader)?;
