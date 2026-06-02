@@ -695,6 +695,7 @@ impl WriteTo for FinalizedSimulation {
         // When all chunks are finalized we can compress them even more as a sequence.
         let mut encoder = zstd::Encoder::new(writer, 3)?;
         self.grid.write_to(&mut encoder)?;
+        encoder.flush()?;
         Ok(())
     }
 }
