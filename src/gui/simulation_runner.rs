@@ -214,7 +214,7 @@ impl Subwindow for SimulationRunner {
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         let mut submit_to_explorer = false;
 
-        egui::CentralPanel::no_frame().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::Frame::default().show(ui, |ui| {
                 while let Ok(result) = self.worker_results.try_recv() {
                     self.simulation_state = SimulationRunnerState::Idle(result);
