@@ -246,21 +246,27 @@ pub struct Grid<T> {
     frozen_chunks_memory_usage: usize, // to reduce the amount of redundant iteration over chunks
 }
 
-impl<T> Grid<T> {
-    pub fn memory_usage(&self) -> usize {
-        let s1: usize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
-        s1 + self.frozen_chunks_memory_usage
-    }
-
+impl<T: Send + Sync> Grid<T> {
     pub fn freeze(&mut self, region: &GridRect) {
+        // While amortized this function won't do much it may be called on many chunks
+        // at the time. There is no good way to change that without possibly blowing
+        // up memory usage due to the number of uncompressed chunks growing.
         let to_freeze = self
             .active_chunks
-            .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()));
-        let frozen = to_freeze.map(|entry| {
-            let origin = entry.0;
-            let chunk = entry.1;
-            (origin, CompressedChunk::from(&chunk))
-        });
+            .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
+            // Not sure if there's a better way,
+            // extract_if doesn't produce a par-compatible iterator.
+            .collect::<Vec<_>>();
+        let frozen = to_freeze
+            .into_par_iter()
+            .map(|entry| {
+                let origin = entry.0;
+                let chunk = entry.1;
+                (origin, CompressedChunk::from(&chunk))
+            })
+            .collect::<Vec<_>>();
+        // Collecting to a vector is not great but should be fine. Other ways of converting
+        // parallel processing to sequential are annoying.
         for (origin, chunk) in frozen {
             self.frozen_chunks_memory_usage += chunk.memory_usage();
             self.frozen_chunks.insert(origin, chunk);
@@ -273,6 +279,13 @@ impl<T> Grid<T> {
             GridPoint::new(i32::MIN, i32::MIN),
             GridPoint::new(i32::MAX, i32::MAX),
         ));
+    }
+}
+
+impl<T> Grid<T> {
+    pub fn memory_usage(&self) -> usize {
+        let s1: usize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
+        s1 + self.frozen_chunks_memory_usage
     }
 
     pub fn is_chunk_at_frozen(&self, origin: &ChunkOrigin) -> bool {
@@ -371,7 +384,7 @@ pub struct FrozenGrid<T> {
     memory_usage: usize,
 }
 
-impl<T> From<Grid<T>> for FrozenGrid<T> {
+impl<T: Send + Sync> From<Grid<T>> for FrozenGrid<T> {
     fn from(mut value: Grid<T>) -> FrozenGrid<T> {
         value.freeze_all();
 
@@ -459,7 +472,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                     .bounds()
                     .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
-                
+
                 assert!(subregion.is_aligned_to_pow2(minification));
 
                 let chunk = Chunk::from(compressed_chunk);
