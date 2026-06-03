@@ -1,7 +1,8 @@
-﻿use crate::collections::array2d::{Array2D, Slice2D};
+﻿use crate::algo::transpose::transpose_u8;
+use crate::collections::array2d::{Array2D, Slice2D};
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
-use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::align::{MemoryAlignment, CACHE_LINE_SIZE};
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -12,7 +13,7 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
 use std::thread;
-use crate::algo::transpose::transpose_u8;
+use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -149,13 +150,18 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
 
-        let mut transposed_buf = vec![0u8; raw_uncompressed.len()];
+        let mut transposed_buf = AlignedBoxedSlice::<u8>::new(raw_uncompressed.len(), CACHE_LINE_SIZE);
         let mut compressed = zstd::encode_all(raw_uncompressed, 6)
             .unwrap()
             .into_boxed_slice();
 
         let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
-        transpose_u8(raw_uncompressed, raw_uncompressed_transposed, chunk.cells.width(), chunk.cells.height());
+        transpose_u8(
+            raw_uncompressed,
+            raw_uncompressed_transposed,
+            chunk.cells.width() * size_of::<T>(),
+            chunk.cells.height(),
+        );
         let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6)
             .unwrap()
             .into_boxed_slice();
@@ -181,22 +187,27 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     fn from(chunk: &CompressedChunk<T>) -> Self {
         let width = chunk.bounds.width() as usize;
         let height = chunk.bounds.height() as usize;
-        let mut cells: Array2D<T> = Array2D::new_aligned(
-            width,
-            height,
-            CACHE_LINE_SIZE,
-        );
+        let mut cells: Array2D<T> = Array2D::new_aligned(width, height, CACHE_LINE_SIZE);
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
-        
+
         match chunk.transform {
             CompressedChunkTransform::None => {
                 zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
-            },
+            }
             CompressedChunkTransform::Transposition => {
-                let mut transposed_buf = vec![0u8; raw_cells.len()];
+                let mut transposed_buf = AlignedBoxedSlice::<u8>::new(raw_cells.len(), CACHE_LINE_SIZE);
                 let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
-                zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_uncompressed_transposed).unwrap();
-                transpose_u8(raw_uncompressed_transposed, raw_cells, width, height);
+                zstd::bulk::decompress_to_buffer(
+                    chunk.data.iter().as_slice(),
+                    raw_uncompressed_transposed,
+                )
+                .unwrap();
+                transpose_u8(
+                    raw_uncompressed_transposed,
+                    raw_cells,
+                    width,
+                    height * size_of::<T>(),
+                );
             }
         }
         Chunk {
@@ -855,17 +866,17 @@ mod tests {
         GridRect::with_size(point(origin_x, origin_y), width as i32, height as i32)
     }
 
-    fn make_grid(chunk_size: Pow2) -> Grid<i32> {
+    fn make_grid(chunk_size: Pow2) -> Grid<u8> {
         Grid::new(Box::new(SquareChunker { size: chunk_size }))
     }
 
     #[test]
     fn chunk_new_initializes_with_default_values() {
-        let bounds = make_bounds(0, 0, 4, 4);
-        let chunk: Chunk<i32> = Chunk::new(bounds);
+        let bounds = make_bounds(0, 0, 64, 64);
+        let chunk: Chunk<u8> = Chunk::new(bounds);
 
-        for y in 0..4 {
-            for x in 0..4 {
+        for y in 0..64 {
+            for x in 0..64 {
                 assert_eq!(chunk[point(x, y)], 0);
             }
         }
@@ -873,55 +884,57 @@ mod tests {
 
     #[test]
     fn chunk_index_and_index_mut_work() {
-        let bounds = make_bounds(10, 20, 4, 4);
+        let bounds = make_bounds(64, 64, 64, 64);
         let mut chunk: Chunk<i32> = Chunk::new(bounds);
 
-        chunk[point(10, 20)] = 1;
-        chunk[point(11, 20)] = 2;
-        chunk[point(13, 23)] = 99;
+        chunk[point(64 + 10, 64 + 20)] = 1;
+        chunk[point(64 + 11, 64 + 20)] = 2;
+        chunk[point(64 + 13, 64 + 23)] = 99;
 
-        assert_eq!(chunk[point(10, 20)], 1);
-        assert_eq!(chunk[point(11, 20)], 2);
-        assert_eq!(chunk[point(13, 23)], 99);
+        assert_eq!(chunk[point(64 + 10, 64 + 20)], 1);
+        assert_eq!(chunk[point(64 + 11, 64 + 20)], 2);
+        assert_eq!(chunk[point(64 + 13, 64 + 23)], 99);
     }
 
     #[test]
     fn square_chunker_resolves_positive_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(16),
+            size: Pow2::new(64),
         };
 
-        let origin = chunker.resolve_chunk_origin(&point(18, 33));
+        let origin = chunker.resolve_chunk_origin(&point(128 + 18, 192 + 33));
 
-        assert_eq!(origin.0, point(16, 32));
+        assert_eq!(origin.0, point(128, 192));
     }
 
     #[test]
     fn square_chunker_resolves_negative_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(16),
+            size: Pow2::new(64),
         };
 
-        let origin = chunker.resolve_chunk_origin(&point(-1, -17));
+        let origin = chunker.resolve_chunk_origin(&point(-128 + 1, -192 + 17));
 
         // arithmetic right shift should floor toward negative infinity
-        assert_eq!(origin.0, point(-16, -32));
+        assert_eq!(origin.0, point(-128, -192));
     }
 
     #[test]
     fn square_chunker_resolves_bounds() {
-        let chunker = SquareChunker { size: Pow2::new(8) };
+        let chunker = SquareChunker {
+            size: Pow2::new(64),
+        };
 
-        let bounds = chunker.resolve_chunk_bounds(&point(9, 17));
+        let bounds = chunker.resolve_chunk_bounds(&point(64 + 9, 128 + 17));
 
-        assert_eq!(bounds.start, point(8, 16));
-        assert_eq!(bounds.width(), 8);
-        assert_eq!(bounds.height(), 8);
+        assert_eq!(bounds.start, point(64, 128));
+        assert_eq!(bounds.width(), 64);
+        assert_eq!(bounds.height(), 64);
     }
 
     #[test]
     fn grid_creates_chunk_on_mutation() {
-        let mut grid = make_grid(Pow2::new(4));
+        let mut grid = make_grid(Pow2::new(64));
 
         grid[point(1, 1)] = 42;
 
@@ -934,7 +947,7 @@ mod tests {
 
     #[test]
     fn grid_returns_same_chunk_for_points_in_same_region() {
-        let mut grid = make_grid(Pow2::new(4)); // chunk size = 4
+        let mut grid = make_grid(Pow2::new(64));
 
         grid[point(1, 1)] = 10;
         grid[point(3, 3)] = 20;
@@ -947,20 +960,20 @@ mod tests {
 
     #[test]
     fn grid_creates_different_chunks_for_different_regions() {
-        let mut grid = make_grid(Pow2::new(4)); // chunk size = 4
+        let mut grid = make_grid(Pow2::new(64)); // chunk size = 4
 
         grid[point(1, 1)] = 10;
-        grid[point(5, 5)] = 20;
+        grid[point(64 + 5, 5)] = 20;
 
         let chunk_a = grid.get_active_chunk_containing(&point(1, 1)).unwrap() as *const _;
-        let chunk_b = grid.get_active_chunk_containing(&point(5, 5)).unwrap() as *const _;
+        let chunk_b = grid.get_active_chunk_containing(&point(64 + 5, 5)).unwrap() as *const _;
 
         assert_ne!(chunk_a, chunk_b);
     }
 
     #[test]
     fn grid_index_panics_when_chunk_does_not_exist() {
-        let grid = make_grid(Pow2::new(4));
+        let grid = make_grid(Pow2::new(64));
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = grid[point(0, 0)];
@@ -971,7 +984,7 @@ mod tests {
 
     #[test]
     fn grid_supports_negative_coordinates() {
-        let mut grid = make_grid(Pow2::new(4));
+        let mut grid = make_grid(Pow2::new(64));
 
         grid[point(-1, -1)] = 123;
 
@@ -980,24 +993,24 @@ mod tests {
 
     #[test]
     fn correct_chunks_get_frozen() {
-        let mut grid = make_grid(Pow2::new(4));
+        let mut grid = make_grid(Pow2::new(64));
 
         grid[point(0, 0)] = 123;
-        grid[point(-5, 0)] = 123;
+        grid[point(-64 + 5, 0)] = 123;
 
-        grid.freeze(&GridRect::with_size(GridPoint::new(-4, -4), 9, 9));
+        grid.freeze(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70));
 
         assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
-        assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-5, 0)));
+        assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-64 + 5, 0)));
     }
 
     #[test]
     fn attempting_to_modify_frozen_chunk_panics() {
-        let mut grid = make_grid(Pow2::new(4));
+        let mut grid = make_grid(Pow2::new(64));
 
         grid[point(0, 0)] = 123;
 
-        grid.freeze(&GridRect::with_size(GridPoint::new(-40, -40), 81, 81));
+        grid.freeze(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810));
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;
@@ -1008,8 +1021,8 @@ mod tests {
 
     #[test]
     fn frozen_grid_sample_range2d() {
-        let mut grid = make_grid(Pow2::new(4));
-        grid[point(-1, -3)] = 1234;
+        let mut grid = make_grid(Pow2::new(64));
+        grid[point(-1, -3)] = 12;
         grid[point(-1, -1)] = 123;
 
         let frozen_grid: FrozenGrid<_> = grid.into();
@@ -1019,6 +1032,6 @@ mod tests {
             GridPoint::new(0, 0),
         ));
 
-        assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
+        assert_eq!(res.as_flat_slice(), [12u8, 0, 123]);
     }
 }
