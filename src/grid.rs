@@ -1,8 +1,9 @@
 ﻿use crate::algo::transpose::transpose_u8;
+use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::{Array2D, Slice2D};
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
-use crate::util::align::{MemoryAlignment, CACHE_LINE_SIZE};
+use crate::util::align::{CACHE_LINE_SIZE, MemoryAlignment};
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -13,7 +14,6 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
 use std::thread;
-use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -150,7 +150,8 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
 
-        let mut transposed_buf = AlignedBoxedSlice::<u8>::new(raw_uncompressed.len(), CACHE_LINE_SIZE);
+        let mut transposed_buf =
+            AlignedBoxedSlice::<u8>::new(raw_uncompressed.len(), CACHE_LINE_SIZE);
         let mut compressed = zstd::encode_all(raw_uncompressed, 6)
             .unwrap()
             .into_boxed_slice();
@@ -195,13 +196,17 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
                 zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
             }
             CompressedChunkTransform::Transposition => {
-                let mut transposed_buf = AlignedBoxedSlice::<u8>::new(raw_cells.len(), CACHE_LINE_SIZE);
+                let mut transposed_buf =
+                    AlignedBoxedSlice::<u8>::new(raw_cells.len(), CACHE_LINE_SIZE);
                 let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
-                zstd::bulk::decompress_to_buffer(
-                    chunk.data.iter().as_slice(),
-                    raw_uncompressed_transposed,
-                )
-                .unwrap();
+                assert_eq!(
+                    zstd::bulk::decompress_to_buffer(
+                        chunk.data.iter().as_slice(),
+                        raw_uncompressed_transposed,
+                    )
+                    .unwrap(),
+                    raw_uncompressed_transposed.len()
+                );
                 transpose_u8(
                     raw_uncompressed_transposed,
                     raw_cells,
