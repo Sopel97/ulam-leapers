@@ -67,16 +67,9 @@ impl GridRender {
     pub fn handle(&self) -> &Option<TextureHandle> {
         &self.handle
     }
-    
-    fn update(&mut self, ctx: &egui::Context, frozen_grid: &FrozenGrid<PlayerId>) {
-        let texture_options = TextureOptions {
-            magnification: TextureFilter::Nearest,
-            minification: TextureFilter::Linear,
-            wrap_mode: TextureWrapMode::ClampToEdge,
-            mipmap_mode: None,
-        };
 
-        match self.params.zoom {
+    pub fn render_to_rgba_image(params: &GridRenderParameters, frozen_grid: &FrozenGrid<PlayerId>) -> ColorImage {
+        match params.zoom {
             Magnification(_factor) => {
                 let samples: Array2D<Color32> = frozen_grid
                     // We use sample_range2d_small_zoom_out_map_par with no minification
@@ -85,19 +78,18 @@ impl GridRender {
                     // however it may be faster on larger displays or with differently shaped chunks.
                     // Should not be meaningfully slower in fast cases and will speed up slow cases.
                     .sample_range2d_small_zoom_out_map_par(
-                        &self.params.bounds,
+                        &params.bounds,
                         Pow2::new(1),
-                        |v| self.params.colors[v[(0, 0)].index()],
+                        |v| params.colors[v[(0, 0)].index()],
                     );
-                let image = ColorImage::new(
+                ColorImage::new(
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
-                );
-                self.handle = Some(ctx.load_texture("name", image, texture_options));
+                )
             }
             Minification(factor) => {
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
-                    &self.params.bounds,
+                    &params.bounds,
                     factor,
                     |block| {
                         // Crude area interpolation without gamma correction.
@@ -108,7 +100,7 @@ impl GridRender {
                             for x in 0..block.width() {
                                 // SAFETY: Explicitly iterating within bounds.
                                 let color = unsafe {
-                                    self.params.colors[block.get_unchecked(x, y).index()]
+                                    params.colors[block.get_unchecked(x, y).index()]
                                 };
                                 r += color.r() as i64;
                                 g += color.g() as i64;
@@ -123,13 +115,24 @@ impl GridRender {
                         )
                     },
                 );
-                let image = ColorImage::new(
+                ColorImage::new(
                     [samples.width(), samples.height()],
                     samples.as_flat_slice().to_vec(),
-                );
-                self.handle = Some(ctx.load_texture("name", image, texture_options));
+                )
             }
         }
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frozen_grid: &FrozenGrid<PlayerId>) {
+        let texture_options = TextureOptions {
+            magnification: TextureFilter::Nearest,
+            minification: TextureFilter::Linear,
+            wrap_mode: TextureWrapMode::ClampToEdge,
+            mipmap_mode: None,
+        };
+
+        let image = Self::render_to_rgba_image(&self.params, &frozen_grid);
+        self.handle = Some(ctx.load_texture("name", image, texture_options));
     }
 
     // Returns true if an update was actually performed (needed), false otherwise.

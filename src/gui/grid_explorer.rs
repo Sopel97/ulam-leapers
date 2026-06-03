@@ -6,6 +6,7 @@ use eframe::egui;
 use eframe::egui::{Checkbox, Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
+use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
@@ -78,13 +79,29 @@ impl Subwindow for GridExplorer {
     }
 }
 
+const MIN_ZOOM_POW2: i32 = -3;
+const MIN_ZOOM_POW2_FAR: i32 = -6;
+const DEFAULT_ZOOM_POW2: i32 = 0;
+const MAX_ZOOM_POW2: i32 = 3;
+
+// NOTE: Currently restricted by minimum chunk alignment due to the sampling method...
+const MIN_ZOOM_POW2_PNG: i32 = -6;
+const DEFAULT_ZOOM_POW2_PNG: i32 = 0;
+const MAX_ZOOM_POW2_PNG: i32 = 3;
+
+const MIN_PNG_EXTENT: i32 = 256;
+const DEFAULT_PNG_EXTENT: i32 = 2048;
+const MAX_PNG_EXTENT: i32 = 8192;
+
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
-            min_zoom_pow2: -3,
-            min_zoom_pow2_far: -6,
-            max_zoom_pow2: 3,
+            min_zoom_pow2: MIN_ZOOM_POW2,
+            min_zoom_pow2_far: MIN_ZOOM_POW2_FAR,
+            max_zoom_pow2: MAX_ZOOM_POW2,
+            min_zoom_pow2_png: MIN_ZOOM_POW2_PNG,
+            max_zoom_pow2_png: MAX_ZOOM_POW2_PNG,
             turns: finalized_simulation.simulated_turns(),
             memory_usage: finalized_simulation.memory_usage(),
             complete_shells: finalized_simulation.complete_shells(),
@@ -117,6 +134,8 @@ pub struct GridViewControls {
     min_zoom_pow2: i32,
     min_zoom_pow2_far: i32,
     max_zoom_pow2: i32,
+    min_zoom_pow2_png: i32,
+    max_zoom_pow2_png: i32,
     turns: usize,
     memory_usage: usize,
     complete_shells: i32,
@@ -125,6 +144,8 @@ pub struct GridViewControls {
     last_pointed_coords: GridPoint,
 
     zoom_pow2: i32,
+    zoom_pow2_png: i32,
+    png_extent: i32,
     origin_x: f32,
     origin_y: f32,
     is_far_zoom_allowed: bool,
@@ -136,6 +157,8 @@ impl Default for GridViewControls {
             min_zoom_pow2: 0,
             min_zoom_pow2_far: 0,
             max_zoom_pow2: 0,
+            min_zoom_pow2_png: 0,
+            max_zoom_pow2_png: 0,
             turns: 0,
             memory_usage: 0,
             complete_shells: 0,
@@ -143,11 +166,22 @@ impl Default for GridViewControls {
             player_colors: default_player_colors()[..1].to_vec(),
             last_pointed_coords: GridPoint::new(0, 0),
 
-            zoom_pow2: 0,
+            zoom_pow2: DEFAULT_ZOOM_POW2,
+            zoom_pow2_png: DEFAULT_ZOOM_POW2_PNG,
+            png_extent: DEFAULT_PNG_EXTENT,
             origin_x: 0f32,
             origin_y: 0f32,
             is_far_zoom_allowed: false,
         }
+    }
+}
+
+fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
+    let n = n as i32;
+    if n >= 0 {
+        format!("{}x", 1 << n)
+    } else {
+        format!("1/{}x", 1 << -n)
     }
 }
 
@@ -160,20 +194,23 @@ impl GridViewControls {
         }
     }
 
-    pub fn to_render_params(
-        &self,
-        viewport_width: usize,
-        viewport_height: usize,
+    fn render_params(
+        zoom_pow2: i32,
+        origin_x: f32,
+        origin_y: f32,
+        viewport_width: i32,
+        viewport_height: i32,
+        colors: Vec<Color32>,
     ) -> GridRenderParameters {
-        let zoom = match self.zoom_pow2 {
+        let zoom = match zoom_pow2 {
             e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
             e @ ..0 => Minification(Pow2::from_exponent((-e) as usize)),
         };
 
         let bounds = match zoom {
             Magnification(factor) => {
-                let origin_x = self.origin_x as i32;
-                let origin_y = self.origin_y as i32;
+                let origin_x = origin_x as i32;
+                let origin_y = origin_y as i32;
 
                 GridRect::with_size(
                     GridPoint::new(
@@ -186,8 +223,8 @@ impl GridViewControls {
             }
             Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
-                let origin_x = floor_to_multiple(self.origin_x as i32, factor);
-                let origin_y = floor_to_multiple(self.origin_y as i32, factor);
+                let origin_x = floor_to_multiple(origin_x as i32, factor);
+                let origin_y = floor_to_multiple(origin_y as i32, factor);
                 let factor_i32: i32 = factor.into();
 
                 GridRect::with_size(
@@ -203,7 +240,22 @@ impl GridViewControls {
             }
         };
 
-        GridRenderParameters::new(bounds, self.player_colors.clone(), zoom)
+        GridRenderParameters::new(bounds, colors, zoom)
+    }
+
+    pub fn to_render_params(
+        &self,
+        viewport_width: usize,
+        viewport_height: usize,
+    ) -> GridRenderParameters {
+        Self::render_params(
+            self.zoom_pow2,
+            self.origin_x,
+            self.origin_y,
+            viewport_width as i32,
+            viewport_height as i32,
+            self.player_colors.clone(),
+        )
     }
 
     fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect) {
@@ -352,14 +404,7 @@ impl GridViewControls {
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range)
                 .text("Zoom")
-                .custom_formatter(|n, _| {
-                    let n = n as i32;
-                    if n >= 0 {
-                        format!("{}x", 1 << n)
-                    } else {
-                        format!("1/{}x", 1 << -n)
-                    }
-                }),
+                .custom_formatter(format_zoom_slider_text),
         );
 
         // How many per pixel.
@@ -391,6 +436,57 @@ impl GridViewControls {
                 }
             });
             ui.end_row();
+        }
+
+        ui.heading("Screenshots ❓")
+            .on_hover_text("Currently it only provides a way to save small PNG images.\n\
+            Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
+
+        ui.add(
+            egui::Slider::new(
+                &mut self.zoom_pow2_png,
+                self.min_zoom_pow2_png..=self.max_zoom_pow2_png,
+            )
+            .text("Zoom")
+            .custom_formatter(format_zoom_slider_text),
+        );
+
+        ui.add(
+            egui::Slider::new(&mut self.png_extent, MIN_PNG_EXTENT..=MAX_PNG_EXTENT)
+                .text("Size")
+                .logarithmic(true)
+                .custom_formatter(|n, _| {
+                    let s = n as i32;
+                    format!("{}x{}", s, s)
+                }),
+        );
+
+        if ui.button("Screenshot").clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .add_filter("PNG", &["png"])
+                .set_file_name("image.png")
+                .save_file()
+        {
+            let s = self.png_extent;
+            let render_params = Self::render_params(
+                self.zoom_pow2_png,
+                self.origin_x,
+                self.origin_y,
+                s,
+                s,
+                self.player_colors.clone(),
+            );
+            let image =
+                GridRender::render_to_rgba_image(&render_params, finalized_simulation.grid());
+            
+            let file = File::create(path).unwrap();
+            let w = BufWriter::new(file);
+            let mut encoder = png::Encoder::new(w, s as u32, s as u32);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(image.as_raw()).unwrap();
         }
     }
 }
