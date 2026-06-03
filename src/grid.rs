@@ -871,14 +871,14 @@ mod tests {
         GridRect::with_size(point(origin_x, origin_y), width as i32, height as i32)
     }
 
-    fn make_grid(chunk_size: Pow2) -> Grid<u8> {
+    fn make_grid(chunk_size: Pow2) -> Grid<i32> {
         Grid::new(Box::new(SquareChunker { size: chunk_size }))
     }
 
     #[test]
     fn chunk_new_initializes_with_default_values() {
         let bounds = make_bounds(0, 0, 64, 64);
-        let chunk: Chunk<u8> = Chunk::new(bounds);
+        let chunk: Chunk<i32> = Chunk::new(bounds);
 
         for y in 0..64 {
             for x in 0..64 {
@@ -1027,7 +1027,7 @@ mod tests {
     #[test]
     fn frozen_grid_sample_range2d() {
         let mut grid = make_grid(Pow2::new(64));
-        grid[point(-1, -3)] = 12;
+        grid[point(-1, -3)] = 1234;
         grid[point(-1, -1)] = 123;
 
         let frozen_grid: FrozenGrid<_> = grid.into();
@@ -1037,6 +1037,6 @@ mod tests {
             GridPoint::new(0, 0),
         ));
 
-        assert_eq!(res.as_flat_slice(), [12u8, 0, 123]);
+        assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
     }
 }
