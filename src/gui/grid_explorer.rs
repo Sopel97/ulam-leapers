@@ -1,17 +1,18 @@
-﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{default_player_colors, GridRender, GridRenderParameters};
-use crate::gui::SubwindowResult::Keep;
+﻿use crate::gui::SubwindowResult::Keep;
+use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::grid_render::{GridRender, GridRenderParameters, default_player_colors};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Rect, Response, Sense, Ui};
+use eframe::egui::{Checkbox, Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::io::BufWriter;
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 pub enum SaveState {
     NotSaved,
@@ -82,6 +83,7 @@ impl GridExplorer {
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: -3,
+            min_zoom_pow2_far: -6,
             max_zoom_pow2: 3,
             turns: finalized_simulation.simulated_turns(),
             memory_usage: finalized_simulation.memory_usage(),
@@ -113,6 +115,7 @@ impl GridExplorer {
 
 pub struct GridViewControls {
     min_zoom_pow2: i32,
+    min_zoom_pow2_far: i32,
     max_zoom_pow2: i32,
     turns: usize,
     memory_usage: usize,
@@ -124,12 +127,14 @@ pub struct GridViewControls {
     zoom_pow2: i32,
     origin_x: f32,
     origin_y: f32,
+    is_far_zoom_allowed: bool,
 }
 
 impl Default for GridViewControls {
     fn default() -> Self {
         GridViewControls {
             min_zoom_pow2: 0,
+            min_zoom_pow2_far: 0,
             max_zoom_pow2: 0,
             turns: 0,
             memory_usage: 0,
@@ -141,11 +146,20 @@ impl Default for GridViewControls {
             zoom_pow2: 0,
             origin_x: 0f32,
             origin_y: 0f32,
+            is_far_zoom_allowed: false,
         }
     }
 }
 
 impl GridViewControls {
+    pub fn zoom_range(&mut self) -> RangeInclusive<i32> {
+        if self.is_far_zoom_allowed {
+            self.min_zoom_pow2_far..=self.max_zoom_pow2
+        } else {
+            self.min_zoom_pow2..=self.max_zoom_pow2
+        }
+    }
+
     pub fn to_render_params(
         &self,
         viewport_width: usize,
@@ -221,7 +235,8 @@ impl GridViewControls {
                 }
             });
 
-            new_zoom_pow2 = new_zoom_pow2.clamp(self.min_zoom_pow2, self.max_zoom_pow2);
+            let zoom_range = self.zoom_range();
+            new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             {
                 // Last pointed coords needs to be more precise.
@@ -264,7 +279,9 @@ impl GridViewControls {
 
         // Set origin to current pointer placement scaled to the size of the whole grid.
         // Allows going to any region on the grid, useful for large grids.
-        if response.clicked_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Secondary) {
+        if response.clicked_by(egui::PointerButton::Secondary)
+            || response.dragged_by(egui::PointerButton::Secondary)
+        {
             let (_mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
 
             let tx = mouse_relative_to_center.x / rect.width() * 2.0;
@@ -322,8 +339,18 @@ impl GridViewControls {
         }
 
         ui.heading("Controls");
+        ui.add(Checkbox::new(
+            &mut self.is_far_zoom_allowed,
+            "Allow far zoom. ❓",
+        ))
+        .on_hover_text(
+            "Allows zooming out more than usual.\n\
+            For now this is brute forced at every frame,\n\
+            expect it to be very slow.",
+        );
+        let zoom_range = self.zoom_range();
         ui.add(
-            egui::Slider::new(&mut self.zoom_pow2, self.min_zoom_pow2..=self.max_zoom_pow2)
+            egui::Slider::new(&mut self.zoom_pow2, zoom_range)
                 .text("Zoom")
                 .custom_formatter(|n, _| {
                     let n = n as i32;
