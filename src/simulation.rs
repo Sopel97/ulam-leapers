@@ -483,7 +483,8 @@ impl Simulation {
         const STEP_SIZE: usize = 1024 * 16;
         const COMPRESSION_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
         const MEMORY_USAGE_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
-        const NUM_PLACEMENT_BUFFERS: usize = 8;
+        // Ultimately determines how long compression stalls we can amortize.
+        const NUM_PLACEMENT_BUFFERS: usize = 64;
 
         // We transfer ownership of the grid to the worker thread for the time of processing.
         let mut grid = self.grid.take().unwrap();

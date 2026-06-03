@@ -12,6 +12,7 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
 use std::thread;
+use crate::algo::transpose::transpose_u8;
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -27,6 +28,11 @@ trait BoundedChunk {
         self.bounds().contains_point(point)
     }
 }
+
+// Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
+pub const ULS_MINIMUM_CHUNK_ALIGNMENT: usize = 64;
+pub const ULS_MAXIMUM_CHUNK_SIZE: usize = 2048 * 2048;
+pub const ULS_MAXIMUM_CHUNK_EXTENT: usize = 8192;
 
 pub struct Chunk<T> {
     bounds: GridRect,
@@ -104,29 +110,68 @@ impl<T> Chunk<T> {
     }
 }
 
+pub enum CompressedChunkTransform {
+    None,
+    Transposition,
+}
+
+impl WriteTo for CompressedChunkTransform {
+    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        match self {
+            CompressedChunkTransform::None => b'N'.write_to(writer),
+            CompressedChunkTransform::Transposition => b'T'.write_to(writer),
+        }
+    }
+}
+
+impl ReadFrom for CompressedChunkTransform {
+    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        match u8::read_from(reader)? {
+            b'N' => Ok(CompressedChunkTransform::None),
+            b'T' => Ok(CompressedChunkTransform::Transposition),
+            _ => Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "Invalid chunk transform type.",
+            )),
+        }
+    }
+}
+
 // Generic over T because we want to preserve type information of the underlying data.
 pub struct CompressedChunk<T> {
     bounds: GridRect,
+    transform: CompressedChunkTransform,
     data: Box<[u8]>,
     _marker: PhantomData<T>,
 }
 
 impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
-        // We might try Morton transform and bit-transposition later,
-        // but for now zstd can reduce the size to pretty much zero for the test-case.
-        // Transposition may also be worth testing, the patterns seem to follow the direction
-        // of the spiral, so transposing chunks to have access align more with the spiral direction
-        // could help. It doesn't help general simulation performance but some preliminary
-        // testing shows it can impact compression by quite a bit.
-        // We use default level 3 compression because higher levels don't seem to have an impact.
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
-        let compressed = zstd::encode_all(raw_uncompressed, 3)
+
+        let mut transposed_buf = vec![0u8; raw_uncompressed.len()];
+        let mut compressed = zstd::encode_all(raw_uncompressed, 6)
             .unwrap()
             .into_boxed_slice();
+
+        let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
+        transpose_u8(raw_uncompressed, raw_uncompressed_transposed, chunk.cells.width(), chunk.cells.height());
+        let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6)
+            .unwrap()
+            .into_boxed_slice();
+
+        let transform;
+        if compressed_transposed.len() < compressed.len() {
+            transform = CompressedChunkTransform::Transposition;
+            compressed = compressed_transposed;
+        } else {
+            transform = CompressedChunkTransform::None;
+        }
+
         CompressedChunk {
             bounds: chunk.bounds,
             data: compressed,
+            transform,
             _marker: PhantomData,
         }
     }
@@ -134,13 +179,26 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
 
 impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     fn from(chunk: &CompressedChunk<T>) -> Self {
+        let width = chunk.bounds.width() as usize;
+        let height = chunk.bounds.height() as usize;
         let mut cells: Array2D<T> = Array2D::new_aligned(
-            chunk.bounds.width() as usize,
-            chunk.bounds.height() as usize,
+            width,
+            height,
             CACHE_LINE_SIZE,
         );
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
-        zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
+        
+        match chunk.transform {
+            CompressedChunkTransform::None => {
+                zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
+            },
+            CompressedChunkTransform::Transposition => {
+                let mut transposed_buf = vec![0u8; raw_cells.len()];
+                let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
+                zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_uncompressed_transposed).unwrap();
+                transpose_u8(raw_uncompressed_transposed, raw_cells, width, height);
+            }
+        }
         Chunk {
             bounds: chunk.bounds,
             cells,
@@ -710,6 +768,7 @@ where
 impl<T> WriteTo for CompressedChunk<T> {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.bounds.write_to(writer)?;
+        self.transform.write_to(writer)?;
         self.data.write_to(writer)?;
         Ok(())
     }
@@ -719,6 +778,7 @@ impl<T> ReadFrom for CompressedChunk<T> {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         Ok(CompressedChunk {
             bounds: GridRect::read_from(reader)?,
+            transform: CompressedChunkTransform::read_from(reader)?,
             data: Box::<[u8]>::read_from(reader)?,
             _marker: PhantomData,
         })

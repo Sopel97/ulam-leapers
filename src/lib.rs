@@ -17,6 +17,7 @@ pub mod algo {
         pub mod dispatch;
     }
     pub mod morton;
+    pub mod transpose;
 }
 pub mod util {
     pub mod align;
