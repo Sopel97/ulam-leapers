@@ -1,11 +1,14 @@
-﻿use crate::gui::{Subwindow, SubwindowResult};
+﻿use crate::gui::SubwindowResult::{Keep, Replace};
 use crate::gui::grid_render::default_player_colors;
+use crate::gui::simulation_runner::SimulationRunner;
+use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{
     Checkbox, Color32, ColorImage, Rect, ScrollArea, Slider, TextureFilter, TextureOptions,
     TextureWrapMode, Ui, Vec2, Vec2b, pos2,
 };
 use eframe::epaint::TextureHandle;
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -13,8 +16,6 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
-use crate::gui::simulation_runner::SimulationRunner;
-use crate::gui::SubwindowResult::{Keep, Replace};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -41,6 +42,49 @@ struct PlayerConfigState {
 }
 
 impl PlayerConfigState {
+    fn attack_map_to_json(&self) -> serde_json::Value {
+        json!(
+            self.attack_offsets_ordered()
+                .iter()
+                .map(|v| {
+                    json!({
+                        "x": v.x,
+                        "y": v.y,
+                    })
+                })
+                .collect::<Vec<_>>()
+        )
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "id": self.id,
+            "attack_map": self.attack_map_to_json(),
+            "is_attack_map_symmetric": self.is_attack_map_symmetric,
+        })
+    }
+
+    fn try_from_json(json: &Value) -> Option<PlayerConfigState> {
+        let mut slf = PlayerConfigState {
+            id: json["id"].as_u64()? as usize,
+            is_attack_map_symmetric: json["is_attack_map_symmetric"].as_bool()?,
+            ..Default::default()
+        };
+
+        for attack_vector_json in json["attack_map"].as_array()? {
+            let vec = GridVector::new(
+                attack_vector_json["x"].as_i64()? as i32,
+                attack_vector_json["y"].as_i64()? as i32,
+            );
+            let (x, y) = Self::attack_offset_to_index(&vec)?;
+            slf.attack_map[(x, y)] = true;
+        }
+
+        Some(slf)
+    }
+}
+
+impl PlayerConfigState {
     fn with_id(id: usize) -> Self {
         Self {
             id,
@@ -56,12 +100,12 @@ impl PlayerConfigState {
                 let xx = (x as i32) - MAX_PIECE_RANGE as i32;
                 let yy = (y as i32) - MAX_PIECE_RANGE as i32;
                 self.attack_map[(
-                    (xx * xs) as usize + MAX_PIECE_RANGE,
-                    (yy * ys) as usize + MAX_PIECE_RANGE,
+                    ((xx * xs) + MAX_PIECE_RANGE as i32) as usize,
+                    ((yy * ys) + MAX_PIECE_RANGE as i32) as usize,
                 )] = v;
                 self.attack_map[(
-                    (yy * ys) as usize + MAX_PIECE_RANGE,
-                    (xx * xs) as usize + MAX_PIECE_RANGE,
+                    ((yy * ys) + MAX_PIECE_RANGE as i32) as usize,
+                    ((xx * xs) + MAX_PIECE_RANGE as i32) as usize,
                 )] = v;
             }
         }
@@ -78,19 +122,43 @@ impl PlayerConfigState {
         }
     }
 
+    fn attack_offset_to_index(attack_offset: &GridVector) -> Option<(usize, usize)> {
+        let x = attack_offset.x + MAX_PIECE_RANGE as i32;
+        let y = (-attack_offset.y) + MAX_PIECE_RANGE as i32;
+        if x < 0 || x as usize > MAX_PIECE_RANGE * 2 || y < 0 || y as usize > MAX_PIECE_RANGE * 2 {
+            return None;
+        }
+
+        Some((x as usize, y as usize))
+    }
+
+    fn index_to_attack_offset((x, y): (usize, usize)) -> Option<GridVector> {
+        if x > MAX_PIECE_RANGE * 2 || y > MAX_PIECE_RANGE * 2 {
+            return None;
+        }
+
+        Some(GridVector::new(
+            (x as i32) - MAX_PIECE_RANGE as i32,
+            // Flip y because UI is rendered top to bottom while the grid's y points up.
+            -((y as i32) - MAX_PIECE_RANGE as i32),
+        ))
+    }
+
     pub fn attack_offsets(&self) -> HashSet<GridVector> {
         let mut offsets = HashSet::<GridVector>::new();
         for y in 0..self.attack_map.height() {
             for x in 0..self.attack_map.width() {
                 if self.attack_map[(x, y)] {
-                    offsets.insert(GridVector::new(
-                        (x as i32) - MAX_PIECE_RANGE as i32,
-                        // Flip y because UI is rendered top to bottom while the grid's y points up.
-                        -((y as i32) - MAX_PIECE_RANGE as i32),
-                    ));
+                    offsets.insert(Self::index_to_attack_offset((x, y)).unwrap());
                 }
             }
         }
+        offsets
+    }
+
+    pub fn attack_offsets_ordered(&self) -> Vec<GridVector> {
+        let mut offsets: Vec<_> = self.attack_offsets().into_iter().collect();
+        offsets.sort();
         offsets
     }
 }
@@ -109,6 +177,39 @@ impl Default for PlayerConfigState {
 struct EnemyConfigState {
     enemy_map: Array2D<bool>,
     is_enemy_map_symmetric: bool,
+}
+
+impl EnemyConfigState {
+    fn try_from_json(json: &Value) -> Option<EnemyConfigState> {
+        let mut slf = EnemyConfigState {
+            is_enemy_map_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
+            enemy_map: Array2D::new(MAX_PLAYER_COUNT, MAX_PLAYER_COUNT),
+        };
+
+        for pair_json in json["enemy_map"].as_array()? {
+            let a_pid = pair_json.get(0)?.as_u64()? as usize;
+            let b_pid = pair_json.get(1)?.as_u64()? as usize;
+            if !(1..=MAX_PLAYER_COUNT).contains(&a_pid) || !(1..=MAX_PLAYER_COUNT).contains(&b_pid)
+            {
+                return None;
+            }
+
+            let a = a_pid - 1;
+            let b = b_pid - 1;
+            slf.enemy_map[(b, a)] = true;
+        }
+
+        Some(slf)
+    }
+}
+
+impl EnemyConfigState {
+    pub fn to_json(&self, player_count: usize) -> serde_json::Value {
+        json!({
+            "enemy_map": self.pairs(player_count).iter().map(|(a, b)| json!([a.index(), b.index()])).collect::<Vec<_>>(),
+            "is_enemy_map_symmetric": self.is_enemy_map_symmetric,
+        })
+    }
 }
 
 impl Default for EnemyConfigState {
@@ -168,6 +269,38 @@ struct LimitsState {
     complete_shells: usize,
 }
 
+impl LimitsState {
+    fn try_from_json(json: &Value) -> Option<LimitsState> {
+        let memory_usage = json["memory_usage"].as_u64()? as usize;
+        let turns = json["turns"].as_u64()? as usize;
+        let slf = LimitsState {
+            memory_usage_gib: (memory_usage / 1024 / 1024 / 1024).max(1),
+            turns_m: (turns / 1000 / 1000).max(1),
+            complete_shells: json["complete_shells"].as_u64()? as usize,
+        };
+
+        if slf.memory_usage_gib < MIN_MEMORY_USAGE_GIB
+            || slf.memory_usage_gib > MAX_MEMORY_USAGE_GIB
+            || slf.turns_m < MIN_TURNS_M
+            || slf.turns_m > MAX_TURNS_M
+        {
+            return None;
+        }
+
+        Some(slf)
+    }
+}
+
+impl LimitsState {
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        json!({
+            "memory_usage": self.memory_usage_gib * 1024 * 1024 * 1024,
+            "turns": self.turns_m * 1000 * 1000,
+            "complete_shells": self.complete_shells,
+        })
+    }
+}
+
 impl Default for LimitsState {
     fn default() -> Self {
         Self {
@@ -203,6 +336,46 @@ impl Default for CreationState {
     }
 }
 
+impl CreationState {
+    fn to_json(&self) -> serde_json::Value {
+        json!({
+            "player_count": self.player_count,
+            "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
+            "enemy_config": self.enemy_config.to_json(self.player_count),
+            "limits": self.limits.to_json(),
+            "preview_shells": self.preview_shells,
+        })
+    }
+
+    fn try_from_json(json: &serde_json::Value) -> Option<CreationState> {
+        let player_configs_array = json["player_configs"].as_array()?;
+        let mut slf = CreationState {
+            player_count: json["player_count"].as_u64()? as usize,
+            player_configs: player_configs_array
+                .iter()
+                .map(PlayerConfigState::try_from_json)
+                .collect::<Option<Vec<_>>>()?,
+            enemy_config: EnemyConfigState::try_from_json(&json["enemy_config"])?,
+            limits: LimitsState::try_from_json(&json["limits"])?,
+            preview_shells: json["preview_shells"].as_u64()? as usize,
+        };
+
+        if slf.player_count > MAX_PLAYER_COUNT
+            || slf.player_configs.len() != slf.player_count
+            || slf.preview_shells > MAX_PREVIEW_SHELLS
+            || slf.preview_shells < MIN_PREVIEW_SHELLS
+        {
+            return None;
+        }
+
+        // We have to make sure there are actually configs allocated.
+        slf.player_configs
+            .resize(MAX_PLAYER_COUNT, PlayerConfigState::default());
+
+        Some(slf)
+    }
+}
+
 enum SimulationCreatorWorkerJob {
     Stop,
     CancelAll,
@@ -220,6 +393,8 @@ enum SimulationCreatorAction {
 pub struct SimulationCreator {
     state: CreationState,
     last_rendered_state: Option<CreationState>,
+    json_code_actual: String,
+    json_code_ui: String,
 
     // TODO: maybe integrate with GridRender, though the fact that we are splitting
     //       the work into a worker thread complicates this. May not be worth it unless
@@ -239,6 +414,8 @@ impl SimulationCreator {
         Self {
             state: CreationState::default(),
             last_rendered_state: None,
+            json_code_actual: String::new(),
+            json_code_ui: String::new(),
 
             preview_texture_handle: None,
 
@@ -363,7 +540,31 @@ impl Subwindow for SimulationCreator {
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         let mut submit = false;
-        
+
+        if self.json_code_ui == self.json_code_actual {
+            // No user interaction, we just update the JSON code.
+            self.json_code_actual = self.state.to_json().to_string();
+            let json = &serde_json::from_str(self.json_code_actual.as_str()).unwrap();
+            CreationState::try_from_json(json).unwrap();
+            self.json_code_ui = self.json_code_actual.clone();
+        } else {
+            // The user has modified the JSON code, we should try parsing it.
+            let json = &serde_json::from_str(self.json_code_ui.as_str());
+            let mut ok = false;
+            if let Ok(json) = json {
+                let parsed = CreationState::try_from_json(json);
+                if let Some(state) = parsed {
+                    self.json_code_actual = state.to_json().to_string();
+                    self.json_code_ui = self.json_code_actual.clone();
+                    self.state = state;
+                    ok = true;
+                }
+            }
+            if !ok {
+                self.json_code_ui = self.json_code_actual.clone();
+            }
+        }
+
         self.maybe_update_preview(ui.ctx());
 
         egui::Panel::left("player_setup_panel")
@@ -382,7 +583,7 @@ impl Subwindow for SimulationCreator {
                     match self.show_player_configs(ui) {
                         Some(SimulationCreatorAction::Submit) => {
                             submit = true;
-                        },
+                        }
                         None => {}
                     };
                 });
@@ -551,7 +752,7 @@ impl SimulationCreator {
                             .logarithmic(true),
                         );
 
-                        ui.label("Complete shells:");
+                        ui.label("Memory usage:");
                         ui.add(
                             Slider::new(
                                 &mut self.state.limits.memory_usage_gib,
@@ -568,6 +769,17 @@ impl SimulationCreator {
                         if ui.button("Start").clicked() {
                             submit = true;
                         }
+                    });
+
+                    // Import/export strings
+                    ScrollArea::both().show(ui, |ui| {
+                        let line_count = self.json_code_ui.lines().count();
+                        let json_code_block = egui::TextEdit::multiline(&mut self.json_code_ui)
+                            .font(egui::TextStyle::Monospace)
+                            .desired_rows(line_count + 1)
+                            .lock_focus(true)
+                            .desired_width(f32::INFINITY);
+                        ui.add(json_code_block);
                     });
                 });
             });
