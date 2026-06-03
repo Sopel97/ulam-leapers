@@ -33,6 +33,10 @@ impl Pow2 {
     pub fn exponent(&self) -> u8 {
         self.exponent
     }
+    
+    pub fn as_usize(&self) -> usize {
+        1usize << self.exponent
+    }
 }
 
 impl From<Pow2> for u8 {
