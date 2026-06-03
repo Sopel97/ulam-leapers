@@ -393,8 +393,8 @@ enum SimulationCreatorAction {
 pub struct SimulationCreator {
     state: CreationState,
     last_rendered_state: Option<CreationState>,
-    json_code_actual: String,
-    json_code_ui: String,
+    state_json_actual: String,
+    state_json_ui: String,
 
     // TODO: maybe integrate with GridRender, though the fact that we are splitting
     //       the work into a worker thread complicates this. May not be worth it unless
@@ -414,8 +414,8 @@ impl SimulationCreator {
         Self {
             state: CreationState::default(),
             last_rendered_state: None,
-            json_code_actual: String::new(),
-            json_code_ui: String::new(),
+            state_json_actual: String::new(),
+            state_json_ui: String::new(),
 
             preview_texture_handle: None,
 
@@ -541,29 +541,7 @@ impl Subwindow for SimulationCreator {
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         let mut submit = false;
 
-        if self.json_code_ui == self.json_code_actual {
-            // No user interaction, we just update the JSON code.
-            self.json_code_actual = self.state.to_json().to_string();
-            let json = &serde_json::from_str(self.json_code_actual.as_str()).unwrap();
-            CreationState::try_from_json(json).unwrap();
-            self.json_code_ui = self.json_code_actual.clone();
-        } else {
-            // The user has modified the JSON code, we should try parsing it.
-            let json = &serde_json::from_str(self.json_code_ui.as_str());
-            let mut ok = false;
-            if let Ok(json) = json {
-                let parsed = CreationState::try_from_json(json);
-                if let Some(state) = parsed {
-                    self.json_code_actual = state.to_json().to_string();
-                    self.json_code_ui = self.json_code_actual.clone();
-                    self.state = state;
-                    ok = true;
-                }
-            }
-            if !ok {
-                self.json_code_ui = self.json_code_actual.clone();
-            }
-        }
+        self.handle_state_json_import_export();
 
         self.maybe_update_preview(ui.ctx());
 
@@ -642,6 +620,36 @@ impl Subwindow for SimulationCreator {
 }
 
 impl SimulationCreator {
+    fn update_state_json(&mut self) {
+        self.state_json_actual = self.state.to_json().to_string();
+        let json = &serde_json::from_str(self.state_json_actual.as_str()).unwrap();
+        CreationState::try_from_json(json).unwrap();
+        self.state_json_ui = self.state_json_actual.clone();
+    }
+
+    fn on_user_changed_state_json(&mut self) {
+        let json = &serde_json::from_str(self.state_json_ui.as_str());
+        if let Ok(json) = json
+            && let Some(state) = CreationState::try_from_json(json)
+        {
+            self.state_json_actual = state.to_json().to_string();
+            self.state_json_ui = self.state_json_actual.clone();
+            self.state = state;
+        } else {
+            self.state_json_ui = self.state_json_actual.clone();
+        }
+    }
+
+    fn handle_state_json_import_export(&mut self) {
+        if self.state_json_ui == self.state_json_actual {
+            // No user interaction, we just update the JSON code.
+            self.update_state_json();
+        } else {
+            // The user has modified the JSON code, we should try parsing it.
+            self.on_user_changed_state_json();
+        }
+    }
+
     fn maybe_update_preview(&mut self, ctx: &egui::Context) {
         let needs_update = match &self.last_rendered_state {
             None => true,
@@ -773,8 +781,8 @@ impl SimulationCreator {
 
                     // Import/export strings
                     ScrollArea::both().show(ui, |ui| {
-                        let line_count = self.json_code_ui.lines().count();
-                        let json_code_block = egui::TextEdit::multiline(&mut self.json_code_ui)
+                        let line_count = self.state_json_ui.lines().count();
+                        let json_code_block = egui::TextEdit::multiline(&mut self.state_json_ui)
                             .font(egui::TextStyle::Monospace)
                             .desired_rows(line_count + 1)
                             .lock_focus(true)
