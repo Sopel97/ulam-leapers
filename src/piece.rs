@@ -1,7 +1,7 @@
 ﻿use crate::grid::{GridPoint, GridVector};
-use std::collections::HashSet;
-use std::io::{Read, Write};
 use crate::io::{ReadFrom, WriteTo};
+use std::collections::{BTreeSet, HashSet};
+use std::io::{ErrorKind, Read, Write};
 
 pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,
@@ -28,10 +28,10 @@ fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
 impl LeaperAttacks {
     pub fn from_offsets(offsets: HashSet<GridVector>) -> Self {
         Self {
-            attack_vectors: offsets.into_iter().collect()
+            attack_vectors: offsets.into_iter().collect(),
         }
     }
-    
+
     pub fn from_canonical(v: &GridVector) -> LeaperAttacks {
         LeaperAttacks {
             attack_vectors: symmetries(v).collect(),
@@ -53,17 +53,47 @@ impl LeaperAttacks {
     }
 }
 
+pub const ULS_MAX_ATTACK_OFFSET: usize = 127;
+
+fn err_on_attack_offset_too_large(attack_vectors: &[GridVector]) -> std::io::Result<()> {
+    for attack_vector in attack_vectors.iter() {
+        if attack_vector.x.unsigned_abs() as usize > ULS_MAX_ATTACK_OFFSET
+            || attack_vector.y.unsigned_abs() as usize > ULS_MAX_ATTACK_OFFSET
+        {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Attack offset larger than {}", ULS_MAX_ATTACK_OFFSET),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn err_on_duplicate_attack_vectors(attack_vectors: &[GridVector]) -> std::io::Result<()> {
+    if attack_vectors.iter().collect::<BTreeSet<_>>().len() != attack_vectors.len() {
+        Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "Duplicated attack offsets found.",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 impl WriteTo for LeaperAttacks {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        err_on_attack_offset_too_large(&self.attack_vectors)?;
         self.attack_vectors.write_to(writer)
     }
 }
 
 impl ReadFrom for LeaperAttacks {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(LeaperAttacks{
-            attack_vectors: Vec::<GridVector>::read_from(reader)?
-        })
+        let attack_vectors = Vec::<GridVector>::read_from(reader)?;
+        err_on_attack_offset_too_large(&attack_vectors)?;
+        err_on_duplicate_attack_vectors(&attack_vectors)?;
+
+        Ok(LeaperAttacks { attack_vectors })
     }
 }
 

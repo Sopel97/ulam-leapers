@@ -5,7 +5,7 @@ use crate::io::{ReadFrom, WriteTo};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
 use std::cmp::min;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,6 +46,10 @@ impl PlayerIdSet {
 
     pub fn is_set(&self, id: PlayerId) -> bool {
         self.bits & (1u64 << id.0) != 0
+    }
+
+    pub fn highest_player_id(&self) -> PlayerId {
+        PlayerId::new((63 - self.bits.leading_zeros() as i32).max(0) as u8)
     }
 }
 
@@ -642,15 +646,25 @@ impl Default for Simulation {
     }
 }
 
+pub const ULS_MAX_PLAYERS: usize = 63;
+pub const ULS_MAX_PLAYER_ID: usize = 64;
+
 impl WriteTo for PlayerId {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        if self.0 as usize > ULS_MAX_PLAYER_ID {
+            return Err(std::io::Error::new(ErrorKind::InvalidData, format!("Player ID {} is too high.", self.0)));
+        }
         self.0.write_to(writer)
     }
 }
 
 impl ReadFrom for PlayerId {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(PlayerId(u8::read_from(reader)?))
+        let id = u8::read_from(reader)?;
+        if id as usize > ULS_MAX_PLAYER_ID {
+            return Err(std::io::Error::new(ErrorKind::InvalidData, format!("Player ID {} is too high.", id)));
+        }
+        Ok(PlayerId(id))
     }
 }
 
@@ -662,8 +676,13 @@ impl WriteTo for PlayerIdSet {
 
 impl ReadFrom for PlayerIdSet {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let bits = u64::read_from(reader)?;
+        if (bits & 1) == 1 {
+            return Err(std::io::Error::new(ErrorKind::InvalidData, "PlayerIdSet must not have the lowest bit set."));
+        }
+
         Ok(PlayerIdSet {
-            bits: u64::read_from(reader)?,
+            bits,
         })
     }
 }
@@ -703,10 +722,24 @@ impl WriteTo for FinalizedSimulation {
 
 impl ReadFrom for FinalizedSimulation {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
+        let players = Vec::<Player>::read_from(reader)?;
+        for (i, player) in players.iter().enumerate() {
+            if player.id.0 as usize != i + 1 {
+                return Err(std::io::Error::new(ErrorKind::InvalidData, "Player ID must match its position."));
+            }
+
+            if player.enemies.highest_player_id().0 as usize > players.len() {
+                return Err(std::io::Error::new(ErrorKind::InvalidData, "Player is enemy with non-existent player."));
+            }
+        }
+
+        let simulated_turns = usize::read_from(reader)?;
+        let grid = FrozenGrid::<PlayerId>::read_from(&mut zstd::Decoder::new(reader)?)?;
+
         Ok(FinalizedSimulation {
-            players: Vec::<Player>::read_from(reader)?,
-            simulated_turns: usize::read_from(reader)?,
-            grid: FrozenGrid::<PlayerId>::read_from(&mut zstd::Decoder::new(reader)?)?,
+            players,
+            simulated_turns,
+            grid,
         })
     }
 }

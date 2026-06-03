@@ -3,7 +3,7 @@ use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::{Array2D, Slice2D};
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
-use crate::util::align::{CACHE_LINE_SIZE, MemoryAlignment};
+use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -29,11 +29,6 @@ trait BoundedChunk {
         self.bounds().contains_point(point)
     }
 }
-
-// Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
-pub const ULS_MINIMUM_CHUNK_ALIGNMENT: usize = 64;
-pub const ULS_MAXIMUM_CHUNK_SIZE: usize = 2048 * 2048;
-pub const ULS_MAXIMUM_CHUNK_EXTENT: usize = 8192;
 
 pub struct Chunk<T> {
     bounds: GridRect,
@@ -234,8 +229,42 @@ impl<T> CompressedChunk<T> {
     }
 }
 
+// Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
+pub const ULS_MINIMUM_CHUNK_ALIGNMENT: usize = 64;
+pub const ULS_MAXIMUM_CHUNK_SIZE: usize = 2048 * 2048;
+pub const ULS_MAXIMUM_CHUNK_EXTENT: usize = 8192;
+
+/// # NOTE
+///
+/// To maintain invariants for the ULS format instances of this type
+/// should be made via StandardChunker::try_* instead.
+/// This is a limitation of Rust that there is no way to validate enum
+/// values directly. May change with a more convoluted abstraction in the future.
 pub enum StandardChunker {
     SquareChunker { chunk_size_pow2: u8 },
+}
+
+impl StandardChunker {
+    pub fn try_new_square_chunker(size: Pow2) -> Option<Self> {
+        if size.as_usize() < ULS_MINIMUM_CHUNK_ALIGNMENT
+            || size.as_usize() > ULS_MAXIMUM_CHUNK_EXTENT
+            || size.as_usize().pow(2) > ULS_MAXIMUM_CHUNK_SIZE
+        {
+            None
+        } else {
+            Some(StandardChunker::SquareChunker {
+                chunk_size_pow2: size.exponent(),
+            })
+        }
+    }
+}
+
+impl TryFrom<&SquareChunker> for StandardChunker {
+    type Error = ();
+
+    fn try_from(chunker: &SquareChunker) -> Result<Self, Self::Error> {
+        StandardChunker::try_new_square_chunker(chunker.size).ok_or(())
+    }
 }
 
 impl StandardChunker {
@@ -307,9 +336,7 @@ impl Chunker for SquareChunker {
     }
 
     fn as_standard_chunker(&self) -> Option<StandardChunker> {
-        Some(StandardChunker::SquareChunker {
-            chunk_size_pow2: self.size.exponent(),
-        })
+        StandardChunker::try_from(self).ok()
     }
 }
 
@@ -772,6 +799,20 @@ where
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let chunker = Box::<dyn Chunker>::read_from(reader)?;
         let frozen_chunks = BTreeMap::<ChunkOrigin, CompressedChunk<T>>::read_from(reader)?;
+
+        // Validate chunk bounds and origin against the chunker.
+        for (origin, chunk) in frozen_chunks.iter() {
+            let chunker_provided_bounds = chunker.resolve_chunk_bounds(&chunk.bounds.start);
+            if origin != &ChunkOrigin(chunker_provided_bounds.start)
+                || chunker_provided_bounds != chunk.bounds
+            {
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Chunk bounds mismatch bounds provided by the chunker.",
+                ));
+            }
+        }
+
         let memory_usage = frozen_chunks.values().map(|v| v.memory_usage()).sum();
         Ok(FrozenGrid {
             chunker,
@@ -828,10 +869,14 @@ impl ReadFrom for StandardChunker {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let t = Box::<[u8]>::read_from(reader)?;
         if t.iter().eq("SquareChunker".as_bytes()) {
-            let chunker = StandardChunker::SquareChunker {
-                chunk_size_pow2: u8::read_from(reader)?,
-            };
-            Ok(chunker)
+            let chunk_size_pow2 = u8::read_from(reader)?;
+            let size = Pow2::from_exponent(chunk_size_pow2 as usize);
+            StandardChunker::try_new_square_chunker(size).ok_or_else(|| {
+                std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid chunk size for SquareChunker.",
+                )
+            })
         } else {
             Err(std::io::Error::new(
                 ErrorKind::InvalidData,
@@ -843,8 +888,8 @@ impl ReadFrom for StandardChunker {
 
 impl WriteTo for Box<dyn Chunker> {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        let standard_chunker = self.as_standard_chunker().ok_or(std::io::Error::new(
-            ErrorKind::InvalidInput,
+        let standard_chunker = self.as_standard_chunker().ok_or_else(|| std::io::Error::new(
+            ErrorKind::InvalidData,
             "Trying to write a non-standard Chunker.",
         ))?;
         standard_chunker.write_to(writer)
