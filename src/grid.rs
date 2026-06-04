@@ -146,9 +146,7 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
 
-        let mut compressed = zstd::encode_all(raw_uncompressed, 6)
-            .unwrap()
-            .into_boxed_slice();
+        let mut compressed = zstd::encode_all(raw_uncompressed, 6).unwrap();
 
         let mut transposed_buf =
             AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(raw_uncompressed.len(), CACHE_LINE_SIZE);
@@ -171,8 +169,7 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         );
         // raw_uncompressed_transposed is fully initialized at this point
         let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6)
-            .unwrap()
-            .into_boxed_slice();
+            .unwrap();
 
         let transform;
         if compressed_transposed.len() < compressed.len() {
@@ -184,7 +181,7 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
 
         CompressedChunk {
             bounds: chunk.bounds,
-            data: compressed,
+            data: compressed.into_boxed_slice(),
             transform,
             _marker: PhantomData,
         }
