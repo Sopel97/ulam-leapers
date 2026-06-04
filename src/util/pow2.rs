@@ -1,4 +1,4 @@
-﻿use std::ops::{BitAnd, Shl, Shr, Sub};
+﻿use std::ops::{Add, BitAnd, Shl, Shr, Sub};
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy)]
 pub struct Pow2 {
@@ -36,6 +36,10 @@ impl Pow2 {
     
     pub fn as_usize(&self) -> usize {
         1usize << self.exponent
+    }
+
+    pub fn next(self) -> Pow2 {
+        Pow2 { exponent: self.exponent + 1 }
     }
 }
 
@@ -99,4 +103,13 @@ where
 {
     let exp = T::from(b.exponent);
     a >> exp << exp
+}
+
+pub fn ceil_to_multiple<T>(a: T, b: Pow2) -> T
+where
+    T: Shr<Output = T> + Shl<Output = T> + Add<Output = T> + Sub<Output = T> + From<u8> + From<Pow2> + Copy,
+{
+    let exp = T::from(b.exponent);
+    let v: T = b.into();
+    (a + (v - T::from(1))) >> exp << exp
 }

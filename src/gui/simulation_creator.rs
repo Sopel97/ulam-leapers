@@ -462,7 +462,7 @@ impl SimulationCreator {
                                 (shells * 2 + 1) as i32,
                             );
                             let samples: Array2D<Color32> =
-                                frozen_grid.sample_range2d_map(&bounds, |v| colors[v.index()]);
+                                frozen_grid.sample_range2d_map(&bounds, colors[0], |v| colors[v.index()]);
                             let image = ColorImage::new(
                                 [samples.width(), samples.height()],
                                 samples.as_flat_slice().to_vec(),

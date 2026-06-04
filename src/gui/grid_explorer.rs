@@ -1,9 +1,11 @@
 ﻿use crate::gui::SubwindowResult::Keep;
 use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRender, GridRenderParameters, default_player_colors};
+use crate::gui::grid_render::{
+    GridRender, GridRenderMipMaps, GridRenderParameters, default_player_colors,
+};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Checkbox, Context, Rect, Response, Sense, Ui};
+use eframe::egui::{Button, Checkbox, Context, Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -44,13 +46,18 @@ impl Subwindow for GridExplorer {
                 .resizable([false, false]) // resizable so we can shrink if the text edit grows
                 .constrain_to(ui.available_rect_before_wrap())
                 .show(ui, |ui| {
-                    self.grid_view_controls
-                        .ui(ui, &self.finalized_sim, &mut self.save_state)
+                    self.grid_view_controls.ui(
+                        ui,
+                        &self.finalized_sim,
+                        &mut self.save_state,
+                        &mut self.grid_render,
+                    );
                 });
 
             let rect = ui.clip_rect(); // Full canvas
 
-            self.grid_view_controls.update_from_canvas_events(ui, &rect);
+            self.grid_view_controls
+                .update_from_canvas_events(ui, &rect, &self.grid_render);
 
             let painter = ui.painter_at(rect);
 
@@ -83,8 +90,8 @@ impl Subwindow for GridExplorer {
     }
 }
 
-const MIN_ZOOM_POW2: i32 = -3;
-const MIN_ZOOM_POW2_FAR: i32 = -6;
+const MIN_ZOOM_POW2: i32 = -5;
+const MIN_ZOOM_POW2_MIPS: i32 = -12;
 const DEFAULT_ZOOM_POW2: i32 = 0;
 const MAX_ZOOM_POW2: i32 = 3;
 
@@ -102,7 +109,6 @@ impl GridExplorer {
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: MIN_ZOOM_POW2,
-            min_zoom_pow2_far: MIN_ZOOM_POW2_FAR,
             max_zoom_pow2: MAX_ZOOM_POW2,
             min_zoom_pow2_png: MIN_ZOOM_POW2_PNG,
             max_zoom_pow2_png: MAX_ZOOM_POW2_PNG,
@@ -136,7 +142,6 @@ impl GridExplorer {
 
 pub struct GridViewControls {
     min_zoom_pow2: i32,
-    min_zoom_pow2_far: i32,
     max_zoom_pow2: i32,
     min_zoom_pow2_png: i32,
     max_zoom_pow2_png: i32,
@@ -152,14 +157,12 @@ pub struct GridViewControls {
     png_extent: i32,
     origin_x: f32,
     origin_y: f32,
-    is_far_zoom_allowed: bool,
 }
 
 impl Default for GridViewControls {
     fn default() -> Self {
         GridViewControls {
             min_zoom_pow2: 0,
-            min_zoom_pow2_far: 0,
             max_zoom_pow2: 0,
             min_zoom_pow2_png: 0,
             max_zoom_pow2_png: 0,
@@ -175,7 +178,6 @@ impl Default for GridViewControls {
             png_extent: DEFAULT_PNG_EXTENT,
             origin_x: 0f32,
             origin_y: 0f32,
-            is_far_zoom_allowed: false,
         }
     }
 }
@@ -190,9 +192,9 @@ fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
 }
 
 impl GridViewControls {
-    pub fn zoom_range(&mut self) -> RangeInclusive<i32> {
-        if self.is_far_zoom_allowed {
-            self.min_zoom_pow2_far..=self.max_zoom_pow2
+    pub fn zoom_range(&mut self, grid_render: &GridRender) -> RangeInclusive<i32> {
+        if let Some(factor) = grid_render.highest_mipmap_minification_factor() {
+            (-(factor.exponent() as i32))..=self.max_zoom_pow2
         } else {
             self.min_zoom_pow2..=self.max_zoom_pow2
         }
@@ -262,7 +264,7 @@ impl GridViewControls {
         )
     }
 
-    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect) {
+    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect, grid_render: &GridRender) {
         let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover() | Sense::click());
 
         let get_mouse_pos_in_grid_space = |response: &Response| {
@@ -291,7 +293,7 @@ impl GridViewControls {
                 }
             });
 
-            let zoom_range = self.zoom_range();
+            let zoom_range = self.zoom_range(&grid_render);
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             {
@@ -357,6 +359,7 @@ impl GridViewControls {
         ui: &mut Ui,
         finalized_simulation: &FinalizedSimulation,
         save_state: &mut SaveState,
+        grid_render: &mut GridRender,
     ) {
         ui.heading("Info");
         ui.label(format!("Turns: {}M", self.turns / 1000 / 1000));
@@ -395,16 +398,43 @@ impl GridViewControls {
         }
 
         ui.heading("Controls");
-        ui.add(Checkbox::new(
-            &mut self.is_far_zoom_allowed,
-            "Allow far zoom. ❓",
-        ))
-        .on_hover_text(
-            "Allows zooming out more than usual.\n\
-            For now this is brute forced at every frame,\n\
-            expect it to be very slow.",
-        );
-        let zoom_range = self.zoom_range();
+        {
+            let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
+            let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
+            let estimated_mipmap_memory_requirement =
+                GridRenderMipMaps::estimate_memory_requirement(
+                    finalized_simulation.grid(),
+                    lowest_minification,
+                    highest_minification,
+                );
+            let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
+            if ui
+                .button("Generate mipmaps")
+                .on_hover_text(format!(
+                    "WARNING: While this will enable up to 4096x minification \
+                    it does require roughly {}MiB of RAM",
+                    mip_ram_mib
+                ))
+                .clicked()
+            {
+                let timer = std::time::Instant::now();
+                grid_render.generate_mipmaps(
+                    finalized_simulation.grid(),
+                    self.player_colors.clone(),
+                    lowest_minification,
+                    highest_minification,
+                );
+                let elapsed = timer.elapsed().as_secs_f32();
+                let mipmap_bounds = grid_render.mipmap_bounds().unwrap();
+                println!(
+                    "Mipmaps of area {}x{} generated in {:?}",
+                    mipmap_bounds.width(),
+                    mipmap_bounds.height(),
+                    elapsed
+                );
+            }
+        }
+        let zoom_range = self.zoom_range(&grid_render);
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range)
                 .text("Zoom")
@@ -480,15 +510,18 @@ impl GridViewControls {
                 s,
                 self.player_colors.clone(),
             );
-            let image =
-                GridRender::render_to_rgba_image(&render_params, finalized_simulation.grid());
-            
+            let image = GridRender::render_to_rgba_image(
+                &render_params,
+                finalized_simulation.grid(),
+                &None,
+            );
+
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
             let mut encoder = png::Encoder::new(w, s as u32, s as u32);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
-            
+
             let mut writer = encoder.write_header().unwrap();
             writer.write_image_data(image.as_raw()).unwrap();
         }

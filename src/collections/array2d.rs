@@ -1,6 +1,6 @@
-﻿use std::mem::MaybeUninit;
-use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+﻿use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::util::align::MemoryAlignment;
+use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 
 // Row-major 2-dimensional array.
@@ -10,8 +10,10 @@ pub struct Array2D<T> {
     height: usize,
 }
 
-impl<T> Clone for Array2D<T> 
-where T: Default + Copy {
+impl<T> Clone for Array2D<T>
+where
+    T: Default + Copy,
+{
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -281,6 +283,70 @@ impl<T> Array2D<T> {
 
     pub fn as_flat_mut_slice(&mut self) -> &'_ mut [T] {
         self.data.as_mut_slice()
+    }
+}
+
+impl<'a, T> Array2D<T> {
+    pub fn as_positioned_chunks_mut(
+        &'a mut self,
+        chunk_width: usize,
+        chunk_height: usize,
+    ) -> Vec<(usize, usize, MutSlice2D<'a, T>)> {
+        assert!(chunk_width > 0 && chunk_height > 0);
+
+        let chunks_x = self.width.div_ceil(chunk_width);
+        let chunks_y = self.height.div_ceil(chunk_height);
+
+        let mut result = Vec::with_capacity(chunks_x * chunks_y);
+
+        // We need raw pointer manipulation to hand out multiple non-overlapping
+        // mutable subslices from a single &mut [T], since the borrow checker
+        // can't reason about 2D strided non-overlap statically.
+        //
+        // Safety invariant: each MutSlice2D we produce covers a distinct set of
+        // elements - verified by construction (different row ranges and column ranges).
+        let ptr = self.data.as_mut_slice().as_mut_ptr();
+        let total_len = self.data.as_mut_slice().len();
+
+        for cy in 0..chunks_y {
+            for cx in 0..chunks_x {
+                let x0 = cx * chunk_width;
+                let y0 = cy * chunk_height;
+
+                let x1 = (x0 + chunk_width).min(self.width);
+                let y1 = (y0 + chunk_height).min(self.height);
+
+                let linearized_index = y0 * self.width + x0;
+
+                // SAFETY:
+                // - No two iterations produce overlapping index ranges, because each iteration
+                //   offsets the start position by at least as much as the size of a chunk.
+                //
+                // NOTE:
+                // We do return a longer slice than needed, but that's not a concern, because
+                // the access is abstracted by 2-dimensional indices and size.
+                let slice = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.add(linearized_index),
+                        total_len - linearized_index,
+                    )
+                };
+
+                result.push((
+                    x0,
+                    y0,
+                    MutSlice2D {
+                        data: slice,
+                        stride: self.width,
+                        width: x1 - x0,
+                        height: y1 - y0,
+                        _marker: std::marker::PhantomData,
+                    },
+                ));
+            }
+        }
+
+        result
     }
 }
 

@@ -6,7 +6,7 @@ use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
-use crate::util::pow2::{floor_to_multiple, Pow2};
+use crate::util::pow2::{Pow2, floor_to_multiple};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
@@ -158,7 +158,8 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         // - MaybeUninit<u8> has the same layout as u8
         // - transpose_u8 fully overwrites every byte of the destination before
         //   the slice is ever read.
-        let raw_uncompressed_transposed: &mut [u8] = unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
+        let raw_uncompressed_transposed: &mut [u8] =
+            unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
         // This transpose completely overwrites the whole raw_uncompressed_transposed
         transpose_u8(
             raw_uncompressed,
@@ -211,7 +212,8 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
                 );
                 // SAFETY: raw_uncompressed_transposed will have been fully overwritten
                 //         by the zstd decompression by the time we call transpose_u8.
-                let raw_uncompressed_transposed = unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
+                let raw_uncompressed_transposed =
+                    unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
                 assert_eq!(
                     zstd::bulk::decompress_to_buffer(
                         chunk.data.iter().as_slice(),
@@ -524,6 +526,18 @@ impl<T> FrozenGrid<T> {
     pub fn chunk_count(&self) -> usize {
         self.frozen_chunks.len()
     }
+
+    pub fn bounds(&self) -> GridRect {
+        let mut min = GridPoint::new(0, 0);
+        let mut max = GridPoint::new(0, 0);
+        for chunk in self.frozen_chunks.values() {
+            min.x = chunk.bounds().start().x.min(min.x);
+            min.y = chunk.bounds().start().y.min(min.y);
+            max.x = chunk.bounds().end().x.max(max.x);
+            max.y = chunk.bounds().end().y.max(max.y);
+        }
+        GridRect::with_start_end(min, max)
+    }
 }
 
 impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
@@ -540,6 +554,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
         &self,
         region: &GridRect,
         minification: Pow2,
+        default_value: U,
         fzero: FZero,
         freduce: FReduce,
         ffinalize: FFinalize,
@@ -570,6 +585,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                 pow2::floor_div(region_clone.width(), minification) as usize,
                 pow2::floor_div(region_clone.height(), minification) as usize,
             );
+            result.as_flat_mut_slice().fill(default_value);
 
             while let Ok((rx, ry, subregion_result)) = rx.recv() {
                 for y in 0..subregion_result.height() {
@@ -657,6 +673,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         &self,
         region: &GridRect,
         minification: Pow2,
+        default_value: U,
         func: F,
     ) -> Array2D<U>
     where
@@ -679,6 +696,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
             pow2::floor_div(region.width(), minification) as usize,
             pow2::floor_div(region.height(), minification) as usize,
         );
+        result.as_flat_mut_slice().fill(default_value);
 
         let mut buffer: Array2D<T> = Array2D::new(minification.into(), minification.into());
 
@@ -733,13 +751,19 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
 
     // IMPORTANT: There is a little bit of unsafe Array2D accesses
     //            because it is around 30% faster overall.
-    pub fn sample_range2d_map<F, U>(&self, region: &GridRect, func: F) -> Array2D<U>
+    pub fn sample_range2d_map<F, U>(
+        &self,
+        region: &GridRect,
+        default_value: U,
+        func: F,
+    ) -> Array2D<U>
     where
         F: Fn(&T) -> U,
         U: Default + Clone + Copy,
     {
         let mut result: Array2D<U> =
             Array2D::new(region.width() as usize, region.height() as usize);
+        result.as_flat_mut_slice().fill(default_value);
 
         self.chunker
             .origins_of_intersecting_chunks(region)
@@ -773,7 +797,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         result
     }
 
-    pub fn sample_range2d(&self, region: &GridRect) -> Array2D<T> {
+    pub fn sample_range2d(&self, region: &GridRect, default_value: T) -> Array2D<T> {
         // This function samples every cell, so we don't have to do any interpolation or translation.
         // This also means that samples don't span multiple chunks, which allows us to make a simple
         // implementation that always keeps at most 1 chunk decompressed while having each chunk
@@ -792,7 +816,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
         // We could also even explore just completely remapping (to RGB) and mip-mapping on load
         // and using that for all samples, or even drawing directly as textures.
 
-        self.sample_range2d_map(region, |x| *x)
+        self.sample_range2d_map(region, default_value, |x| *x)
     }
 }
 
@@ -1094,10 +1118,10 @@ mod tests {
 
         let frozen_grid: FrozenGrid<_> = grid.into();
 
-        let res = frozen_grid.sample_range2d(&GridRect::with_start_end(
-            GridPoint::new(-1, -3),
-            GridPoint::new(0, 0),
-        ));
+        let res = frozen_grid.sample_range2d(
+            &GridRect::with_start_end(GridPoint::new(-1, -3), GridPoint::new(0, 0)),
+            0,
+        );
 
         assert_eq!(res.as_flat_slice(), [1234i32, 0, 123]);
     }
