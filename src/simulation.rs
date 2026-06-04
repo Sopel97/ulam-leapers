@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default)]
+#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
 
 impl PlayerId {
@@ -166,7 +166,7 @@ pub struct Simulation {
 
 pub struct FinalizedSimulation {
     players: Vec<Player>,
-    grid: FrozenGrid<PlayerId>,
+    grid: Arc<FrozenGrid<PlayerId>>,
     simulated_turns: usize,
 }
 
@@ -179,8 +179,12 @@ impl FinalizedSimulation {
         PlayerId::new(0)
     }
 
-    pub fn grid(&self) -> &FrozenGrid<PlayerId> {
-        &self.grid
+    pub fn grid(&self) -> Arc<FrozenGrid<PlayerId>> {
+        self.grid.clone()
+    }
+    
+    pub fn highest_player_id(&self) -> PlayerId {
+        self.players.iter().map(|p| p.id ).max().unwrap_or_default()
     }
 
     pub fn chunk_count(&self) -> usize {
@@ -634,7 +638,7 @@ impl Simulation {
     pub fn finalize(self) -> FinalizedSimulation {
         FinalizedSimulation {
             players: self.players,
-            grid: self.grid.unwrap().into(),
+            grid: Arc::new(self.grid.unwrap().into()),
             simulated_turns: self.simulated_turns,
         }
     }
@@ -739,7 +743,7 @@ impl ReadFrom for FinalizedSimulation {
         Ok(FinalizedSimulation {
             players,
             simulated_turns,
-            grid,
+            grid: Arc::new(grid),
         })
     }
 }

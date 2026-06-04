@@ -1,11 +1,12 @@
 ﻿use crate::gui::SubwindowResult::Keep;
 use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{
-    GridRender, GridRenderMipMaps, GridRenderParameters, default_player_colors,
-};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Button, Checkbox, Context, Rect, Response, Sense, Ui};
+use eframe::egui::color_picker::Alpha;
+use eframe::egui::{
+    Button, Checkbox, Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -26,8 +27,35 @@ pub enum SaveState {
 pub struct GridExplorer {
     grid_view_controls: GridViewControls,
     finalized_sim: FinalizedSimulation,
-    grid_render: GridRender,
+    grid_renderer: GridRenderer,
     save_state: SaveState,
+    grid_render_texture: Option<TextureHandle>,
+    last_grid_render_params: GridRenderParameters,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct GridRenderParameters {
+    bounds: GridRect,
+    zoom: Zoom,
+}
+
+impl GridRenderParameters {
+    pub fn new(bounds: GridRect, zoom: Zoom) -> Self {
+        Self { bounds, zoom }
+    }
+
+    pub fn bounds(&self) -> GridRect {
+        self.bounds
+    }
+}
+
+impl Default for GridRenderParameters {
+    fn default() -> Self {
+        GridRenderParameters {
+            bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
+            zoom: Magnification(Pow2::new(1)),
+        }
+    }
 }
 
 impl Subwindow for GridExplorer {
@@ -50,28 +78,41 @@ impl Subwindow for GridExplorer {
                         ui,
                         &self.finalized_sim,
                         &mut self.save_state,
-                        &mut self.grid_render,
+                        &mut self.grid_renderer,
                     );
                 });
 
             let rect = ui.clip_rect(); // Full canvas
 
             self.grid_view_controls
-                .update_from_canvas_events(ui, &rect, &self.grid_render);
+                .update_from_canvas_events(ui, &rect, &self.grid_renderer);
 
             let painter = ui.painter_at(rect);
 
+            // Check for changed colors and notify the renderer.
+            // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
+            //       The control panel must ensure the controls are disabled.
+            if self.grid_view_controls.have_colors_changed {
+                self.grid_renderer
+                    .set_colors(self.grid_view_controls.player_colors.as_slice());
+                self.grid_view_controls.have_colors_changed = false;
+            }
+
             // background
-            painter.rect_filled(rect, 0.0, Color32::WHITE);
+            painter.rect_filled(rect, 0.0, self.grid_view_controls.player_colors[0]);
 
-            let _updated = self.grid_render.maybe_update(
-                ui.ctx(),
-                self.finalized_sim.grid(),
-                self.grid_view_controls
-                    .to_render_params(rect.width() as usize, rect.height() as usize),
-            );
+            let curr_grid_render_params = self
+                .grid_view_controls
+                .to_render_params(rect.width() as usize, rect.height() as usize);
+            if self.last_grid_render_params != curr_grid_render_params {
+                self.grid_render_texture = Some(self.grid_renderer.render_texture(
+                    ui.ctx(),
+                    &curr_grid_render_params.bounds,
+                    curr_grid_render_params.zoom,
+                ));
+            }
 
-            if let Some(handle) = self.grid_render.handle() {
+            if let Some(handle) = &self.grid_render_texture {
                 // y-flip via uv
                 painter.image(
                     handle.id(),
@@ -120,13 +161,16 @@ impl GridExplorer {
             ..Default::default()
         };
 
-        let grid_render = GridRender::default();
-
         Self {
-            grid_render,
+            grid_renderer: GridRenderer::new(
+                &finalized_simulation,
+                default_player_colors().as_slice(),
+            ),
             finalized_sim: finalized_simulation,
             grid_view_controls,
             save_state: SaveState::NotSaved,
+            grid_render_texture: None,
+            last_grid_render_params: Default::default(),
         }
     }
 
@@ -157,6 +201,7 @@ pub struct GridViewControls {
     png_extent: i32,
     origin_x: f32,
     origin_y: f32,
+    have_colors_changed: bool,
 }
 
 impl Default for GridViewControls {
@@ -178,6 +223,7 @@ impl Default for GridViewControls {
             png_extent: DEFAULT_PNG_EXTENT,
             origin_x: 0f32,
             origin_y: 0f32,
+            have_colors_changed: false,
         }
     }
 }
@@ -192,7 +238,7 @@ fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
 }
 
 impl GridViewControls {
-    pub fn zoom_range(&mut self, grid_render: &GridRender) -> RangeInclusive<i32> {
+    pub fn zoom_range(&mut self, grid_render: &GridRenderer) -> RangeInclusive<i32> {
         if let Some(factor) = grid_render.highest_mipmap_minification_factor() {
             (-(factor.exponent() as i32))..=self.max_zoom_pow2
         } else {
@@ -206,7 +252,6 @@ impl GridViewControls {
         origin_y: f32,
         viewport_width: i32,
         viewport_height: i32,
-        colors: Vec<Color32>,
     ) -> GridRenderParameters {
         let zoom = match zoom_pow2 {
             e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
@@ -220,11 +265,11 @@ impl GridViewControls {
 
                 GridRect::with_size(
                     GridPoint::new(
-                        origin_x - floor_div(viewport_width / 2, factor) as i32,
-                        origin_y - floor_div(viewport_height / 2, factor) as i32,
+                        origin_x - floor_div(viewport_width / 2, factor),
+                        origin_y - floor_div(viewport_height / 2, factor),
                     ),
-                    floor_div(viewport_width as i32, factor),
-                    floor_div(viewport_height as i32, factor),
+                    floor_div(viewport_width, factor),
+                    floor_div(viewport_height, factor),
                 )
             }
             Minification(factor) => {
@@ -235,18 +280,16 @@ impl GridViewControls {
 
                 GridRect::with_size(
                     GridPoint::new(
-                        floor_to_multiple(origin_x, factor)
-                            - viewport_width as i32 / 2 * factor_i32,
-                        floor_to_multiple(origin_y, factor)
-                            - viewport_height as i32 / 2 * factor_i32,
+                        floor_to_multiple(origin_x, factor) - viewport_width / 2 * factor_i32,
+                        floor_to_multiple(origin_y, factor) - viewport_height / 2 * factor_i32,
                     ),
-                    viewport_width as i32 * factor_i32,
-                    viewport_height as i32 * factor_i32,
+                    viewport_width * factor_i32,
+                    viewport_height * factor_i32,
                 )
             }
         };
 
-        GridRenderParameters::new(bounds, colors, zoom)
+        GridRenderParameters::new(bounds, zoom)
     }
 
     pub fn to_render_params(
@@ -260,11 +303,10 @@ impl GridViewControls {
             self.origin_y,
             viewport_width as i32,
             viewport_height as i32,
-            self.player_colors.clone(),
         )
     }
 
-    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect, grid_render: &GridRender) {
+    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect, grid_render: &GridRenderer) {
         let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover() | Sense::click());
 
         let get_mouse_pos_in_grid_space = |response: &Response| {
@@ -359,7 +401,7 @@ impl GridViewControls {
         ui: &mut Ui,
         finalized_simulation: &FinalizedSimulation,
         save_state: &mut SaveState,
-        grid_render: &mut GridRender,
+        grid_render: &mut GridRenderer,
     ) {
         ui.heading("Info");
         ui.label(format!("Turns: {}M", self.turns / 1000 / 1000));
@@ -388,7 +430,7 @@ impl GridViewControls {
                 .set_file_name("simulation.uls")
                 .save_file()
         {
-            let mut writer = BufWriter::new(std::fs::File::create(path).unwrap());
+            let mut writer = BufWriter::new(File::create(path).unwrap());
             if let Err(e) = finalized_simulation.write_to(&mut writer) {
                 eprintln!("Failed to save simulation: {}", e);
                 *save_state = SaveState::Errored(e);
@@ -402,11 +444,7 @@ impl GridViewControls {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
             let estimated_mipmap_memory_requirement =
-                GridRenderMipMaps::estimate_memory_requirement(
-                    finalized_simulation.grid(),
-                    lowest_minification,
-                    highest_minification,
-                );
+                grid_render.estimate_memory_requirement(lowest_minification, highest_minification);
             let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
             if ui
                 .button("Generate mipmaps")
@@ -418,14 +456,9 @@ impl GridViewControls {
                 .clicked()
             {
                 let timer = std::time::Instant::now();
-                grid_render.generate_mipmaps(
-                    finalized_simulation.grid(),
-                    self.player_colors.clone(),
-                    lowest_minification,
-                    highest_minification,
-                );
+                grid_render.generate_mipmaps(lowest_minification, highest_minification);
                 let elapsed = timer.elapsed().as_secs_f32();
-                let mipmap_bounds = grid_render.mipmap_bounds().unwrap();
+                let mipmap_bounds = grid_render.mipmap_bounds();
                 println!(
                     "Mipmaps of area {}x{} generated in {:?}",
                     mipmap_bounds.width(),
@@ -462,7 +495,20 @@ impl GridViewControls {
 
         for player_id in 0..=self.player_count {
             ui.horizontal_wrapped(|ui| {
-                ui.color_edit_button_srgba(&mut self.player_colors[player_id]);
+                // Disallow color picking after mipmaps have been generated
+                if grid_render.has_mipmaps() {
+                    color_picker::show_color(ui, self.player_colors[player_id], vec2(16.0, 16.0));
+                } else {
+                    if color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut self.player_colors[player_id],
+                        Alpha::Opaque,
+                    )
+                    .changed()
+                    {
+                        self.have_colors_changed = true;
+                    }
+                }
                 if player_id == 0 {
                     ui.label("Empty");
                 } else {
@@ -502,19 +548,9 @@ impl GridViewControls {
                 .save_file()
         {
             let s = self.png_extent;
-            let render_params = Self::render_params(
-                self.zoom_pow2_png,
-                self.origin_x,
-                self.origin_y,
-                s,
-                s,
-                self.player_colors.clone(),
-            );
-            let image = GridRender::render_to_rgba_image(
-                &render_params,
-                finalized_simulation.grid(),
-                &None,
-            );
+            let render_params =
+                Self::render_params(self.zoom_pow2_png, self.origin_x, self.origin_y, s, s);
+            let image = grid_render.render_to_rgba_image(&render_params.bounds, render_params.zoom);
 
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
