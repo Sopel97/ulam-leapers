@@ -146,19 +146,30 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
     fn from(chunk: &Chunk<T>) -> Self {
         let raw_uncompressed = as_bytes(chunk.cells.as_flat_slice());
 
-        let mut transposed_buf =
-            AlignedBoxedSlice::<u8>::new(raw_uncompressed.len(), CACHE_LINE_SIZE);
         let mut compressed = zstd::encode_all(raw_uncompressed, 6)
             .unwrap()
             .into_boxed_slice();
 
-        let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
+        let mut transposed_buf =
+            AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(raw_uncompressed.len(), CACHE_LINE_SIZE);
+        // SAFETY:
+        // - MaybeUninit<u8> has the same layout as u8
+        // - transpose_u8 fully overwrites every byte of the destination before
+        //   the slice is ever read.
+        let raw_uncompressed_transposed: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(
+                transposed_buf.as_mut_slice().as_mut_ptr() as *mut u8,
+                transposed_buf.as_slice().len(),
+            )
+        };
+        // This transpose completely overwrites the whole raw_uncompressed_transposed
         transpose_u8(
             raw_uncompressed,
             raw_uncompressed_transposed,
             chunk.cells.width() * size_of::<T>(),
             chunk.cells.height(),
         );
+        // raw_uncompressed_transposed is fully initialized at this point
         let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6)
             .unwrap()
             .into_boxed_slice();
