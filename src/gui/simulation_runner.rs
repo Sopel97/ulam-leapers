@@ -218,7 +218,38 @@ impl Drop for SimulationRunner {
 
 impl Subwindow for SimulationRunner {
     fn name(&self) -> String {
-        "SimulationRunner".to_string()
+        match self.simulation_state {
+            SimulationRunnerState::Init(_) => "Simulator".to_string(),
+            SimulationRunnerState::Simulating => {
+                if let Some(limit_turns) = self.limits.turns() {
+                    let progress_turns = self.progress.lock().unwrap().turns();
+                    let pct = progress_turns * 100 / limit_turns;
+                    format!("Simulator: {}%", pct)
+                } else {
+                    "Simulator".to_string()
+                }
+            }
+            SimulationRunnerState::Finalizing => "Finalizing...".to_string(),
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(_)) => {
+                if let Some(limit_turns) = self.limits.turns() {
+                    let progress_turns = self.progress.lock().unwrap().turns();
+                    let pct = progress_turns * 100 / limit_turns;
+                    format!("Paused... {}%", pct)
+                } else {
+                    "Simulator".to_string()
+                }
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(_)) => {
+                "Finished".to_string()
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(_)) => {
+                "Finalized".to_string()
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(_, _)) => {
+                "Errored".to_string()
+            }
+            SimulationRunnerState::Closing => "Simulation".to_string(),
+        }
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
@@ -249,10 +280,7 @@ impl Subwindow for SimulationRunner {
 
                 let finalize_simulation = |sim, ui: &mut Ui| {
                     self.worker_jobs
-                        .send(SimulationRunnerWorkerJob::Finalize(
-                            sim,
-                            ui.ctx().clone(),
-                        ))
+                        .send(SimulationRunnerWorkerJob::Finalize(sim, ui.ctx().clone()))
                         .unwrap();
                 };
 
@@ -275,42 +303,52 @@ impl Subwindow for SimulationRunner {
                         ui.spinner();
                         SimulationRunnerState::Finalizing
                     }
-                    SimulationRunnerState::Idle(state) => match state {
-                        SimulationRunnerWorkerResult::Paused(simulation) => {
-                            if ui
-                                .add(Button::new(RichText::new("Resume simulation").heading()))
-                                .clicked()
-                            {
-                                start_simulation(simulation, ui);
-                                SimulationRunnerState::Simulating
-                            } else if ui.add(Button::new(RichText::new("Stop and finalize").heading())).clicked() {
-                                finalize_simulation(simulation, ui);
-                                SimulationRunnerState::Finalizing
-                            } else {
-                                SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
-                                    simulation,
-                                ))
-                            }
-                        }
-                        SimulationRunnerWorkerResult::Finished(simulation) => {
+                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                        simulation,
+                    )) => {
+                        if ui
+                            .add(Button::new(RichText::new("Resume simulation").heading()))
+                            .clicked()
+                        {
+                            start_simulation(simulation, ui);
+                            SimulationRunnerState::Simulating
+                        } else if ui
+                            .add(Button::new(RichText::new("Stop and finalize").heading()))
+                            .clicked()
+                        {
                             finalize_simulation(simulation, ui);
                             SimulationRunnerState::Finalizing
-                        }
-                        SimulationRunnerWorkerResult::Errored(_simulation, error) => {
-                            panic!("Simulation error {:?}", error);
-                        }
-                        SimulationRunnerWorkerResult::Finalized(finalized_simulation) => {
-                            if ui
-                                .add(Button::new(RichText::new("Explore").heading()))
-                                .clicked()
-                            {
-                                submit_to_explorer = true;
-                            }
-                            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
-                                finalized_simulation,
+                        } else {
+                            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                                simulation,
                             ))
                         }
-                    },
+                    }
+                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(
+                        simulation,
+                    )) => {
+                        finalize_simulation(simulation, ui);
+                        SimulationRunnerState::Finalizing
+                    }
+                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(
+                        _simulation,
+                        error,
+                    )) => {
+                        panic!("Simulation error {:?}", error);
+                    }
+                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                        finalized_simulation,
+                    )) => {
+                        if ui
+                            .add(Button::new(RichText::new("Explore").heading()))
+                            .clicked()
+                        {
+                            submit_to_explorer = true;
+                        }
+                        SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                            finalized_simulation,
+                        ))
+                    }
                     SimulationRunnerState::Closing => panic!("Invalid state."),
                 };
 
