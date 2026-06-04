@@ -1,9 +1,11 @@
 ﻿use eframe::egui;
-use eframe::egui::{Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode};
+use eframe::egui::{
+    Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
+};
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect};
 use ulam_leapers::simulation::PlayerId;
-use ulam_leapers::util::pow2::{floor_div, Pow2};
+use ulam_leapers::util::pow2::{Pow2, floor_div};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {
@@ -68,7 +70,12 @@ impl GridRender {
         &self.handle
     }
 
-    pub fn render_to_rgba_image(params: &GridRenderParameters, frozen_grid: &FrozenGrid<PlayerId>) -> ColorImage {
+    // The caller to this function must guarantee that there are enough colors in
+    // params.colors to facilitate every cell. Otherwise, the behavior is undefined.
+    pub fn render_to_rgba_image(
+        params: &GridRenderParameters,
+        frozen_grid: &FrozenGrid<PlayerId>,
+    ) -> ColorImage {
         match params.zoom {
             Magnification(_factor) => {
                 let samples: Array2D<Color32> = frozen_grid
@@ -80,7 +87,9 @@ impl GridRender {
                     .sample_range2d_small_zoom_out_map_par(
                         &params.bounds,
                         Pow2::new(1),
-                        |v| params.colors[v[(0, 0)].index()],
+                        || Color32::from_rgb(0, 0, 0),
+                        |acc, v| *acc = params.colors[v.index()],
+                        |acc, width, height| acc,
                     );
                 ColorImage::new(
                     [samples.width(), samples.height()],
@@ -88,30 +97,50 @@ impl GridRender {
                 )
             }
             Minification(factor) => {
+                // u32 is enough for 4096x4096 worst case
+                // We do alpha too in case the compiler can vectorize it better than just rgb.
+                #[repr(align(16))]
+                struct AccCol {
+                    r: u32,
+                    g: u32,
+                    b: u32,
+                    a: u32,
+                }
+                let colors_u32 = params
+                    .colors
+                    .iter()
+                    .map(|c| AccCol {
+                        r: c.r() as u32,
+                        g: c.g() as u32,
+                        b: c.b() as u32,
+                        a: c.a() as u32,
+                    })
+                    .collect::<Vec<_>>();
                 let samples: Array2D<Color32> = frozen_grid.sample_range2d_small_zoom_out_map_par(
                     &params.bounds,
                     factor,
-                    |block| {
-                        // Crude area interpolation without gamma correction.
-                        let mut r: i64 = 0;
-                        let mut g: i64 = 0;
-                        let mut b: i64 = 0;
-                        for y in 0..block.height() {
-                            for x in 0..block.width() {
-                                // SAFETY: Explicitly iterating within bounds.
-                                let color = unsafe {
-                                    params.colors[block.get_unchecked(x, y).index()]
-                                };
-                                r += color.r() as i64;
-                                g += color.g() as i64;
-                                b += color.b() as i64;
-                            }
-                        }
-                        let count = Pow2::new(block.width() * block.height());
+                    || AccCol {
+                        r: 0,
+                        g: 0,
+                        b: 0,
+                        a: 0,
+                    },
+                    |acc, v| {
+                        // SAFETY: We can't guarantee the safety here,
+                        //         the caller must make sure there is enough colors.
+                        //         However, this is a hot loop, we need it for speed.
+                        let color = unsafe { colors_u32.get_unchecked(v.index()) };
+                        acc.r += color.r;
+                        acc.g += color.g;
+                        acc.b += color.b;
+                        acc.a += color.a;
+                    },
+                    |acc, width, height| {
+                        let count = Pow2::new(width * height);
                         Color32::from_rgb(
-                            floor_div(r, count) as u8,
-                            floor_div(g, count) as u8,
-                            floor_div(b, count) as u8,
+                            floor_div(acc.r, count) as u8,
+                            floor_div(acc.g, count) as u8,
+                            floor_div(acc.b, count) as u8,
                         )
                     },
                 );

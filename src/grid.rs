@@ -534,14 +534,18 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
     //
     // IMPORTANT: There is a little bit of unsafe Array2D accesses
     //            because it is around 30% faster overall.
-    pub fn sample_range2d_small_zoom_out_map_par<F, U>(
+    pub fn sample_range2d_small_zoom_out_map_par<FZero, FReduce, FFinalize, TAcc, U>(
         &self,
         region: &GridRect,
         minification: Pow2,
-        func: F,
+        fzero: FZero,
+        freduce: FReduce,
+        ffinalize: FFinalize,
     ) -> Array2D<U>
     where
-        F: Fn(&Slice2D<T>) -> U + Send + Sync,
+        FZero: Fn() -> TAcc + Send + Sync,
+        FReduce: Fn(&mut TAcc, T) + Send + Sync,
+        FFinalize: Fn(TAcc, usize, usize) -> U + Send + Sync,
         U: Default + Clone + Copy + Send + Sync + 'static,
     {
         if !region.is_aligned_to_pow2(minification) {
@@ -602,11 +606,9 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                     pow2::floor_div(subregion.height(), minification) as usize,
                 );
 
-                let mut pixel_components: Array2D<T> =
-                    Array2D::new(minification.into(), minification.into());
-
                 for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize) {
                     for bx in (subregion.start.x..subregion.end.x).step_by(block_size as usize) {
+                        let mut acc = fzero();
                         // Fill in the input block for the mapping function.
                         for y in by..by + block_size {
                             for x in bx..bx + block_size {
@@ -614,13 +616,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                                 //         was computed based on its bounds.
                                 let val = unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
 
-                                let dx = (x - bx) as usize;
-                                let dy = (y - by) as usize;
-
-                                // SAFETY: Explicitly iterating within the block.
-                                unsafe {
-                                    *pixel_components.get_unchecked_mut(dx, dy) = *val;
-                                }
+                                freduce(&mut acc, *val);
                             }
                         }
 
@@ -630,7 +626,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
                         // SAFETY: Explicitly iterating within the subregion.
                         unsafe {
                             *subregion_result.get_unchecked_mut(srx, sry) =
-                                func(&pixel_components.as_slice2d());
+                                ffinalize(acc, block_size as usize, block_size as usize);
                         }
                     }
                 }
