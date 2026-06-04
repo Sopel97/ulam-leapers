@@ -1,6 +1,7 @@
 ﻿use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::mem;
+use crate::util::memory::as_bytes_mut;
 
 pub trait WriteTo {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()>;
@@ -21,7 +22,7 @@ impl ReadFrom for Box<[u8]> {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let len = usize::read_from(reader)?;
         let mut res = Box::new_uninit_slice(len);
-        let raw_res = unsafe { std::slice::from_raw_parts_mut(res.as_mut_ptr() as *mut u8, len) };
+        let raw_res = unsafe { as_bytes_mut(&mut res) };
         reader.read_exact(raw_res)?;
         // SAFETY: We have read exactly len bytes (u8s) into the buffer.
         Ok(unsafe { res.assume_init() })
