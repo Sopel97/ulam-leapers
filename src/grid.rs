@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
-use std::thread;
+use std::{slice, thread};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -148,8 +148,10 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
 
         let mut compressed = zstd::encode_all(raw_uncompressed, 6).unwrap();
 
-        let mut transposed_buf =
-            AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(raw_uncompressed.len(), CACHE_LINE_SIZE);
+        let mut transposed_buf = AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(
+            raw_uncompressed.len(),
+            CACHE_LINE_SIZE,
+        );
         // SAFETY:
         // - MaybeUninit<u8> has the same layout as u8
         // - transpose_u8 fully overwrites every byte of the destination before
@@ -168,8 +170,7 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
             chunk.cells.height(),
         );
         // raw_uncompressed_transposed is fully initialized at this point
-        let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6)
-            .unwrap();
+        let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6).unwrap();
 
         let transform;
         if compressed_transposed.len() < compressed.len() {
@@ -189,10 +190,12 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
 }
 
 impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
+    // NOTE: We assume here that T is accessible as raw bytes.
     fn from(chunk: &CompressedChunk<T>) -> Self {
         let width = chunk.bounds.width() as usize;
         let height = chunk.bounds.height() as usize;
-        let mut cells: Array2D<MaybeUninit<T>> = Array2D::new_uninit_aligned(width, height, CACHE_LINE_SIZE);
+        let mut cells: Array2D<MaybeUninit<T>> =
+            Array2D::new_uninit_aligned(width, height, CACHE_LINE_SIZE);
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
 
         match chunk.transform {
@@ -204,9 +207,18 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
                 );
             }
             CompressedChunkTransform::Transposition => {
-                let mut transposed_buf =
-                    AlignedBoxedSlice::<u8>::new(raw_cells.len(), CACHE_LINE_SIZE);
-                let raw_uncompressed_transposed = transposed_buf.as_mut_slice();
+                let mut transposed_buf = AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(
+                    raw_cells.len(),
+                    CACHE_LINE_SIZE,
+                );
+                // SAFETY: raw_uncompressed_transposed will have been fully overwritten
+                //         by the zstd decompression by the time we call transpose_u8.
+                let raw_uncompressed_transposed = unsafe {
+                    slice::from_raw_parts_mut(
+                        transposed_buf.as_mut_slice().as_mut_ptr() as *mut u8,
+                        transposed_buf.as_slice().len(),
+                    )
+                };
                 assert_eq!(
                     zstd::bulk::decompress_to_buffer(
                         chunk.data.iter().as_slice(),
