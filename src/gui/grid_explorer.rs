@@ -440,7 +440,10 @@ impl GridViewControls {
         }
 
         ui.heading("Controls");
-        {
+
+        if grid_render.has_mipmaps() {
+            ui.label("Mipmaps are generated.");
+        } else {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
             let estimated_mipmap_memory_requirement =
@@ -450,7 +453,7 @@ impl GridViewControls {
                 .button("Generate mipmaps")
                 .on_hover_text(format!(
                     "WARNING: While this will enable up to 4096x minification \
-                    it does require roughly {}MiB of RAM",
+                it does require roughly {}MiB of RAM",
                     mip_ram_mib
                 ))
                 .clicked()
@@ -467,7 +470,8 @@ impl GridViewControls {
                 );
             }
         }
-        let zoom_range = self.zoom_range(&grid_render);
+
+        let zoom_range = self.zoom_range(grid_render);
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range)
                 .text("Zoom")
