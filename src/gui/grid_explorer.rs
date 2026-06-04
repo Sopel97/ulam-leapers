@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
@@ -24,8 +25,8 @@ pub enum SaveState {
 
 pub struct GridExplorer {
     grid_view_controls: GridViewControls,
-    finalized_sim: FinalizedSimulation,
-    grid_renderer: GridRenderer,
+    finalized_simulation: Arc<FinalizedSimulation>,
+    grid_renderer: Arc<Mutex<GridRenderer>>,
     save_state: SaveState,
     grid_render_texture: Option<TextureHandle>,
     last_grid_render_params: GridRenderParameters,
@@ -72,18 +73,12 @@ impl Subwindow for GridExplorer {
                 .resizable([false, false]) // resizable so we can shrink if the text edit grows
                 .constrain_to(ui.available_rect_before_wrap())
                 .show(ui, |ui| {
-                    self.grid_view_controls.ui(
-                        ui,
-                        &self.finalized_sim,
-                        &mut self.save_state,
-                        &mut self.grid_renderer,
-                    );
+                    self.grid_view_controls.ui(ui, &mut self.save_state);
                 });
 
             let rect = ui.clip_rect(); // Full canvas
 
-            self.grid_view_controls
-                .update_from_canvas_events(ui, &rect, &self.grid_renderer);
+            self.grid_view_controls.update_from_canvas_events(ui, &rect);
 
             let painter = ui.painter_at(rect);
 
@@ -92,6 +87,8 @@ impl Subwindow for GridExplorer {
             //       The control panel must ensure the controls are disabled.
             if self.grid_view_controls.have_colors_changed {
                 self.grid_renderer
+                    .lock()
+                    .unwrap()
                     .set_colors(self.grid_view_controls.player_colors.as_slice());
                 self.grid_view_controls.have_colors_changed = false;
             }
@@ -103,7 +100,7 @@ impl Subwindow for GridExplorer {
                 .grid_view_controls
                 .to_render_params(rect.width() as usize, rect.height() as usize);
             if self.last_grid_render_params != curr_grid_render_params {
-                self.grid_render_texture = Some(self.grid_renderer.render_texture(
+                self.grid_render_texture = Some(self.grid_renderer.lock().unwrap().render_texture(
                     ui.ctx(),
                     &curr_grid_render_params.bounds,
                     curr_grid_render_params.zoom,
@@ -140,24 +137,32 @@ const MAX_PNG_EXTENT: i32 = 8192;
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
+        let finalized_simulation = Arc::new(finalized_simulation);
+        let grid_renderer = Arc::new(Mutex::new(GridRenderer::new(
+            &finalized_simulation,
+            default_player_colors().as_slice(),
+        )));
+
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
+            finalized_simulation: finalized_simulation.clone(),
+            grid_renderer: grid_renderer.clone(),
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
-            turns: finalized_simulation.simulated_turns(),
-            memory_usage: finalized_simulation.memory_usage(),
-            complete_shells: finalized_simulation.complete_shells(),
-            player_count,
             player_colors: default_player_colors()[..=player_count].to_vec(),
-            ..Default::default()
+
+            last_pointed_coords: GridPoint::new(0, 0),
+            zoom_pow2: DEFAULT_ZOOM_POW2,
+            zoom_pow2_png: DEFAULT_ZOOM_POW2,
+            png_extent: DEFAULT_PNG_EXTENT,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            have_colors_changed: false,
         };
 
         Self {
-            grid_renderer: GridRenderer::new(
-                &finalized_simulation,
-                default_player_colors().as_slice(),
-            ),
-            finalized_sim: finalized_simulation,
+            grid_renderer,
+            finalized_simulation,
             grid_view_controls,
             save_state: SaveState::NotSaved,
             grid_render_texture: None,
@@ -176,12 +181,11 @@ impl GridExplorer {
 }
 
 pub struct GridViewControls {
+    finalized_simulation: Arc<FinalizedSimulation>,
+    grid_renderer: Arc<Mutex<GridRenderer>>,
+
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
-    turns: usize,
-    memory_usage: usize,
-    complete_shells: i32,
-    player_count: usize,
     player_colors: Vec<Color32>,
     last_pointed_coords: GridPoint,
 
@@ -191,28 +195,6 @@ pub struct GridViewControls {
     origin_x: f32,
     origin_y: f32,
     have_colors_changed: bool,
-}
-
-impl Default for GridViewControls {
-    fn default() -> Self {
-        GridViewControls {
-            min_zoom_pow2: 0,
-            max_zoom_pow2: 0,
-            turns: 0,
-            memory_usage: 0,
-            complete_shells: 0,
-            player_count: 0,
-            player_colors: default_player_colors()[..1].to_vec(),
-            last_pointed_coords: GridPoint::new(0, 0),
-
-            zoom_pow2: DEFAULT_ZOOM_POW2,
-            zoom_pow2_png: DEFAULT_ZOOM_POW2,
-            png_extent: DEFAULT_PNG_EXTENT,
-            origin_x: 0f32,
-            origin_y: 0f32,
-            have_colors_changed: false,
-        }
-    }
 }
 
 fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
@@ -225,8 +207,8 @@ fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
 }
 
 impl GridViewControls {
-    pub fn zoom_range(&mut self, grid_render: &GridRenderer) -> RangeInclusive<i32> {
-        if let Some(factor) = grid_render.highest_mipmap_minification_factor() {
+    pub fn zoom_range(&self, grid_renderer: &GridRenderer) -> RangeInclusive<i32> {
+        if let Some(factor) = grid_renderer.highest_mipmap_minification_factor() {
             (-(factor.exponent() as i32))..=self.max_zoom_pow2
         } else {
             self.min_zoom_pow2..=self.max_zoom_pow2
@@ -293,16 +275,16 @@ impl GridViewControls {
         )
     }
 
-    fn update_from_canvas_events(&mut self, ui: &mut Ui, rect: &Rect, grid_render: &GridRenderer) {
-        let response = ui.allocate_rect(*rect, Sense::drag() | Sense::hover() | Sense::click());
+    fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: &Rect) {
+        let response = ui.allocate_rect(*viewport, Sense::drag() | Sense::hover() | Sense::click());
 
         let get_mouse_pos_in_grid_space = |response: &Response| {
-            let middle_pos = (rect.max - rect.min.to_vec2()) * 0.5f32;
+            let middle_pos = (viewport.max - viewport.min.to_vec2()) * 0.5f32;
             let mouse = response
                 .hover_pos()
                 .map(|pos| {
                     // Invert y to match world coordinates.
-                    pos2(pos.x - rect.min.x, rect.height() - (pos.y - rect.min.y))
+                    pos2(pos.x - viewport.min.x, viewport.height() - (pos.y - viewport.min.y))
                 })
                 .unwrap_or(middle_pos);
 
@@ -322,7 +304,7 @@ impl GridViewControls {
                 }
             });
 
-            let zoom_range = self.zoom_range(grid_render);
+            let zoom_range = self.zoom_range(&self.grid_renderer.lock().unwrap());
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             {
@@ -330,9 +312,9 @@ impl GridViewControls {
                 // Use the actual bounds from rendering.
                 // Interpolate within the viewport.
                 let render_params =
-                    self.to_render_params(rect.width() as usize, rect.height() as usize);
-                let tx = mouse.x / rect.width();
-                let ty = mouse.y / rect.height();
+                    self.to_render_params(viewport.width() as usize, viewport.height() as usize);
+                let tx = mouse.x / viewport.width();
+                let ty = mouse.y / viewport.height();
                 let mouse_world_x = render_params.bounds().start.x as f32 * (1.0 - tx)
                     + render_params.bounds().end.x as f32 * tx;
                 let mouse_world_y = render_params.bounds().start.y as f32 * (1.0 - ty)
@@ -364,6 +346,8 @@ impl GridViewControls {
             self.origin_y += zoom_scale * delta.y;
         }
 
+        let complete_shells = self.finalized_simulation.complete_shells();
+
         // Set origin to current pointer placement scaled to the size of the whole grid.
         // Allows going to any region on the grid, useful for large grids.
         if response.clicked_by(egui::PointerButton::Secondary)
@@ -371,32 +355,28 @@ impl GridViewControls {
         {
             let (_mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
 
-            let tx = mouse_relative_to_center.x / rect.width() * 2.0;
-            let ty = mouse_relative_to_center.y / rect.height() * 2.0;
+            let tx = mouse_relative_to_center.x / viewport.width() * 2.0;
+            let ty = mouse_relative_to_center.y / viewport.height() * 2.0;
 
-            self.origin_x = tx * self.complete_shells as f32;
-            self.origin_y = ty * self.complete_shells as f32;
+            self.origin_x = tx * complete_shells as f32;
+            self.origin_y = ty * complete_shells as f32;
         }
 
-        let bounds = self.complete_shells as f32;
+        let bounds = complete_shells as f32;
         self.origin_x = self.origin_x.clamp(-bounds, bounds);
         self.origin_y = self.origin_y.clamp(-bounds, bounds);
     }
 
-    fn ui(
-        &mut self,
-        ui: &mut Ui,
-        finalized_simulation: &FinalizedSimulation,
-        save_state: &mut SaveState,
-        grid_render: &mut GridRenderer,
-    ) {
+    fn ui(&mut self, ui: &mut Ui, save_state: &mut SaveState) {
+        let turns = self.finalized_simulation.simulated_turns();
+        let complete_shells = self.finalized_simulation.complete_shells();
+        let memory_usage = self.finalized_simulation.memory_usage();
+        let player_count = self.finalized_simulation.player_count();
+
         ui.heading("Info");
-        ui.label(format!("Turns: {}M", self.turns / 1000 / 1000));
-        ui.label(format!("Complete shells: {}", self.complete_shells));
-        ui.label(format!(
-            "Size in memory: {}MiB",
-            self.memory_usage / 1024 / 1024
-        ));
+        ui.label(format!("Turns: {}M", turns / 1000 / 1000));
+        ui.label(format!("Complete shells: {}", complete_shells));
+        ui.label(format!("Size in memory: {}MiB", memory_usage / 1024 / 1024));
         ui.label(format!(
             "Pointer: {}, {}",
             self.last_pointed_coords.x, self.last_pointed_coords.y
@@ -418,7 +398,7 @@ impl GridViewControls {
                 .save_file()
         {
             let mut writer = BufWriter::new(File::create(path).unwrap());
-            if let Err(e) = finalized_simulation.write_to(&mut writer) {
+            if let Err(e) = self.finalized_simulation.write_to(&mut writer) {
                 eprintln!("Failed to save simulation: {}", e);
                 *save_state = SaveState::Errored(e);
             } else {
@@ -428,13 +408,16 @@ impl GridViewControls {
 
         ui.heading("Controls");
 
-        if grid_render.has_mipmaps() {
+        if self.grid_renderer.lock().unwrap().has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
-            let estimated_mipmap_memory_requirement =
-                grid_render.estimate_memory_requirement(lowest_minification, highest_minification);
+            let estimated_mipmap_memory_requirement = self
+                .grid_renderer
+                .lock()
+                .unwrap()
+                .estimate_memory_requirement(lowest_minification, highest_minification);
             let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
             if ui
                 .button("Generate mipmaps")
@@ -446,9 +429,12 @@ impl GridViewControls {
                 .clicked()
             {
                 let timer = std::time::Instant::now();
-                grid_render.generate_mipmaps(lowest_minification, highest_minification);
+                self.grid_renderer
+                    .lock()
+                    .unwrap()
+                    .generate_mipmaps(lowest_minification, highest_minification);
                 let elapsed = timer.elapsed().as_secs_f32();
-                let mipmap_bounds = grid_render.mipmap_bounds();
+                let mipmap_bounds = self.grid_renderer.lock().unwrap().mipmap_bounds();
                 println!(
                     "Mipmaps of area {}x{} generated in {:?}",
                     mipmap_bounds.width(),
@@ -458,7 +444,7 @@ impl GridViewControls {
             }
         }
 
-        let zoom_range = self.zoom_range(grid_render);
+        let zoom_range = self.zoom_range(&self.grid_renderer.lock().unwrap());
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
                 .text("Zoom")
@@ -466,11 +452,11 @@ impl GridViewControls {
         );
 
         // How many per pixel.
-        let coord_drag_speed = (self.complete_shells / 200) as f64;
+        let coord_drag_speed = (complete_shells / 200) as f64;
         ui.add(
             egui::Slider::new(
                 &mut self.origin_x,
-                -self.complete_shells as f32..=self.complete_shells as f32,
+                -complete_shells as f32..=complete_shells as f32,
             )
             .text("X")
             .drag_value_speed(coord_drag_speed),
@@ -478,16 +464,16 @@ impl GridViewControls {
         ui.add(
             egui::Slider::new(
                 &mut self.origin_y,
-                -self.complete_shells as f32..=self.complete_shells as f32,
+                -complete_shells as f32..=complete_shells as f32,
             )
             .text("Y")
             .drag_value_speed(coord_drag_speed),
         );
 
-        for player_id in 0..=self.player_count {
+        for player_id in 0..=player_count {
             ui.horizontal_wrapped(|ui| {
                 // Disallow color picking after mipmaps have been generated
-                if grid_render.has_mipmaps() {
+                if self.grid_renderer.lock().unwrap().has_mipmaps() {
                     color_picker::show_color(ui, self.player_colors[player_id], vec2(16.0, 16.0));
                 } else {
                     if color_picker::color_edit_button_srgba(
@@ -538,7 +524,11 @@ impl GridViewControls {
             let s = self.png_extent;
             let render_params =
                 Self::render_params(self.zoom_pow2_png, self.origin_x, self.origin_y, s, s);
-            let image = grid_render.render_to_rgba_image(&render_params.bounds, render_params.zoom);
+            let image = self
+                .grid_renderer
+                .lock()
+                .unwrap()
+                .render_to_rgba_image(&render_params.bounds, render_params.zoom);
 
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
