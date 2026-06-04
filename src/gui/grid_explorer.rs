@@ -1,11 +1,11 @@
-﻿use crate::gui::SubwindowResult::Keep;
-use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
+﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
+use crate::gui::SubwindowResult::Keep;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
 use eframe::egui::{
-    Button, Checkbox, Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2,
+    color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub enum SaveState {
     NotSaved,
@@ -136,11 +136,6 @@ const MIN_ZOOM_POW2_MIPS: i32 = -12;
 const DEFAULT_ZOOM_POW2: i32 = 0;
 const MAX_ZOOM_POW2: i32 = 3;
 
-// NOTE: Currently restricted by minimum chunk alignment due to the sampling method...
-const MIN_ZOOM_POW2_PNG: i32 = -6;
-const DEFAULT_ZOOM_POW2_PNG: i32 = 0;
-const MAX_ZOOM_POW2_PNG: i32 = 3;
-
 const MIN_PNG_EXTENT: i32 = 256;
 const DEFAULT_PNG_EXTENT: i32 = 2048;
 const MAX_PNG_EXTENT: i32 = 8192;
@@ -151,8 +146,6 @@ impl GridExplorer {
         let grid_view_controls = GridViewControls {
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
-            min_zoom_pow2_png: MIN_ZOOM_POW2_PNG,
-            max_zoom_pow2_png: MAX_ZOOM_POW2_PNG,
             turns: finalized_simulation.simulated_turns(),
             memory_usage: finalized_simulation.memory_usage(),
             complete_shells: finalized_simulation.complete_shells(),
@@ -187,8 +180,6 @@ impl GridExplorer {
 pub struct GridViewControls {
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
-    min_zoom_pow2_png: i32,
-    max_zoom_pow2_png: i32,
     turns: usize,
     memory_usage: usize,
     complete_shells: i32,
@@ -209,8 +200,6 @@ impl Default for GridViewControls {
         GridViewControls {
             min_zoom_pow2: 0,
             max_zoom_pow2: 0,
-            min_zoom_pow2_png: 0,
-            max_zoom_pow2_png: 0,
             turns: 0,
             memory_usage: 0,
             complete_shells: 0,
@@ -219,7 +208,7 @@ impl Default for GridViewControls {
             last_pointed_coords: GridPoint::new(0, 0),
 
             zoom_pow2: DEFAULT_ZOOM_POW2,
-            zoom_pow2_png: DEFAULT_ZOOM_POW2_PNG,
+            zoom_pow2_png: DEFAULT_ZOOM_POW2,
             png_extent: DEFAULT_PNG_EXTENT,
             origin_x: 0f32,
             origin_y: 0f32,
@@ -473,7 +462,7 @@ impl GridViewControls {
 
         let zoom_range = self.zoom_range(grid_render);
         ui.add(
-            egui::Slider::new(&mut self.zoom_pow2, zoom_range)
+            egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
                 .text("Zoom")
                 .custom_formatter(format_zoom_slider_text),
         );
@@ -529,7 +518,7 @@ impl GridViewControls {
         ui.add(
             egui::Slider::new(
                 &mut self.zoom_pow2_png,
-                self.min_zoom_pow2_png..=self.max_zoom_pow2_png,
+                zoom_range,
             )
             .text("Zoom")
             .custom_formatter(format_zoom_slider_text),
