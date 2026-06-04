@@ -188,7 +188,11 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
 
         match chunk.transform {
             CompressedChunkTransform::None => {
-                zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells).unwrap();
+                assert_eq!(
+                    zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells)
+                        .unwrap(),
+                    raw_cells.len()
+                );
             }
             CompressedChunkTransform::Transposition => {
                 let mut transposed_buf =
@@ -888,10 +892,12 @@ impl ReadFrom for StandardChunker {
 
 impl WriteTo for Box<dyn Chunker> {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        let standard_chunker = self.as_standard_chunker().ok_or_else(|| std::io::Error::new(
-            ErrorKind::InvalidData,
-            "Trying to write a non-standard Chunker.",
-        ))?;
+        let standard_chunker = self.as_standard_chunker().ok_or_else(|| {
+            std::io::Error::new(
+                ErrorKind::InvalidData,
+                "Trying to write a non-standard Chunker.",
+            )
+        })?;
         standard_chunker.write_to(writer)
     }
 }
