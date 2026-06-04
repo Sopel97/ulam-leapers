@@ -1,4 +1,6 @@
-﻿use std::ops::{Index, IndexMut};
+﻿use std::mem::MaybeUninit;
+use std::ops::{Index, IndexMut};
+use crate::collections::array2d::Array2D;
 use crate::util::align::MemoryAlignment;
 
 pub struct AlignedBoxedSlice<T> {
@@ -30,6 +32,51 @@ impl<T: Default + Clone> AlignedBoxedSlice<T> {
             align,
             begin: aligned_offset,
             end: aligned_offset + size,
+        }
+    }
+}
+
+impl<T: Default> AlignedBoxedSlice<MaybeUninit<T>> {
+    pub fn new_uninit(size: usize, align: MemoryAlignment) -> Self {
+        let extra = align.extra_elements::<T>();
+
+        let storage = Box::new_uninit_slice(size + extra);
+
+        let aligned_offset = align.unaligned_elements::<T>(storage.as_ptr() as usize);
+
+        AlignedBoxedSlice {
+            storage,
+            align,
+            begin: aligned_offset,
+            end: aligned_offset + size,
+        }
+    }
+
+    /// # SAFETY
+    ///
+    /// As with [`MaybeUninit::assume_init`],
+    /// it is up to the caller to guarantee that the values
+    /// really are in an initialized state.
+    /// Calling this when the content is not yet fully initialized
+    /// causes immediate undefined behavior.
+    pub unsafe fn assume_init(mut self) -> AlignedBoxedSlice<T> {
+        // We have to remember to initialize the elements the user has no access to.
+        for x in &mut self.storage[..self.begin] {
+            x.write(T::default());
+        }
+
+        for x in &mut self.storage[self.end..] {
+            x.write(T::default());
+        }
+
+        // SAFETY: We have to assume the caller filled every element they have access too.
+        //         We filled the padding above.
+        let storage = unsafe { self.storage.assume_init() };
+        AlignedBoxedSlice {
+            storage,
+            align: self.align,
+            begin: self.begin,
+            end: self.end,
         }
     }
 }

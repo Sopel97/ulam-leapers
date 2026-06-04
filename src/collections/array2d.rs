@@ -1,4 +1,5 @@
-﻿use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
+﻿use std::mem::MaybeUninit;
+use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::util::align::MemoryAlignment;
 use std::ops::{Index, IndexMut, Range};
 
@@ -58,6 +59,34 @@ impl<T: Default + Clone> Array2D<T> {
             data: AlignedBoxedSlice::<T>::new(width * height, align),
             width,
             height,
+        }
+    }
+}
+
+impl<T: Default> Array2D<MaybeUninit<T>> {
+    pub fn new_uninit_aligned(width: usize, height: usize, align: MemoryAlignment) -> Self {
+        Array2D {
+            data: AlignedBoxedSlice::<MaybeUninit<T>>::new_uninit(width * height, align),
+            width,
+            height,
+        }
+    }
+
+    /// # SAFETY
+    ///
+    /// As with [`MaybeUninit::assume_init`],
+    /// it is up to the caller to guarantee that the values
+    /// really are in an initialized state.
+    /// Calling this when the content is not yet fully initialized
+    /// causes immediate undefined behavior.
+    pub unsafe fn assume_init(self) -> Array2D<T> {
+        // SAFETY: We have to assume the caller filled every element they have access too.
+        //         We filled the padding above.
+        let data = unsafe { self.data.assume_init() };
+        Array2D {
+            data,
+            width: self.width,
+            height: self.height,
         }
     }
 }
