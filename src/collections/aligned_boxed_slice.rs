@@ -1,7 +1,6 @@
-﻿use std::mem::MaybeUninit;
+﻿use crate::util::align::MemoryAlignment;
+use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
-use crate::collections::array2d::Array2D;
-use crate::util::align::MemoryAlignment;
 
 pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,

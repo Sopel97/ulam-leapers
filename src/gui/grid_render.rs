@@ -89,7 +89,7 @@ impl GridRender {
                         Pow2::new(1),
                         || Color32::from_rgb(0, 0, 0),
                         |acc, v| *acc = params.colors[v.index()],
-                        |acc, width, height| acc,
+                        |acc, _width, _height| acc,
                     );
                 ColorImage::new(
                     [samples.width(), samples.height()],
