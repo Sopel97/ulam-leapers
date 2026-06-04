@@ -3,7 +3,7 @@ use crate::gui::grid_render::Zoom::{Magnification, Minification};
 use crate::gui::grid_render::{GridRender, GridRenderParameters, default_player_colors};
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Checkbox, Rect, Response, Sense, Ui};
+use eframe::egui::{Checkbox, Context, Rect, Response, Sense, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -75,6 +75,10 @@ impl Subwindow for GridExplorer {
             }
         });
 
+        Keep(self)
+    }
+
+    fn not_ui(self: Box<Self>, _ctx: &Context) -> SubwindowResult {
         Keep(self)
     }
 }

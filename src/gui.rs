@@ -5,7 +5,7 @@ mod simulation_runner;
 
 use std::path::PathBuf;
 use crate::gui::simulation_creator::SimulationCreator;
-use eframe::egui::{Button, Ui};
+use eframe::egui::{Button, Context, Ui};
 use eframe::{Frame, egui};
 use crate::gui::grid_explorer::GridExplorer;
 
@@ -22,6 +22,7 @@ pub trait Subwindow {
     fn is_closeable(&self) -> bool {
         true
     }
+    fn not_ui(self: Box<Self>, ctx: &Context) -> SubwindowResult;
     fn on_close(&mut self) {}
 }
 
@@ -130,7 +131,7 @@ impl eframe::App for App {
         self.drop_closed_tabs();
 
         egui::CentralPanel::no_frame().show_inside(ui, |ui| {
-            self.process_selected_tab(ui, frame);
+            self.process_tabs(ui, frame);
         });
     }
 }
@@ -199,21 +200,16 @@ impl App {
         self.state.selected_tab_id = selected_tab_id;
     }
 
-    pub fn process_selected_tab(&mut self, ui: &mut Ui, _frame: &mut Frame) {
-        let mut selected_tab = None;
+    pub fn process_tabs(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        let mut pending_children = vec![];
         for tab in self.state.tabs.iter_mut() {
-            if tab.id == self.state.selected_tab_id {
-                selected_tab = Some(tab);
-                break;
-            }
-        }
+            let is_selected = tab.id == self.state.selected_tab_id;
 
-        if let Some(tab) = selected_tab {
-            let mut pending_children = vec![];
             let subwindow = std::mem::take(&mut tab.subwindow);
             tab.subwindow = match subwindow {
                 SubwindowState::Active(subwindow) => {
-                    match subwindow.ui(ui) {
+                    let cmd = if is_selected { subwindow.ui(ui) } else { subwindow.not_ui(ui.ctx()) };
+                    match cmd {
                         SubwindowResult::Keep(kept) => {
                             SubwindowState::Active(kept)
                         }
@@ -232,10 +228,10 @@ impl App {
                 },
                 SubwindowState::Closed => SubwindowState::Closed
             };
+        }
 
-            for pending_child in pending_children {
-                self.add_tab(pending_child);
-            }
+        for pending_child in pending_children {
+            self.add_tab(pending_child);
         }
     }
 }

@@ -2,7 +2,7 @@
 use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::{Subwindow, SubwindowResult};
 use eframe::egui;
-use eframe::egui::{Button, ProgressBar, RichText, Ui};
+use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
@@ -111,12 +111,34 @@ impl ProgressTracker {
     }
 }
 
+enum ContextOrUi<'a> {
+    Context(&'a Context),
+    Ui(&'a mut Ui),
+}
+
+impl<'a> ContextOrUi<'a> {
+    pub fn ctx(&self) -> &Context {
+        match self {
+            ContextOrUi::Context(ctx) => ctx,
+            ContextOrUi::Ui(ui) => ui.ctx(),
+        }
+    }
+
+    pub fn ui(&mut self) -> Option<&mut Ui> {
+        match self {
+            ContextOrUi::Context(_ctx) => None,
+            ContextOrUi::Ui(ui) => Some(ui),
+        }
+    }
+}
+
 pub struct SimulationRunner {
     simulation_state: SimulationRunnerState,
     limits: SimulationLimits,
     stop_flag: Arc<AtomicBool>,
     progress_tracker: ProgressTracker,
 
+    submit_to_explorer: bool,
     progress: Arc<Mutex<SimulationProgress>>,
     last_progress: SimulationProgress,
     worker: Option<JoinHandle<()>>,
@@ -138,6 +160,7 @@ impl SimulationRunner {
             stop_flag,
             progress_tracker: ProgressTracker::new(),
 
+            submit_to_explorer: false,
             progress: Default::default(),
             last_progress: Default::default(),
             worker: Some(std::thread::spawn(move || {
@@ -253,104 +276,9 @@ impl Subwindow for SimulationRunner {
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
-        let mut submit_to_explorer = false;
-
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::Frame::default().show(ui, |ui| {
-                while let Ok(result) = self.worker_results.try_recv() {
-                    self.simulation_state = SimulationRunnerState::Idle(result);
-                }
-
-                let old_simulation_state = std::mem::replace(
-                    &mut self.simulation_state,
-                    SimulationRunnerState::Simulating,
-                );
-
-                let start_simulation = |sim, ui: &mut Ui| {
-                    self.stop_flag.store(false, Ordering::SeqCst);
-                    self.worker_jobs
-                        .send(SimulationRunnerWorkerJob::Simulate(
-                            sim,
-                            self.limits.clone(),
-                            self.progress.clone(),
-                            ui.ctx().clone(),
-                        ))
-                        .unwrap();
-                };
-
-                let finalize_simulation = |sim, ui: &mut Ui| {
-                    self.worker_jobs
-                        .send(SimulationRunnerWorkerJob::Finalize(sim, ui.ctx().clone()))
-                        .unwrap();
-                };
-
-                self.simulation_state = match old_simulation_state {
-                    SimulationRunnerState::Init(simulation) => {
-                        start_simulation(simulation, ui);
-                        SimulationRunnerState::Simulating
-                    }
-                    SimulationRunnerState::Simulating => {
-                        if ui
-                            .add(Button::new(RichText::new("Pause simulation").heading()))
-                            .clicked()
-                        {
-                            self.stop_flag.store(true, Ordering::SeqCst);
-                        }
-                        SimulationRunnerState::Simulating
-                    }
-                    SimulationRunnerState::Finalizing => {
-                        ui.label("Finalizing simulation...");
-                        ui.spinner();
-                        SimulationRunnerState::Finalizing
-                    }
-                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
-                        simulation,
-                    )) => {
-                        if ui
-                            .add(Button::new(RichText::new("Resume simulation").heading()))
-                            .clicked()
-                        {
-                            start_simulation(simulation, ui);
-                            SimulationRunnerState::Simulating
-                        } else if ui
-                            .add(Button::new(RichText::new("Stop and finalize").heading()))
-                            .clicked()
-                        {
-                            finalize_simulation(simulation, ui);
-                            SimulationRunnerState::Finalizing
-                        } else {
-                            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
-                                simulation,
-                            ))
-                        }
-                    }
-                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(
-                        simulation,
-                    )) => {
-                        finalize_simulation(simulation, ui);
-                        SimulationRunnerState::Finalizing
-                    }
-                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(
-                        _simulation,
-                        error,
-                    )) => {
-                        panic!("Simulation error {:?}", error);
-                    }
-                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
-                        finalized_simulation,
-                    )) => {
-                        if ui
-                            .add(Button::new(RichText::new("Explore").heading()))
-                            .clicked()
-                        {
-                            submit_to_explorer = true;
-                        }
-                        SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
-                            finalized_simulation,
-                        ))
-                    }
-                    SimulationRunnerState::Closing => panic!("Invalid state."),
-                };
+                self.handle_state_changes(ContextOrUi::Ui(ui));
 
                 let progress = *self.progress.lock().unwrap();
                 if progress != self.last_progress {
@@ -361,7 +289,7 @@ impl Subwindow for SimulationRunner {
             });
         });
 
-        if submit_to_explorer {
+        if self.submit_to_explorer {
             if let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
                 finalized_simulation,
             )) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::Closing)
@@ -378,9 +306,116 @@ impl Subwindow for SimulationRunner {
     fn is_closeable(&self) -> bool {
         false
     }
+
+    fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Context(ctx));
+
+        Keep(self)
+    }
 }
 
 impl SimulationRunner {
+    fn handle_state_changes(&mut self, mut ctxui: ContextOrUi) {
+        while let Ok(result) = self.worker_results.try_recv() {
+            self.simulation_state = SimulationRunnerState::Idle(result);
+        }
+
+        let old_simulation_state = std::mem::replace(
+            &mut self.simulation_state,
+            SimulationRunnerState::Simulating,
+        );
+
+        let start_simulation = |sim, ctx: &Context| {
+            self.stop_flag.store(false, Ordering::SeqCst);
+            self.worker_jobs
+                .send(SimulationRunnerWorkerJob::Simulate(
+                    sim,
+                    self.limits.clone(),
+                    self.progress.clone(),
+                    ctx.clone(),
+                ))
+                .unwrap();
+        };
+
+        let finalize_simulation = |sim, ctx: &Context| {
+            self.worker_jobs
+                .send(SimulationRunnerWorkerJob::Finalize(sim, ctx.clone()))
+                .unwrap();
+        };
+
+        self.simulation_state = match old_simulation_state {
+            SimulationRunnerState::Init(simulation) => {
+                start_simulation(simulation, ctxui.ctx());
+                SimulationRunnerState::Simulating
+            }
+            SimulationRunnerState::Simulating => {
+                if let Some(ui) = ctxui.ui()
+                    && ui
+                        .add(Button::new(RichText::new("Pause simulation").heading()))
+                        .clicked()
+                {
+                    self.stop_flag.store(true, Ordering::SeqCst);
+                }
+                SimulationRunnerState::Simulating
+            }
+            SimulationRunnerState::Finalizing => {
+                if let Some(ui) = ctxui.ui() {
+                    ui.label("Finalizing simulation...");
+                    ui.spinner();
+                }
+                SimulationRunnerState::Finalizing
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(simulation)) => {
+                if let Some(ui) = ctxui.ui() {
+                    if ui
+                        .add(Button::new(RichText::new("Resume simulation").heading()))
+                        .clicked()
+                    {
+                        start_simulation(simulation, ctxui.ctx());
+                        SimulationRunnerState::Simulating
+                    } else if ui
+                        .add(Button::new(RichText::new("Stop and finalize").heading()))
+                        .clicked()
+                    {
+                        finalize_simulation(simulation, ctxui.ctx());
+                        SimulationRunnerState::Finalizing
+                    } else {
+                        SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                            simulation,
+                        ))
+                    }
+                } else {
+                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(simulation))
+                }
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(simulation)) => {
+                finalize_simulation(simulation, ctxui.ctx());
+                SimulationRunnerState::Finalizing
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(
+                _simulation,
+                error,
+            )) => {
+                panic!("Simulation error {:?}", error);
+            }
+            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                finalized_simulation,
+            )) => {
+                if let Some(ui) = ctxui.ui()
+                    && ui
+                        .add(Button::new(RichText::new("Explore").heading()))
+                        .clicked()
+                {
+                    self.submit_to_explorer = true;
+                }
+                SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                    finalized_simulation,
+                ))
+            }
+            SimulationRunnerState::Closing => panic!("Invalid state."),
+        };
+    }
+
     fn show_progress(ui: &mut Ui, limits: &SimulationLimits, progress_tracker: &ProgressTracker) {
         let progress = progress_tracker.current_progress();
         ui.vertical(|ui| {
