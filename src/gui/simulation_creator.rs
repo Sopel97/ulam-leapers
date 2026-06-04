@@ -39,7 +39,7 @@ struct PlayerConfigState {
 }
 
 impl PlayerConfigState {
-    fn attack_map_to_json(&self) -> serde_json::Value {
+    fn attack_map_to_json(&self) -> Value {
         json!(
             self.attack_offsets_ordered()
                 .iter()
@@ -53,7 +53,7 @@ impl PlayerConfigState {
         )
     }
 
-    pub fn to_json(&self) -> serde_json::Value {
+    pub fn to_json(&self) -> Value {
         json!({
             "id": self.id,
             "attack_map": self.attack_map_to_json(),
@@ -201,7 +201,7 @@ impl EnemyConfigState {
 }
 
 impl EnemyConfigState {
-    pub fn to_json(&self, player_count: usize) -> serde_json::Value {
+    pub fn to_json(&self, player_count: usize) -> Value {
         json!({
             "enemy_map": self.pairs(player_count).iter().map(|(a, b)| json!([a.index(), b.index()])).collect::<Vec<_>>(),
             "is_enemy_map_symmetric": self.is_enemy_map_symmetric,
@@ -289,7 +289,7 @@ impl LimitsState {
 }
 
 impl LimitsState {
-    pub(crate) fn to_json(&self) -> serde_json::Value {
+    pub(crate) fn to_json(&self) -> Value {
         json!({
             "memory_usage": self.memory_usage_gib * 1024 * 1024 * 1024,
             "turns": self.turns_m * 1000 * 1000,
@@ -334,7 +334,7 @@ impl Default for CreationState {
 }
 
 impl CreationState {
-    fn to_json(&self) -> serde_json::Value {
+    fn to_json(&self) -> Value {
         json!({
             "player_count": self.player_count,
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
@@ -344,7 +344,7 @@ impl CreationState {
         })
     }
 
-    fn try_from_json(json: &serde_json::Value) -> Option<CreationState> {
+    fn try_from_json(json: &Value) -> Option<CreationState> {
         let player_configs_array = json["player_configs"].as_array()?;
         let mut slf = CreationState {
             player_count: json["player_count"].as_u64()? as usize,
@@ -376,7 +376,7 @@ impl CreationState {
 enum SimulationCreatorWorkerJob {
     Stop,
     CancelAll,
-    GeneratePreview(Simulation, egui::Context, usize),
+    GeneratePreview(Simulation, Context, usize),
 }
 
 enum SimulationCreatorWorkerResult {
@@ -651,7 +651,7 @@ impl SimulationCreator {
         }
     }
 
-    fn maybe_update_preview(&mut self, ctx: &egui::Context) {
+    fn maybe_update_preview(&mut self, ctx: &Context) {
         let needs_update = match &self.last_rendered_state {
             None => true,
             Some(last_state) => {

@@ -18,9 +18,9 @@ enum SimulationRunnerWorkerJob {
         Simulation,
         SimulationLimits,
         Arc<Mutex<SimulationProgress>>,
-        egui::Context,
+        Context,
     ),
-    Finalize(Simulation, egui::Context),
+    Finalize(Simulation, Context),
     Stop,
 }
 

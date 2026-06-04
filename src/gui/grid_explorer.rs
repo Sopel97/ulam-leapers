@@ -168,7 +168,7 @@ impl GridExplorer {
     }
 
     pub fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
-        let file = std::fs::File::open(path)?;
+        let file = File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
         let simulation = FinalizedSimulation::read_from(&mut reader)?;
         let mut explorer = GridExplorer::new(simulation);
@@ -324,7 +324,7 @@ impl GridViewControls {
                 }
             });
 
-            let zoom_range = self.zoom_range(&grid_render);
+            let zoom_range = self.zoom_range(grid_render);
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             {

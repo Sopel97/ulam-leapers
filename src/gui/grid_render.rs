@@ -10,8 +10,7 @@ use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
-use ulam_leapers::util::pow2;
-use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_mod, floor_to_multiple};
+use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {
@@ -89,6 +88,8 @@ impl GridRenderer {
     ) -> Array2D<Color32> {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
+        assert!(factor < Pow2::new(4096), "Minification too high, could overflow accumulator");
+
         #[repr(align(16))]
         struct AccCol {
             r: u32,
@@ -106,7 +107,7 @@ impl GridRenderer {
             })
             .collect::<Vec<_>>();
         self.grid.sample_range2d_small_zoom_out_map_par(
-            &bounds,
+            bounds,
             factor,
             self.colors[0],
             || AccCol {
