@@ -1,6 +1,6 @@
-﻿use std::mem;
-use std::collections::BTreeMap;
+﻿use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::mem;
 
 pub trait WriteTo {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()>;
@@ -20,14 +20,17 @@ impl WriteTo for [u8] {
 impl ReadFrom for Box<[u8]> {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let len = usize::read_from(reader)?;
-        let mut res = vec![0; len].into_boxed_slice();
-        reader.read_exact(res.as_mut())?;
-        Ok(res)
+        let mut res = Box::new_uninit_slice(len);
+        let raw_res = unsafe { std::slice::from_raw_parts_mut(res.as_mut_ptr() as *mut u8, len) };
+        reader.read_exact(raw_res)?;
+        // SAFETY: We have read exactly len bytes (u8s) into the buffer.
+        Ok(unsafe { res.assume_init() })
     }
 }
 
 impl<T> WriteTo for Vec<T>
-    where T: WriteTo
+where
+    T: WriteTo,
 {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         writer.write_all(&self.len().to_le_bytes())?;
@@ -39,7 +42,8 @@ impl<T> WriteTo for Vec<T>
 }
 
 impl<T> ReadFrom for Vec<T>
-    where T: ReadFrom
+where
+    T: ReadFrom,
 {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let len = usize::read_from(reader)?;
@@ -52,7 +56,8 @@ impl<T> ReadFrom for Vec<T>
 }
 
 impl<T> WriteTo for Box<T>
-    where T: WriteTo
+where
+    T: WriteTo,
 {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         (**self).write_to(writer)
@@ -60,7 +65,9 @@ impl<T> WriteTo for Box<T>
 }
 
 impl<K, V> WriteTo for BTreeMap<K, V>
-    where K: WriteTo + Ord, V: WriteTo
+where
+    K: WriteTo + Ord,
+    V: WriteTo,
 {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.len().write_to(writer)?;
@@ -73,7 +80,9 @@ impl<K, V> WriteTo for BTreeMap<K, V>
 }
 
 impl<K, V> ReadFrom for BTreeMap<K, V>
-    where K: ReadFrom + Ord, V: ReadFrom
+where
+    K: ReadFrom + Ord,
+    V: ReadFrom,
 {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let len = usize::read_from(reader)?;
@@ -92,7 +101,7 @@ macro_rules! impl_write_to_le_bytes {
                 writer.write_all(&self.to_le_bytes())
             }
         }
-    }
+    };
 }
 
 impl_write_to_le_bytes!(i8);
@@ -115,7 +124,7 @@ macro_rules! impl_read_from_le_bytes {
                 Ok($t::from_le_bytes(buf))
             }
         }
-    }
+    };
 }
 
 impl_read_from_le_bytes!(i8);
