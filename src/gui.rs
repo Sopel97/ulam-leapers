@@ -5,7 +5,7 @@ mod simulation_runner;
 
 use std::path::PathBuf;
 use crate::gui::simulation_creator::SimulationCreator;
-use eframe::egui::Ui;
+use eframe::egui::{Button, Ui};
 use eframe::{Frame, egui};
 use crate::gui::grid_explorer::GridExplorer;
 
@@ -178,10 +178,14 @@ impl App {
 
                     if subwindow.is_closeable()
                         && tab.id == self.state.selected_tab_id
-                        && ui.small_button("✖").clicked()
                     {
-                        subwindow.on_close();
-                        do_close = true;
+                        if ui.small_button("✖").clicked() {
+                            subwindow.on_close();
+                            do_close = true;
+                        }
+                    } else {
+                        // TODO: somehow make it not display the X.
+                        ui.add_enabled(false, Button::new("✖").small());
                     }
                 }
                 SubwindowState::Closed => {}
