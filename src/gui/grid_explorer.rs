@@ -192,6 +192,9 @@ pub struct GridViewControls {
     zoom_pow2: i32,
     zoom_pow2_png: i32,
     png_extent: i32,
+    
+    // The origin must be a floating-point number because we require subpixel precision
+    // for moving the grid while zoomed-in.
     origin_x: f32,
     origin_y: f32,
     have_colors_changed: bool,
