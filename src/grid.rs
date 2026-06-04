@@ -11,6 +11,7 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 use std::sync::mpsc;
 use std::thread;
@@ -183,7 +184,7 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
     fn from(chunk: &CompressedChunk<T>) -> Self {
         let width = chunk.bounds.width() as usize;
         let height = chunk.bounds.height() as usize;
-        let mut cells: Array2D<T> = Array2D::new_aligned(width, height, CACHE_LINE_SIZE);
+        let mut cells: Array2D<MaybeUninit<T>> = Array2D::new_uninit_aligned(width, height, CACHE_LINE_SIZE);
         let raw_cells = as_bytes_mut(cells.as_flat_mut_slice());
 
         match chunk.transform {
@@ -216,7 +217,8 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
         }
         Chunk {
             bounds: chunk.bounds,
-            cells,
+            // SAFETY: We have verified that zstd decompressed exactly the whole buffer.
+            cells: unsafe { cells.assume_init() },
         }
     }
 }
