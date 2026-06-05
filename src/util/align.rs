@@ -9,6 +9,14 @@ impl MemoryAlignment {
 
         MemoryAlignment(value)
     }
+    
+    pub fn bytes(&self) -> usize {
+        self.0
+    }
+    
+    pub fn is_ptr_aligned<T>(&self, ptr: *const T) -> bool {
+        (ptr as usize).is_multiple_of(self.0)
+    }
 
     pub fn extra_elements<T>(&self) -> usize {
         let elem_size = size_of::<T>();
