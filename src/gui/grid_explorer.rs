@@ -1,6 +1,10 @@
-﻿use eframe::egui;
+﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
+use crate::gui::subwindow::SubwindowResult::Keep;
+use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
+use eframe::egui::{color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -11,11 +15,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
-use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
-use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::subwindow::SubwindowResult::Keep;
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub enum SaveState {
     NotSaved,

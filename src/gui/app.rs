@@ -1,9 +1,9 @@
-﻿use std::path::PathBuf;
-use eframe::egui::{Button, Ui};
-use eframe::{Frame, egui};
-use crate::gui::grid_explorer::GridExplorer;
+﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use eframe::egui::{Button, Ui};
+use eframe::{egui, Frame};
+use std::path::PathBuf;
 
 #[derive(Default)]
 enum SubwindowState {

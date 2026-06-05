@@ -1,7 +1,11 @@
-﻿use eframe::egui;
-use eframe::egui::{Checkbox, Color32, ColorImage, Rect, ScrollArea, Slider, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b, pos2, Context};
+﻿use crate::gui::grid_render::default_player_colors;
+use crate::gui::simulation_runner::SimulationRunner;
+use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
+use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use eframe::egui;
+use eframe::egui::{pos2, Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b};
 use eframe::epaint::TextureHandle;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -9,10 +13,6 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
-use crate::gui::grid_render::default_player_colors;
-use crate::gui::simulation_runner::SimulationRunner;
-use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;

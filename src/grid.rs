@@ -6,7 +6,7 @@ use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{as_bytes, as_bytes_mut};
 use crate::util::pow2;
-use crate::util::pow2::{Pow2, floor_to_multiple};
+use crate::util::pow2::{floor_to_multiple, Pow2};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};

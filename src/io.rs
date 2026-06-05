@@ -1,7 +1,7 @@
-﻿use std::collections::BTreeMap;
+﻿use crate::util::memory::as_bytes_mut;
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::mem;
-use crate::util::memory::as_bytes_mut;
 
 pub trait WriteTo {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()>;

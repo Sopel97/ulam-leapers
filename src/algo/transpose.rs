@@ -152,9 +152,9 @@ pub fn transpose_u8(src: &[u8], dst: &mut [u8], cols: usize, rows: usize) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
     use crate::util::align::MemoryAlignment;
-    use super::*;
 
     fn test_transpose(rows: usize, cols: usize) {
         let len = rows * cols;
