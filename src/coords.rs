@@ -97,30 +97,33 @@ where
 }
 
 impl From<&Point2D<i32>> for UlamSpiralPoint {
-    // Heavily optimized from the simple form via algebraic transformations.
-    //     fn from(point: &Point2D<i32>) -> Self {
-    //         let x = point.x as i64;
-    //         let y = point.y as i64;
-    //         let m = max(x.abs(), y.abs());
-    //
-    //         let base = 4 * m * (m - 1);
-    //         let p = if x == m && y != -m {
-    //             base + m + y
-    //         } else if y == m {
-    //             base + 3 * m - x
-    //         } else if x == -m {
-    //             base + 5 * m - y
-    //         } else if y == -m {
-    //             base + 7 * m + x
-    //         } else {
-    //             unreachable!()
-    //         };
-    //
-    //         UlamSpiralPoint(p)
-    //     }
-    // There exists a version with one less branch, but it requires computing max(ax, ay)
-    // and it ends up being slower, probably due to longer dependency chain and the fact
-    // that the branches are very predictable in our current use of this function.
+    /// Heavily optimized from the simple form via algebraic transformations.
+    ///
+    /// ```
+    /// use std::cmp::max;
+    /// fn from(x: i64, y: i64) -> i64 {
+    ///     let m = max(x.abs(), y.abs());
+    ///
+    ///     let base = 4 * m * (m - 1);
+    ///     let p = if x == m && y != -m {
+    ///         base + m + y
+    ///     } else if y == m {
+    ///         base + 3 * m - x
+    ///     } else if x == -m {
+    ///         base + 5 * m - y
+    ///     } else if y == -m {
+    ///         base + 7 * m + x
+    ///     } else {
+    ///         unreachable!()
+    ///     };
+    ///
+    ///     p
+    /// }
+    /// ```
+    ///
+    /// There exists a version with one less branch, but it requires computing max(ax, ay)
+    /// and it ends up being slower, probably due to longer dependency chain and the fact
+    /// that the branches are very predictable in our current use of this function.
     fn from(point: &Point2D<i32>) -> Self {
         let x = point.x as i64;
         let y = point.y as i64;
