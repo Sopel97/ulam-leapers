@@ -127,17 +127,38 @@ mod tests {
     use super::*;
     use std::panic::AssertUnwindSafe;
 
+    #[derive(Clone, Copy, Eq, PartialEq, Debug, Ord, PartialOrd)]
+    struct NonzeroDefault(u32);
+    impl Default for NonzeroDefault {
+        fn default() -> Self {
+            NonzeroDefault(123456)
+        }
+    }
+
     fn make_window() -> SlidingWindow<i32> {
         SlidingWindow::with_origin(0) // chunk size = 4
     }
 
     #[test]
-    fn read_uninitialized_returns_default() {
-        let w = make_window();
+    fn origin_is_correct_after_construction() {
+        let w = SlidingWindow::<i32>::with_origin(1);
+        assert_eq!(w.origin, 1);
+    }
 
-        assert_eq!(w[0], 0);
-        assert_eq!(w[10], 0);
-        assert_eq!(w[100], 0);
+    #[test]
+    fn origin_is_correct_after_being_moved() {
+        let mut w = SlidingWindow::<i32>::with_origin(0);
+        w.set_origin(123);
+        assert_eq!(w.origin, 123);
+    }
+
+    #[test]
+    fn read_uninitialized_returns_default() {
+        let w = SlidingWindow::<NonzeroDefault>::with_origin(0);
+
+        assert_eq!(w[0], NonzeroDefault::default());
+        assert_eq!(w[10], NonzeroDefault::default());
+        assert_eq!(w[100], NonzeroDefault::default());
     }
 
     #[test]
@@ -154,26 +175,26 @@ mod tests {
     }
 
     #[test]
-    fn holes_read_as_zero() {
-        let mut w = make_window();
+    fn holes_read_as_default() {
+        let mut w = SlidingWindow::<NonzeroDefault>::with_origin(0);
 
-        w[10] = 99;
+        w[10] = NonzeroDefault(99);
 
-        assert_eq!(w[5], 0);
-        assert_eq!(w[10], 99);
+        assert_eq!(w[5], NonzeroDefault::default());
+        assert_eq!(w[10], NonzeroDefault(99));
     }
 
     #[test]
     fn origin_allows_reads_below_as_default() {
-        let mut w = SlidingWindow::with_origin(10);
+        let mut w = SlidingWindow::<NonzeroDefault>::with_origin(10);
 
-        w[12] = 5;
+        w[12] = NonzeroDefault(99);
 
-        assert_eq!(w[9], 0);
-        assert_eq!(w[0], 0);
-        assert_eq!(w[-9999], 0);
-        assert_eq!(w[11], 0);
-        assert_eq!(w[12], 5);
+        assert_eq!(w[9], NonzeroDefault::default());
+        assert_eq!(w[0], NonzeroDefault::default());
+        assert_eq!(w[-9999], NonzeroDefault::default());
+        assert_eq!(w[11], NonzeroDefault::default());
+        assert_eq!(w[12], NonzeroDefault(99));
     }
 
     #[test]

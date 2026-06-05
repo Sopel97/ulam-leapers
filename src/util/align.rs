@@ -158,6 +158,7 @@ mod tests {
 
     #[test]
     fn extra_elements_is_div_ceil() {
+        #[allow(dead_code)]
         struct Size3(u8, u8, u8);
         for align in ALIGNMENTS {
             let expected = align.bytes().div_ceil(3);
