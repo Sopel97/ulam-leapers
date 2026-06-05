@@ -2,6 +2,7 @@
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
+#[derive(Debug)]
 pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,
     align: MemoryAlignment,
@@ -151,6 +152,7 @@ impl<T> Index<usize> for AlignedBoxedSlice<T> {
 
     #[inline(always)]
     fn index(&self, index: usize) -> &Self::Output {
+        assert!(index + self.begin < self.end);
         &self.storage[index + self.begin]
     }
 }
@@ -158,6 +160,7 @@ impl<T> Index<usize> for AlignedBoxedSlice<T> {
 impl<T> IndexMut<usize> for AlignedBoxedSlice<T> {
     #[inline(always)]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index + self.begin < self.end);
         &mut self.storage[index + self.begin]
     }
 }
@@ -328,7 +331,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn index_out_of_bounds_panics() {
         let slice: AlignedBoxedSlice<u8> = AlignedBoxedSlice::new(4, MemoryAlignment::new(16));
 
