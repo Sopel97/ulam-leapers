@@ -8,7 +8,7 @@ use std::cmp::min;
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
@@ -182,9 +182,9 @@ impl FinalizedSimulation {
     pub fn grid(&self) -> Arc<FrozenGrid<PlayerId>> {
         self.grid.clone()
     }
-    
+
     pub fn highest_player_id(&self) -> PlayerId {
-        self.players.iter().map(|p| p.id ).max().unwrap_or_default()
+        self.players.iter().map(|p| p.id).max().unwrap_or_default()
     }
 
     pub fn chunk_count(&self) -> usize {
@@ -456,9 +456,7 @@ impl Simulation {
         &mut self,
         limits: SimulationLimits,
         progress_callback: F,
-    )
-        -> Result<SimulationLimit, SimulationError>
-    {
+    ) -> Result<SimulationLimit, SimulationError> {
         if !limits.any() {
             return Err(SimulationError::InfiniteSimulation);
         }
@@ -587,13 +585,12 @@ impl Simulation {
                 job_tx.send(Job::Compress(region)).unwrap();
             }
 
-            if step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1
-            {
+            if step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1 {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
                 progress.memory_usage = total;
 
-                if limits.memory.is_some_and(|limit| { total >= limit }) {
+                if limits.memory.is_some_and(|limit| total >= limit) {
                     hit_limit = SimulationLimit::Memory;
                     break;
                 }
@@ -610,9 +607,11 @@ impl Simulation {
                 break;
             }
 
-            if limits.stop_flag.as_ref().is_some_and(|v| {
-                v.load(Ordering::Relaxed)
-            }) {
+            if limits
+                .stop_flag
+                .as_ref()
+                .is_some_and(|v| v.load(Ordering::Relaxed))
+            {
                 hit_limit = SimulationLimit::StopFlag;
                 break;
             }
@@ -623,7 +622,7 @@ impl Simulation {
             step += 1;
 
             progress.turns = self.simulated_turns;
-            
+
             progress_callback(progress);
         }
 
@@ -656,7 +655,10 @@ pub const ULS_MAX_PLAYER_ID: usize = 64;
 impl WriteTo for PlayerId {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         if self.0 as usize > ULS_MAX_PLAYER_ID {
-            return Err(std::io::Error::new(ErrorKind::InvalidData, format!("Player ID {} is too high.", self.0)));
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Player ID {} is too high.", self.0),
+            ));
         }
         self.0.write_to(writer)
     }
@@ -666,7 +668,10 @@ impl ReadFrom for PlayerId {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let id = u8::read_from(reader)?;
         if id as usize > ULS_MAX_PLAYER_ID {
-            return Err(std::io::Error::new(ErrorKind::InvalidData, format!("Player ID {} is too high.", id)));
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Player ID {} is too high.", id),
+            ));
         }
         Ok(PlayerId(id))
     }
@@ -682,12 +687,13 @@ impl ReadFrom for PlayerIdSet {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let bits = u64::read_from(reader)?;
         if (bits & 1) == 1 {
-            return Err(std::io::Error::new(ErrorKind::InvalidData, "PlayerIdSet must not have the lowest bit set."));
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "PlayerIdSet must not have the lowest bit set.",
+            ));
         }
 
-        Ok(PlayerIdSet {
-            bits,
-        })
+        Ok(PlayerIdSet { bits })
     }
 }
 
@@ -729,11 +735,17 @@ impl ReadFrom for FinalizedSimulation {
         let players = Vec::<Player>::read_from(reader)?;
         for (i, player) in players.iter().enumerate() {
             if player.id.0 as usize != i + 1 {
-                return Err(std::io::Error::new(ErrorKind::InvalidData, "Player ID must match its position."));
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Player ID must match its position.",
+                ));
             }
 
             if player.enemies.highest_player_id().0 as usize > players.len() {
-                return Err(std::io::Error::new(ErrorKind::InvalidData, "Player is enemy with non-existent player."));
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Player is enemy with non-existent player.",
+                ));
             }
         }
 

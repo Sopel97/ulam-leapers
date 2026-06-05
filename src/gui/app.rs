@@ -2,7 +2,7 @@
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Ui};
-use eframe::{egui, Frame};
+use eframe::{Frame, egui};
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -65,7 +65,9 @@ impl App {
         GridExplorer::load_from_file(path).map(|v| Box::new(v) as Box<dyn Subwindow>)
     }
 
-    fn try_open_simulations(paths: Vec<PathBuf>) -> Vec<Result<Box<dyn Subwindow>, std::io::Error>> {
+    fn try_open_simulations(
+        paths: Vec<PathBuf>,
+    ) -> Vec<Result<Box<dyn Subwindow>, std::io::Error>> {
         paths.into_iter().map(Self::try_open_simulation).collect()
     }
 }
@@ -85,13 +87,19 @@ impl eframe::App for App {
                             tabs_to_spawn.push(Box::new(SimulationCreator::new()));
                         }
                         if ui.button("Explorer").clicked() {
-                            let paths = rfd::FileDialog::new().add_filter("Ulam Leapers Simulation", &["uls"]).pick_files();
+                            let paths = rfd::FileDialog::new()
+                                .add_filter("Ulam Leapers Simulation", &["uls"])
+                                .pick_files();
                             if let Some(paths) = paths {
                                 let results = Self::try_open_simulations(paths);
                                 for result in results {
                                     match result {
-                                        Ok(subwindow) => { tabs_to_spawn.push(subwindow); }
-                                        Err(err) => { eprintln!("Error opening simulation: {}", err); }
+                                        Ok(subwindow) => {
+                                            tabs_to_spawn.push(subwindow);
+                                        }
+                                        Err(err) => {
+                                            eprintln!("Error opening simulation: {}", err);
+                                        }
                                     }
                                 }
                             }
@@ -127,7 +135,9 @@ impl App {
     }
 
     pub fn drop_closed_tabs(&mut self) {
-        self.state.tabs.retain(|tab| !matches!(tab.subwindow, SubwindowState::Closed));
+        self.state
+            .tabs
+            .retain(|tab| !matches!(tab.subwindow, SubwindowState::Closed));
     }
 
     pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>) {
@@ -156,9 +166,7 @@ impl App {
                         selected_tab_id = tab.id;
                     }
 
-                    if subwindow.is_closeable()
-                        && tab.id == self.state.selected_tab_id
-                    {
+                    if subwindow.is_closeable() && tab.id == self.state.selected_tab_id {
                         if ui.small_button("✖").clicked() {
                             subwindow.on_close();
                             do_close = true;
@@ -187,11 +195,13 @@ impl App {
             let subwindow = std::mem::take(&mut tab.subwindow);
             tab.subwindow = match subwindow {
                 SubwindowState::Active(subwindow) => {
-                    let cmd = if is_selected { subwindow.ui(ui) } else { subwindow.not_ui(ui.ctx()) };
+                    let cmd = if is_selected {
+                        subwindow.ui(ui)
+                    } else {
+                        subwindow.not_ui(ui.ctx())
+                    };
                     match cmd {
-                        SubwindowResult::Keep(kept) => {
-                            SubwindowState::Active(kept)
-                        }
+                        SubwindowResult::Keep(kept) => SubwindowState::Active(kept),
                         SubwindowResult::Spawn((kept, mut children)) => {
                             pending_children.append(&mut children);
                             SubwindowState::Active(kept)
@@ -200,12 +210,10 @@ impl App {
                             // Same as Kept, but it's valuable to have a syntactic distinction.
                             SubwindowState::Active(replacement)
                         }
-                        SubwindowResult::Close => {
-                            SubwindowState::Closed
-                        }
+                        SubwindowResult::Close => SubwindowState::Closed,
                     }
-                },
-                SubwindowState::Closed => SubwindowState::Closed
+                }
+                SubwindowState::Closed => SubwindowState::Closed,
             };
         }
 

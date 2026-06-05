@@ -6,20 +6,20 @@ impl MemoryAlignment {
         if !value.is_power_of_two() {
             panic!("Alignment value must be a power of two");
         }
-        
+
         MemoryAlignment(value)
     }
-    
+
     pub fn extra_elements<T>(&self) -> usize {
         let elem_size = size_of::<T>();
         self.0.div_ceil(elem_size)
     }
-    
+
     pub fn align_ptr(&self, ptr: usize) -> usize {
         let mask = self.0 - 1;
         (ptr + mask) & !mask
     }
-    
+
     pub fn unaligned_elements<T>(&self, ptr: usize) -> usize {
         let elem_size = size_of::<T>();
         let aligned_ptr = self.align_ptr(ptr);

@@ -10,7 +10,7 @@ use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
-use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {
@@ -57,18 +57,21 @@ impl GridRenderer {
             mipmap_bounds: GridRect::with_start_end(GridPoint::new(0, 0), GridPoint::new(0, 0)),
         }
     }
-    
+
     /// Panics if mipmaps have been generated.
     pub fn set_colors(&mut self, colors: &[Color32]) {
-        assert!(!self.has_mipmaps(), "Cannot change colors after mipmaps have been generated.");
+        assert!(
+            !self.has_mipmaps(),
+            "Cannot change colors after mipmaps have been generated."
+        );
         assert!(
             colors.len() > self.highest_player_id.index(),
             "Not enough colors for this simulation."
         );
-        
+
         self.colors = colors.to_vec();
     }
-    
+
     pub fn has_mipmaps(&self) -> bool {
         !self.mipmaps_by_minification_factor.is_empty()
     }
@@ -88,7 +91,10 @@ impl GridRenderer {
     ) -> Array2D<Color32> {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
-        assert!(factor < Pow2::new(4096), "Minification too high, could overflow accumulator");
+        assert!(
+            factor < Pow2::new(4096),
+            "Minification too high, could overflow accumulator"
+        );
 
         #[repr(align(16))]
         struct AccCol {
@@ -97,7 +103,8 @@ impl GridRenderer {
             b: u32,
             a: u32,
         }
-        let colors_u32 = self.colors
+        let colors_u32 = self
+            .colors
             .iter()
             .map(|c| AccCol {
                 r: c.r() as u32,
@@ -209,15 +216,9 @@ impl GridRenderer {
             }
             Minification(factor) => {
                 if self.has_mipmap(factor) {
-                    self.render_to_rgba_samples_for_minification_using_mipmaps(
-                        bounds,
-                        factor,
-                    )
+                    self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
                 } else {
-                    self.render_to_rgba_samples_for_minification_direct(
-                        bounds,
-                        factor,
-                    )
+                    self.render_to_rgba_samples_for_minification_direct(bounds, factor)
                 }
             }
         }
@@ -233,7 +234,12 @@ impl GridRenderer {
         )
     }
 
-    pub fn render_texture(&mut self, ctx: &egui::Context, bounds: &GridRect, zoom: Zoom) -> TextureHandle {
+    pub fn render_texture(
+        &mut self,
+        ctx: &egui::Context,
+        bounds: &GridRect,
+        zoom: Zoom,
+    ) -> TextureHandle {
         let texture_options = TextureOptions {
             magnification: TextureFilter::Nearest,
             minification: TextureFilter::Linear,
@@ -271,11 +277,7 @@ impl GridRenderer {
         pixels_at_lowest_minification * 4 * size_of::<Color32>() / 3
     }
 
-    pub fn generate_mipmaps(
-        &mut self,
-        lowest_minification: Pow2,
-        highest_minification: Pow2,
-    ) {
+    pub fn generate_mipmaps(&mut self, lowest_minification: Pow2, highest_minification: Pow2) {
         // We allow a single level, but not less than that.
         assert!(lowest_minification <= highest_minification);
 
@@ -366,14 +368,7 @@ impl GridRenderer {
     }
 
     // Private function, parameters are assumed to be correct.
-    fn make_mipmap_from_scratch(
-        &self,
-        bounds: &GridRect,
-        minification: Pow2,
-    ) -> Array2D<Color32> {
-        self.render_to_rgba_samples(
-            bounds,
-            Minification(minification),
-        )
+    fn make_mipmap_from_scratch(&self, bounds: &GridRect, minification: Pow2) -> Array2D<Color32> {
+        self.render_to_rgba_samples(bounds, Minification(minification))
     }
 }

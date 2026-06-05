@@ -1,10 +1,10 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui};
+use eframe::egui::{Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 pub enum SaveState {
     NotSaved,
@@ -192,7 +192,7 @@ pub struct GridViewControls {
     zoom_pow2: i32,
     zoom_pow2_png: i32,
     png_extent: i32,
-    
+
     // The origin must be a floating-point number because we require subpixel precision
     // for moving the grid while zoomed-in.
     origin_x: f32,
@@ -287,7 +287,10 @@ impl GridViewControls {
                 .hover_pos()
                 .map(|pos| {
                     // Invert y to match world coordinates.
-                    pos2(pos.x - viewport.min.x, viewport.height() - (pos.y - viewport.min.y))
+                    pos2(
+                        pos.x - viewport.min.x,
+                        viewport.height() - (pos.y - viewport.min.y),
+                    )
                 })
                 .unwrap_or(middle_pos);
 

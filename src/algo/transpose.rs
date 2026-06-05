@@ -23,65 +23,41 @@ unsafe fn transpose_u8_8x8_kernel(
         let a7 = *(src.add(7 * src_stride) as *const u64);
 
         // 2x2 block matrices
-        let b0 = (a0 & 0x00ff00ff00ff00ffu64)
-            | ((a1 << 8) & 0xff00ff00ff00ff00u64);
-        let b1 = (a1 & 0xff00ff00ff00ff00u64)
-            | ((a0 >> 8) & 0x00ff00ff00ff00ffu64);
+        let b0 = (a0 & 0x00ff00ff00ff00ffu64) | ((a1 << 8) & 0xff00ff00ff00ff00u64);
+        let b1 = (a1 & 0xff00ff00ff00ff00u64) | ((a0 >> 8) & 0x00ff00ff00ff00ffu64);
 
-        let b2 = (a2 & 0x00ff00ff00ff00ffu64)
-            | ((a3 << 8) & 0xff00ff00ff00ff00u64);
-        let b3 = (a3 & 0xff00ff00ff00ff00u64)
-            | ((a2 >> 8) & 0x00ff00ff00ff00ffu64);
+        let b2 = (a2 & 0x00ff00ff00ff00ffu64) | ((a3 << 8) & 0xff00ff00ff00ff00u64);
+        let b3 = (a3 & 0xff00ff00ff00ff00u64) | ((a2 >> 8) & 0x00ff00ff00ff00ffu64);
 
-        let b4 = (a4 & 0x00ff00ff00ff00ffu64)
-            | ((a5 << 8) & 0xff00ff00ff00ff00u64);
-        let b5 = (a5 & 0xff00ff00ff00ff00u64)
-            | ((a4 >> 8) & 0x00ff00ff00ff00ffu64);
+        let b4 = (a4 & 0x00ff00ff00ff00ffu64) | ((a5 << 8) & 0xff00ff00ff00ff00u64);
+        let b5 = (a5 & 0xff00ff00ff00ff00u64) | ((a4 >> 8) & 0x00ff00ff00ff00ffu64);
 
-        let b6 = (a6 & 0x00ff00ff00ff00ffu64)
-            | ((a7 << 8) & 0xff00ff00ff00ff00u64);
-        let b7 = (a7 & 0xff00ff00ff00ff00u64)
-            | ((a6 >> 8) & 0x00ff00ff00ff00ffu64);
+        let b6 = (a6 & 0x00ff00ff00ff00ffu64) | ((a7 << 8) & 0xff00ff00ff00ff00u64);
+        let b7 = (a7 & 0xff00ff00ff00ff00u64) | ((a6 >> 8) & 0x00ff00ff00ff00ffu64);
 
         // 4x4 block matrices
-        let c0 = (b0 & 0x0000ffff0000ffffu64)
-            | ((b2 << 16) & 0xffff0000ffff0000u64);
-        let c1 = (b1 & 0x0000ffff0000ffffu64)
-            | ((b3 << 16) & 0xffff0000ffff0000u64);
+        let c0 = (b0 & 0x0000ffff0000ffffu64) | ((b2 << 16) & 0xffff0000ffff0000u64);
+        let c1 = (b1 & 0x0000ffff0000ffffu64) | ((b3 << 16) & 0xffff0000ffff0000u64);
 
-        let c2 = (b2 & 0xffff0000ffff0000u64)
-            | ((b0 >> 16) & 0x0000ffff0000ffffu64);
-        let c3 = (b3 & 0xffff0000ffff0000u64)
-            | ((b1 >> 16) & 0x0000ffff0000ffffu64);
+        let c2 = (b2 & 0xffff0000ffff0000u64) | ((b0 >> 16) & 0x0000ffff0000ffffu64);
+        let c3 = (b3 & 0xffff0000ffff0000u64) | ((b1 >> 16) & 0x0000ffff0000ffffu64);
 
-        let c4 = (b4 & 0x0000ffff0000ffffu64)
-            | ((b6 << 16) & 0xffff0000ffff0000u64);
-        let c5 = (b5 & 0x0000ffff0000ffffu64)
-            | ((b7 << 16) & 0xffff0000ffff0000u64);
+        let c4 = (b4 & 0x0000ffff0000ffffu64) | ((b6 << 16) & 0xffff0000ffff0000u64);
+        let c5 = (b5 & 0x0000ffff0000ffffu64) | ((b7 << 16) & 0xffff0000ffff0000u64);
 
-        let c6 = (b6 & 0xffff0000ffff0000u64)
-            | ((b4 >> 16) & 0x0000ffff0000ffffu64);
-        let c7 = (b7 & 0xffff0000ffff0000u64)
-            | ((b5 >> 16) & 0x0000ffff0000ffffu64);
+        let c6 = (b6 & 0xffff0000ffff0000u64) | ((b4 >> 16) & 0x0000ffff0000ffffu64);
+        let c7 = (b7 & 0xffff0000ffff0000u64) | ((b5 >> 16) & 0x0000ffff0000ffffu64);
 
         // 8x8 block matrix
-        let d0 = (c0 & 0x00000000ffffffffu64)
-            | ((c4 << 32) & 0xffffffff00000000u64);
-        let d1 = (c1 & 0x00000000ffffffffu64)
-            | ((c5 << 32) & 0xffffffff00000000u64);
-        let d2 = (c2 & 0x00000000ffffffffu64)
-            | ((c6 << 32) & 0xffffffff00000000u64);
-        let d3 = (c3 & 0x00000000ffffffffu64)
-            | ((c7 << 32) & 0xffffffff00000000u64);
+        let d0 = (c0 & 0x00000000ffffffffu64) | ((c4 << 32) & 0xffffffff00000000u64);
+        let d1 = (c1 & 0x00000000ffffffffu64) | ((c5 << 32) & 0xffffffff00000000u64);
+        let d2 = (c2 & 0x00000000ffffffffu64) | ((c6 << 32) & 0xffffffff00000000u64);
+        let d3 = (c3 & 0x00000000ffffffffu64) | ((c7 << 32) & 0xffffffff00000000u64);
 
-        let d4 = (c4 & 0xffffffff00000000u64)
-            | ((c0 >> 32) & 0x00000000ffffffffu64);
-        let d5 = (c5 & 0xffffffff00000000u64)
-            | ((c1 >> 32) & 0x00000000ffffffffu64);
-        let d6 = (c6 & 0xffffffff00000000u64)
-            | ((c2 >> 32) & 0x00000000ffffffffu64);
-        let d7 = (c7 & 0xffffffff00000000u64)
-            | ((c3 >> 32) & 0x00000000ffffffffu64);
+        let d4 = (c4 & 0xffffffff00000000u64) | ((c0 >> 32) & 0x00000000ffffffffu64);
+        let d5 = (c5 & 0xffffffff00000000u64) | ((c1 >> 32) & 0x00000000ffffffffu64);
+        let d6 = (c6 & 0xffffffff00000000u64) | ((c2 >> 32) & 0x00000000ffffffffu64);
+        let d7 = (c7 & 0xffffffff00000000u64) | ((c3 >> 32) & 0x00000000ffffffffu64);
 
         // store rows
         *(dst.add(0 * dst_stride) as *mut u64) = d0;
@@ -178,16 +154,16 @@ mod tests {
 
     #[test]
     fn test_transpose_square() {
-        test_transpose(64*2, 64*2);
+        test_transpose(64 * 2, 64 * 2);
     }
 
     #[test]
     fn test_transpose_rect_horizontal() {
-        test_transpose(64*4, 64*2);
+        test_transpose(64 * 4, 64 * 2);
     }
 
     #[test]
     fn test_transpose_rect_vertical() {
-        test_transpose(64*2, 64*4);
+        test_transpose(64 * 2, 64 * 4);
     }
 }
