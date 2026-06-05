@@ -13,6 +13,10 @@ impl<T> AlignedBoxedSlice<T> {
     pub fn len(&self) -> usize {
         self.end - self.begin
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.begin == self.end
+    }
 }
 
 impl<T> Clone for AlignedBoxedSlice<T>
@@ -177,6 +181,14 @@ mod tests {
         for align in all_alignments() {
             let slice: AlignedBoxedSlice<u64> = AlignedBoxedSlice::new(0, align);
             assert_eq!(slice.len(), 0);
+        }
+    }
+
+    #[test]
+    fn is_empty_with_zero_size() {
+        for align in all_alignments() {
+            let slice: AlignedBoxedSlice<u64> = AlignedBoxedSlice::new(0, align);
+            assert!(slice.is_empty());
         }
     }
 
