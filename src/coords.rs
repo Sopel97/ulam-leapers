@@ -518,4 +518,50 @@ mod tests {
         assert_eq!(cursor.grid_position, GridPoint::new(0, -1));
         assert_eq!(cursor.spiral_position, UlamSpiralPoint(7));
     }
+
+    fn some_rect() -> Rect2D<i32> {
+        Rect2D::with_size(Point2D::new(8, 9), 12, 13)
+    }
+
+    #[test]
+    fn rect_contains_its_start() {
+        let rect = some_rect();
+        assert!(rect.contains_point(&rect.start));
+    }
+
+    #[test]
+    fn rect_does_not_contain_its_end() {
+        let rect = some_rect();
+        assert!(!rect.contains_point(&rect.end));
+    }
+
+    #[test]
+    fn rect_contains_itself() {
+        let rect = some_rect();
+        assert!(rect.contains(&rect));
+    }
+
+    #[test]
+    fn rect_intersected_with_itself_stays_the_same() {
+        let rect = some_rect();
+        let intersection = rect.intersection(&rect).unwrap();
+        assert_eq!(rect, intersection);
+    }
+
+    #[test]
+    fn touching_rects_do_not_intersect() {
+        // In other words, no degenerate intersections.
+        let rect1 = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
+        let rect2 = Rect2D::with_size(Point2D::new(10, 0), 10, 10);
+        assert!(rect1.intersection(&rect2).is_none());
+    }
+
+    #[test]
+    fn rect_intersection_is_contained_by_both_rects() {
+        let rect1 = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
+        let rect2 = Rect2D::with_size(Point2D::new(5, 5), 10, 10);
+        let intersection = rect1.intersection(&rect2).unwrap();
+        assert!(rect1.contains(&intersection));
+        assert!(rect2.contains(&intersection));
+    }
 }
