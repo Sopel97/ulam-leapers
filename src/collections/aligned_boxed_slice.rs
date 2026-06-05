@@ -19,6 +19,18 @@ impl<T> AlignedBoxedSlice<T> {
     }
 }
 
+impl<T> Default for AlignedBoxedSlice<T> {
+    fn default() -> Self {
+        // Does not allocate
+        AlignedBoxedSlice {
+            storage: Box::new([]),
+            align: MemoryAlignment::new(1),
+            begin: 0,
+            end: 0,
+        }
+    }
+}
+
 impl<T> Clone for AlignedBoxedSlice<T>
 where
     T: Default + Copy,
@@ -32,17 +44,27 @@ where
 
 impl<T: Default + Clone> AlignedBoxedSlice<T> {
     pub fn new(size: usize, align: MemoryAlignment) -> AlignedBoxedSlice<T> {
-        let extra = align.extra_elements::<T>();
+        if size == 0 {
+            // Avoid allocations for zero-sized slice.
+            AlignedBoxedSlice {
+                storage: Box::new([]),
+                align,
+                begin: 0,
+                end: 0,
+            }
+        } else {
+            let extra = align.extra_elements::<T>();
 
-        let storage = vec![Default::default(); size + extra].into_boxed_slice();
+            let storage = vec![Default::default(); size + extra].into_boxed_slice();
 
-        let aligned_offset = align.unaligned_elements::<T>(storage.as_ptr() as usize);
+            let aligned_offset = align.unaligned_elements::<T>(storage.as_ptr() as usize);
 
-        AlignedBoxedSlice {
-            storage,
-            align,
-            begin: aligned_offset,
-            end: aligned_offset + size,
+            AlignedBoxedSlice {
+                storage,
+                align,
+                begin: aligned_offset,
+                end: aligned_offset + size,
+            }
         }
     }
 }
@@ -162,6 +184,11 @@ mod tests {
             MemoryAlignment::new(32),
             MemoryAlignment::new(64),
         ]
+    }
+
+    #[test]
+    fn default_is_empty() {
+        assert!(AlignedBoxedSlice::<i32>::default().is_empty());
     }
 
     #[test]
