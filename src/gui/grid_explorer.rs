@@ -1,8 +1,4 @@
-﻿use crate::gui::SubwindowResult::Keep;
-use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
-use crate::gui::{Subwindow, SubwindowResult};
-use eframe::egui;
+﻿use eframe::egui;
 use eframe::egui::color_picker::Alpha;
 use eframe::egui::{Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
 use eframe::emath::pos2;
@@ -16,6 +12,10 @@ use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
+use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
+use crate::gui::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::subwindow::SubwindowResult::Keep;
 
 pub enum SaveState {
     NotSaved,

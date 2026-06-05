@@ -1,39 +1,15 @@
-﻿pub mod grid_explorer;
-mod grid_render;
-mod simulation_creator;
-mod simulation_runner;
-
-use std::path::PathBuf;
-use crate::gui::simulation_creator::SimulationCreator;
-use eframe::egui::{Button, Context, Ui};
+﻿use std::path::PathBuf;
+use eframe::egui::{Button, Ui};
 use eframe::{Frame, egui};
 use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::simulation_creator::SimulationCreator;
+use crate::gui::subwindow::{Subwindow, SubwindowResult};
 
-pub enum SubwindowResult {
-    Keep(Box<dyn Subwindow>),
-    Spawn((Box<dyn Subwindow>, Vec<Box<dyn Subwindow>>)),
-    Replace(Box<dyn Subwindow>),
-    Close,
-}
-
-pub trait Subwindow {
-    /// String to be shown as the header
-    fn name(&self) -> String;
-    
-    /// This function is called for visible subwindows
-    fn ui(self: Box<Self>, ui: &mut Ui) -> SubwindowResult;
-    
-    /// Whether to show the close button
-    fn is_closeable(&self) -> bool {
-        true
-    }
-    
-    /// This function is analogous to ui(), however with the caveat that it's only called
-    /// for background subwindows, i.e. where only the context is available. 
-    fn not_ui(self: Box<Self>, ctx: &Context) -> SubwindowResult;
-    
-    /// Called when the subwindow is closed by the close button if allowed by is_closeable.
-    fn on_close(&mut self) {}
+#[derive(Default)]
+enum SubwindowState {
+    #[default]
+    Closed,
+    Active(Box<dyn Subwindow>),
 }
 
 #[derive(Default, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -57,13 +33,6 @@ impl TabIdAllocator {
         self.next_id += 1;
         TabId(curr)
     }
-}
-
-#[derive(Default)]
-enum SubwindowState {
-    #[default]
-    Closed,
-    Active(Box<dyn Subwindow>),
 }
 
 pub struct Tab {

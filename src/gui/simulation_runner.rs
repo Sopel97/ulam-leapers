@@ -1,7 +1,4 @@
-﻿use crate::gui::SubwindowResult::{Keep, Replace};
-use crate::gui::grid_explorer::GridExplorer;
-use crate::gui::{Subwindow, SubwindowResult};
-use eframe::egui;
+﻿use eframe::egui;
 use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -12,6 +9,9 @@ use ulam_leapers::simulation::{
     SimulationProgress,
 };
 use ulam_leapers::util::time;
+use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 
 enum SimulationRunnerWorkerJob {
     Simulate(

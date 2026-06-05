@@ -1,4 +1,4 @@
-use crate::gui::App;
+use crate::gui::app::App;
 use eframe::wgpu::PresentMode;
 use std::io::Read;
 use ulam_leapers::grid::GridVector;
@@ -8,7 +8,7 @@ use ulam_leapers::simulation::{FinalizedSimulation, Game, Simulation, Simulation
 
 const GUI: bool = true;
 
-mod gui;
+pub mod gui;
 
 fn main() {
     if GUI {
