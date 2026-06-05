@@ -99,6 +99,7 @@ impl<T> Index<(usize, usize)> for Array2D<T> {
 
     #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
+        assert!(x < self.width && y < self.height);
         &self.data[y * self.width + x]
     }
 }
@@ -106,6 +107,7 @@ impl<T> Index<(usize, usize)> for Array2D<T> {
 impl<T> IndexMut<(usize, usize)> for Array2D<T> {
     #[inline(always)]
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
+        assert!(x < self.width && y < self.height);
         &mut self.data[y * self.width + x]
     }
 }
@@ -137,6 +139,7 @@ impl<T> Index<(usize, usize)> for Slice2D<'_, T> {
 
     #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
+        assert!(x < self.width && y < self.height);
         &self.data[y * self.stride + x]
     }
 }
@@ -159,6 +162,7 @@ impl<T> Index<(usize, usize)> for MutSlice2D<'_, T> {
 
     #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
+        assert!(x < self.width && y < self.height);
         &self.data[y * self.stride + x]
     }
 }
@@ -166,6 +170,7 @@ impl<T> Index<(usize, usize)> for MutSlice2D<'_, T> {
 impl<T> IndexMut<(usize, usize)> for MutSlice2D<'_, T> {
     #[inline(always)]
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
+        assert!(x < self.width && y < self.height);
         &mut self.data[y * self.stride + x]
     }
 }
@@ -460,6 +465,77 @@ mod tests {
         assert_eq!(a[(3, 2)], 0);
         assert_eq!(a[(3, 3)], 0);
         assert_eq!(a[(2, 2)], 0);
+    }
+
+    #[test]
+    fn array2d_out_of_bounds_index_panics() {
+        let a = make_grid(4, 4);
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(3, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 3)];
+        }));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn slice2d_out_of_bounds_index_panics() {
+        let a = make_grid(4, 4);
+        let a = a.as_slice2d();
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(3, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 3)];
+        }));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mut_slice2d_out_of_bounds_index_panics() {
+        let mut a = make_grid(4, 4);
+        let a = a.as_mut_slice2d();
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(3, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 4)];
+        }));
+
+        assert!(result.is_err());
+
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _ = a[(4, 3)];
+        }));
+
+        assert!(result.is_err());
     }
 
     #[test]
