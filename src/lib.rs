@@ -6,3 +6,4 @@ pub mod io;
 pub mod piece;
 pub mod simulation;
 pub mod util;
+pub mod compression;
