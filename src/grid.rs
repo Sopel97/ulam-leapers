@@ -1,6 +1,7 @@
 ﻿use crate::algo::transpose::transpose_u8;
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::{Array2D, Slice2D};
+use crate::compression::{AnyCompression, CompressedBlob, Compression, CompressionKind};
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
@@ -139,16 +140,16 @@ impl ReadFrom for CompressedChunkTransform {
 pub struct CompressedChunk<T> {
     bounds: GridRect,
     transform: CompressedChunkTransform,
-    data: Box<[u8]>,
+    data: CompressedBlob,
     _marker: PhantomData<T>,
 }
 
-impl<T> From<&Chunk<T>> for CompressedChunk<T> {
-    fn from(chunk: &Chunk<T>) -> Self {
+impl<T> Chunk<T> {
+    pub fn compress(&self, compression: &AnyCompression) -> CompressedChunk<T> {
         // SAFETY: We kinda assume that T is accessible as raw bytes.
-        let raw_uncompressed = unsafe { as_bytes(chunk.cells.as_flat_slice()) };
+        let raw_uncompressed = unsafe { as_bytes(self.cells.as_flat_slice()) };
 
-        let mut compressed = zstd::encode_all(raw_uncompressed, 6).unwrap();
+        let mut compressed = compression.compress_to_blob(raw_uncompressed).unwrap();
 
         let mut transposed_buf = AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(
             raw_uncompressed.len(),
@@ -164,11 +165,13 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         transpose_u8(
             raw_uncompressed,
             raw_uncompressed_transposed,
-            chunk.cells.width() * size_of::<T>(),
-            chunk.cells.height(),
+            self.cells.width() * size_of::<T>(),
+            self.cells.height(),
         );
         // raw_uncompressed_transposed is fully initialized at this point
-        let compressed_transposed = zstd::encode_all(&*raw_uncompressed_transposed, 6).unwrap();
+        let compressed_transposed = compression
+            .compress_to_blob(&*raw_uncompressed_transposed)
+            .unwrap();
 
         let transform;
         if compressed_transposed.len() < compressed.len() {
@@ -179,29 +182,27 @@ impl<T> From<&Chunk<T>> for CompressedChunk<T> {
         }
 
         CompressedChunk {
-            bounds: chunk.bounds,
-            data: compressed.into_boxed_slice(),
+            bounds: self.bounds,
+            data: compressed,
             transform,
             _marker: PhantomData,
         }
     }
 }
 
-impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
-    // NOTE: We assume here that T is accessible as raw bytes.
-    fn from(chunk: &CompressedChunk<T>) -> Self {
-        let width = chunk.bounds.width() as usize;
-        let height = chunk.bounds.height() as usize;
+impl<T: Default + Clone + Copy> CompressedChunk<T> {
+    pub fn decompress(&self) -> Chunk<T> {
+        let width = self.bounds.width() as usize;
+        let height = self.bounds.height() as usize;
         let mut cells: Array2D<MaybeUninit<T>> =
             Array2D::new_uninit_aligned(width, height, CACHE_LINE_SIZE);
         // SAFETY: We kinda assume that T is accessible as raw bytes.
         let raw_cells = unsafe { as_bytes_mut(cells.as_flat_mut_slice()) };
 
-        match chunk.transform {
+        match self.transform {
             CompressedChunkTransform::None => {
                 assert_eq!(
-                    zstd::bulk::decompress_to_buffer(chunk.data.iter().as_slice(), raw_cells)
-                        .unwrap(),
+                    self.data.decompress_to_buffer(raw_cells).unwrap(),
                     raw_cells.len()
                 );
             }
@@ -215,11 +216,9 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
                 let raw_uncompressed_transposed =
                     unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
                 assert_eq!(
-                    zstd::bulk::decompress_to_buffer(
-                        chunk.data.iter().as_slice(),
-                        raw_uncompressed_transposed,
-                    )
-                    .unwrap(),
+                    self.data
+                        .decompress_to_buffer(raw_uncompressed_transposed,)
+                        .unwrap(),
                     raw_uncompressed_transposed.len()
                 );
                 transpose_u8(
@@ -231,7 +230,7 @@ impl<T: Default + Clone + Copy> From<&CompressedChunk<T>> for Chunk<T> {
             }
         }
         Chunk {
-            bounds: chunk.bounds,
+            bounds: self.bounds,
             // SAFETY: We have verified that zstd decompressed exactly the whole buffer.
             cells: unsafe { cells.assume_init() },
         }
@@ -363,6 +362,7 @@ impl Chunker for SquareChunker {
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send + Sync>,
+    compression: AnyCompression,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     frozen_chunks_memory_usage: usize, // to reduce the amount of redundant iteration over chunks
@@ -384,7 +384,7 @@ impl<T: Send + Sync> Grid<T> {
             .map(|entry| {
                 let origin = entry.0;
                 let chunk = entry.1;
-                (origin, CompressedChunk::from(&chunk))
+                (origin, chunk.compress(&self.compression))
             })
             .collect::<Vec<_>>();
         // Collecting to a vector is not great but should be fine. Other ways of converting
@@ -421,9 +421,10 @@ impl<T> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
-    pub fn new(chunker: Box<dyn Chunker + Send + Sync>) -> Self {
+    pub fn new(chunker: Box<dyn Chunker + Send + Sync>, compression: AnyCompression) -> Self {
         Grid {
             chunker,
+            compression,
             active_chunks: BTreeMap::new(),
             frozen_chunks: BTreeMap::new(),
             frozen_chunks_memory_usage: 0,
@@ -615,7 +616,7 @@ impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
 
                 assert!(subregion.is_aligned_to_pow2(minification));
 
-                let chunk = Chunk::from(compressed_chunk);
+                let chunk = compressed_chunk.decompress();
 
                 let block_size: i32 = minification.into();
 
@@ -712,7 +713,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
 
                 assert!(subregion.is_aligned_to_pow2(minification));
 
-                let chunk = Chunk::from(compressed_chunk);
+                let chunk = compressed_chunk.decompress();
 
                 let block_size: i32 = minification.into();
 
@@ -775,7 +776,7 @@ impl<T: Default + Clone + Copy> FrozenGrid<T> {
                     .intersection(region)
                     .expect("Chunker should have returned only intersecting chunks.");
 
-                let chunk = Chunk::from(compressed_chunk);
+                let chunk = compressed_chunk.decompress();
 
                 for y in subregion.start.y..subregion.end.y {
                     for x in subregion.start.x..subregion.end.x {
@@ -865,7 +866,7 @@ impl<T> WriteTo for CompressedChunk<T> {
     fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.bounds.write_to(writer)?;
         self.transform.write_to(writer)?;
-        self.data.write_to(writer)?;
+        self.data.bytes().write_to(writer)?;
         Ok(())
     }
 }
@@ -875,7 +876,10 @@ impl<T> ReadFrom for CompressedChunk<T> {
         Ok(CompressedChunk {
             bounds: GridRect::read_from(reader)?,
             transform: CompressedChunkTransform::read_from(reader)?,
-            data: Box::<[u8]>::read_from(reader)?,
+            data: CompressedBlob::from_raw_parts(
+                CompressionKind::Zstd,
+                Box::<[u8]>::read_from(reader)?,
+            ),
             _marker: PhantomData,
         })
     }
@@ -947,6 +951,7 @@ impl ReadFrom for Box<dyn Chunker> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compression::ZstdCompression;
     use std::panic::AssertUnwindSafe;
 
     fn point(x: i32, y: i32) -> GridPoint {
@@ -958,7 +963,10 @@ mod tests {
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
-        Grid::new(Box::new(SquareChunker { size: chunk_size }))
+        Grid::new(
+            Box::new(SquareChunker { size: chunk_size }),
+            ZstdCompression::new_with_level(1).into(),
+        )
     }
 
     #[test]

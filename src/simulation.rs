@@ -1,4 +1,5 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
+use crate::compression::ZstdCompression;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
@@ -318,7 +319,10 @@ impl Simulation {
     pub fn new() -> Simulation {
         Simulation {
             players: vec![],
-            grid: Some(Grid::new(Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE)))),
+            grid: Some(Grid::new(
+                Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE)),
+                ZstdCompression::new_with_level(6).into(),
+            )),
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
