@@ -163,14 +163,20 @@ impl From<NoneCompression> for AnyCompression {
     }
 }
 
+macro_rules! dispatch_compression_kind {
+    ($self:expr, $method:ident ( $($args:expr),* )) => {
+        match $self.kind {
+            CompressionKind::Zstd => ZstdCompression::new().$method($($args),*),
+            CompressionKind::None => NoneCompression::new().$method($($args),*),
+        }
+    };
+}
+
 impl CompressedBlob {
     /// Succeeds only if the whole `input` was consumed and there was
     /// enough space in the `output` to write the result.
     pub fn decompress(&mut self, output: &mut impl Write) -> std::io::Result<()> {
-        match self.kind {
-            CompressionKind::Zstd => ZstdCompression::new().decompress(self.data.as_ref(), output),
-            CompressionKind::None => NoneCompression::new().decompress(self.data.as_ref(), output),
-        }
+        dispatch_compression_kind!(self, decompress(self.data.as_ref(), output))
     }
 
     /// Succeeds only if the whole `input` was consumed and there was enough
@@ -178,22 +184,12 @@ impl CompressedBlob {
     /// On success returns the decompressed bytes as a `Vec<u8>`.
     /// The capacity of the returned `Vec<u8>` may be higher than necessary.
     pub fn decompress_to_vec(&mut self) -> std::io::Result<Vec<u8>> {
-        match self.kind {
-            CompressionKind::Zstd => ZstdCompression::new().decompress_to_vec(self.data.as_ref()),
-            CompressionKind::None => NoneCompression::new().decompress_to_vec(self.data.as_ref()),
-        }
+        dispatch_compression_kind!(self, decompress_to_vec(self.data.as_ref()))
     }
 
     /// On success the number of bytes written to `output` is returned.
     pub fn decompress_to_buffer(&self, output: &mut [u8]) -> std::io::Result<usize> {
-        match self.kind {
-            CompressionKind::Zstd => {
-                ZstdCompression::new().decompress_to_buffer(self.data.as_ref(), output)
-            }
-            CompressionKind::None => {
-                NoneCompression::new().decompress_to_buffer(self.data.as_ref(), output)
-            }
-        }
+        dispatch_compression_kind!(self, decompress_to_buffer(self.data.as_ref(), output))
     }
 
     /// Constructs a new CompressedBlob with given `kind` and `data` bytes.
