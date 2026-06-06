@@ -145,41 +145,57 @@ pub struct CompressedChunk<T> {
 }
 
 impl<T> Chunk<T> {
+    /// Compresses the chunk using a given compressor.
+    ///
+    /// # Notes
+    ///
+    /// Currently, it attempts two compressions, one on the chunk data in row-major order,
+    /// and one on te chunk data in column-major order. Whichever ends up smaller is chosen.
+    /// While this is inefficient it improves compressions significantly on most grids.
+    /// A better heuristic, and/or other transforms, may be used in the future.
     pub fn compress(&self, compression: &AnyCompression) -> CompressedChunk<T> {
-        // SAFETY: We kinda assume that T is accessible as raw bytes.
-        let raw_uncompressed = unsafe { as_bytes(self.cells.as_flat_slice()) };
+        let mut compressed = {
+            // SAFETY: We kinda assume that T is accessible as raw bytes.
+            let raw_uncompressed = unsafe { as_bytes(self.cells.as_flat_slice()) };
 
-        let mut compressed = compression.compress_to_blob(raw_uncompressed).unwrap();
+            compression.compress_to_blob(raw_uncompressed).unwrap()
+        };
 
-        let mut transposed_buf = AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(
-            raw_uncompressed.len(),
-            CACHE_LINE_SIZE,
-        );
-        // SAFETY:
-        // - MaybeUninit<u8> has the same layout as u8
-        // - transpose_u8 fully overwrites every byte of the destination before
-        //   the slice is ever read.
-        let raw_uncompressed_transposed: &mut [u8] =
-            unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
-        // This transpose completely overwrites the whole raw_uncompressed_transposed
-        transpose_u8(
-            raw_uncompressed,
-            raw_uncompressed_transposed,
-            self.cells.width() * size_of::<T>(),
-            self.cells.height(),
-        );
-        // raw_uncompressed_transposed is fully initialized at this point
-        let compressed_transposed = compression
-            .compress_to_blob(&*raw_uncompressed_transposed)
-            .unwrap();
+        let compressed_transposed = {
+            let mut transposed_buf = AlignedBoxedSlice::<MaybeUninit<u8>>::new_uninit(
+                self.cells.as_flat_slice().len(),
+                CACHE_LINE_SIZE,
+            );
+            // SAFETY: We kinda assume that T is accessible as raw bytes.
+            let raw_uncompressed = unsafe { as_bytes(self.cells.as_flat_slice()) };
+            
+            // SAFETY:
+            // - MaybeUninit<u8> has the same layout as u8
+            // - transpose_u8 fully overwrites every byte of the destination before
+            //   the slice is ever read.
+            let raw_uncompressed_transposed: &mut [u8] =
+                unsafe { as_bytes_mut(transposed_buf.as_mut_slice()) };
+            
+            // This transpose completely overwrites the whole raw_uncompressed_transposed
+            transpose_u8(
+                raw_uncompressed,
+                raw_uncompressed_transposed,
+                self.cells.width() * size_of::<T>(),
+                self.cells.height(),
+            );
 
-        let transform;
-        if compressed_transposed.len() < compressed.len() {
-            transform = CompressedChunkTransform::Transposition;
+            // raw_uncompressed_transposed is fully initialized at this point
+            compression
+                .compress_to_blob(&*raw_uncompressed_transposed)
+                .unwrap()
+        };
+
+        let transform = if compressed_transposed.len() < compressed.len() {
             compressed = compressed_transposed;
+            CompressedChunkTransform::Transposition
         } else {
-            transform = CompressedChunkTransform::None;
-        }
+            CompressedChunkTransform::None
+        };
 
         CompressedChunk {
             bounds: self.bounds,
