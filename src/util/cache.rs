@@ -18,6 +18,7 @@ struct Entry<V> {
 /// IMPORTANT: This queue is unbounded and is not considered when calculating
 ///            the total memory usage. The user must ensure that there is enough memory
 ///            for whatever they are doing during the queryable stage.
+///            DO NOT FORGET to call `update()` whenever you want this queue to be processed.
 /// 
 /// In the update stage the queue of new cached values is consolidated to the
 /// cache entries, their memory cost tallied, and if memory cost is determined
@@ -51,6 +52,17 @@ impl<K, V> LockStepCache<K, V> {
             curr_gen: 0,
             max_memory_cost,
         }
+    }
+    
+    pub fn set_max_memory_cost(&mut self, max_memory_cost: usize) {
+        self.max_memory_cost = max_memory_cost;
+    }
+    
+    pub fn invalidate_all(&mut self) {
+        self.entries.clear();
+        self.total_memory_cost = 0;
+        self.new_entries.lock().unwrap().clear();
+        self.new_memory_cost = 0;
     }
 }
 
@@ -112,6 +124,9 @@ where
                 }
             }
         }
+        
+        // We have drained the `new_entries`
+        self.new_memory_cost = 0;
 
         if self.total_memory_cost > self.max_memory_cost {
             // NOTE: This might not be very efficient, especially with float total_cmp sort.

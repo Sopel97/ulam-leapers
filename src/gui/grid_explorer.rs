@@ -143,6 +143,10 @@ impl GridExplorer {
             default_player_colors().as_slice(),
         )));
 
+        // TODO: configurable by user. 
+        //       But needs to be at least a few times larger than the framebuffer to make any sense.
+        grid_renderer.lock().unwrap().set_cache_size(1024 * 1024 * 128);
+
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
             finalized_simulation: finalized_simulation.clone(),

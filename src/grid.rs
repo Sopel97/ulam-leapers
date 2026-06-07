@@ -5,6 +5,7 @@ use crate::compression::{AnyCompression, CompressedBlob, Compression, Compressio
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
+use crate::util::cache::LockStepCache;
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -14,7 +15,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 
 pub type GridPoint = Point2D<i32>;
@@ -29,6 +30,10 @@ trait BoundedChunk {
 
     fn contains_point(&self, point: &GridPoint) -> bool {
         self.bounds().contains_point(point)
+    }
+
+    fn origin(&self) -> ChunkOrigin {
+        ChunkOrigin(self.bounds().start)
     }
 }
 
@@ -168,14 +173,14 @@ impl<T> Chunk<T> {
             );
             // SAFETY: We kinda assume that T is accessible as raw bytes.
             let raw_uncompressed = unsafe { view_as_bytes(self.cells.as_flat_slice()) };
-            
+
             // SAFETY:
             // - MaybeUninit<u8> has the same layout as u8
             // - transpose_u8 fully overwrites every byte of the destination before
             //   the slice is ever read.
             let raw_uncompressed_transposed: &mut [u8] =
                 unsafe { view_as_bytes_mut(transposed_buf.as_mut_slice()) };
-            
+
             // This transpose completely overwrites the whole raw_uncompressed_transposed
             transpose_u8(
                 raw_uncompressed,
@@ -558,6 +563,142 @@ impl<T> FrozenGrid<T> {
 }
 
 impl<T: Default + Clone + Copy + Send + Sync> FrozenGrid<T> {
+    // TODO: Really, do something about this, it's growing into such a mess...
+    #[allow(clippy::too_many_arguments)]
+    pub fn sample_range2d_small_zoom_out_cached_map_par<FZero, FReduce, FFinalize, TAcc, U>(
+        &self,
+        cache: &LockStepCache<(ChunkOrigin, Pow2), Array2D<U>>,
+        region: &GridRect,
+        minification: Pow2,
+        default_value: U,
+        fzero: FZero,
+        freduce: FReduce,
+        ffinalize: FFinalize,
+    ) -> Array2D<U>
+    where
+        FZero: Fn() -> TAcc + Send + Sync,
+        FReduce: Fn(&mut TAcc, T) + Send + Sync,
+        FFinalize: Fn(TAcc, usize, usize) -> U + Send + Sync,
+        U: Default + Clone + Copy + Send + Sync + 'static,
+    {
+        if !region.is_aligned_to_pow2(minification) {
+            panic!("Region is not aligned to the minification factor.");
+        }
+
+        if self.chunker.minimum_chunk_alignment() < minification.into() {
+            panic!("Minification factor is larger than minimum chunk alignment.");
+        }
+
+        if self.chunker.minimum_chunk_extent() < minification.into() {
+            panic!("Minification factor is smaller than minimum chunk extent.");
+        }
+
+        let (tx, rx) = mpsc::channel::<(usize, usize, Arc<Array2D<U>>, GridRect)>();
+
+        let region_clone = *region;
+        let result_assembler = thread::spawn(move || {
+            let mut result: Array2D<U> = Array2D::new(
+                pow2::floor_div(region_clone.width(), minification) as usize,
+                pow2::floor_div(region_clone.height(), minification) as usize,
+            );
+            result.as_flat_mut_slice().fill(default_value);
+
+            while let Ok((rx, ry, whole_chunk_result, subregion)) = rx.recv() {
+                for y in 0..subregion.height() as usize {
+                    for x in 0..subregion.width() as usize {
+                        // SAFETY: The producer of these indices is trusted.
+                        //         We're just doing simple copying here.
+                        unsafe {
+                            *result.get_unchecked_mut(rx + x, ry + y) = *whole_chunk_result
+                                .get_unchecked(
+                                    x + subregion.start.x as usize,
+                                    y + subregion.start.y as usize,
+                                );
+                        }
+                    }
+                }
+            }
+
+            result
+        });
+
+        self.chunker
+            .origins_of_intersecting_chunks(region)
+            .into_par_iter()
+            .flat_map(|origin| self.frozen_chunks.get(&origin))
+            .for_each(|compressed_chunk| {
+                let bounds = compressed_chunk.bounds();
+
+                let whole_chunk_result =
+                    cache.get_or_compute((compressed_chunk.origin(), minification), || {
+                        let chunk = compressed_chunk.decompress();
+
+                        let block_size: i32 = minification.into();
+
+                        let mut whole_chunk_result: Array2D<U> = Array2D::new(
+                            pow2::floor_div(bounds.width(), minification) as usize,
+                            pow2::floor_div(bounds.height(), minification) as usize,
+                        );
+
+                        for by in (bounds.start.y..bounds.end.y).step_by(block_size as usize) {
+                            for bx in (bounds.start.x..bounds.end.x).step_by(block_size as usize) {
+                                let mut acc = fzero();
+                                // Fill in the input block for the mapping function.
+                                for y in by..by + block_size {
+                                    for x in bx..bx + block_size {
+                                        // SAFETY: We are iterating a known existing chunk, as the subregion
+                                        //         was computed based on its bounds.
+                                        let val =
+                                            unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
+
+                                        freduce(&mut acc, *val);
+                                    }
+                                }
+
+                                // Map the block and store into the actual result.
+                                let srx =
+                                    pow2::floor_div(bx - bounds.start.x, minification) as usize;
+                                let sry =
+                                    pow2::floor_div(by - bounds.start.y, minification) as usize;
+                                // SAFETY: Explicitly iterating within the subregion.
+                                unsafe {
+                                    *whole_chunk_result.get_unchecked_mut(srx, sry) =
+                                        ffinalize(acc, block_size as usize, block_size as usize);
+                                }
+                            }
+                        }
+
+                        let cost = whole_chunk_result.width() * whole_chunk_result.height() * size_of::<U>();
+                        (whole_chunk_result, cost)
+                    });
+
+                let subregion = compressed_chunk
+                    .bounds()
+                    .intersection(region)
+                    .expect("Chunker should have returned only intersecting chunks.");
+
+                assert!(subregion.is_aligned_to_pow2(minification));
+
+                let rx = pow2::floor_div(subregion.start.x - region.start.x, minification) as usize;
+                let ry = pow2::floor_div(subregion.start.y - region.start.y, minification) as usize;
+
+                let srx = pow2::floor_div(subregion.start.x - bounds.start.x, minification);
+                let sry = pow2::floor_div(subregion.start.y - bounds.start.y, minification);
+                let erx = pow2::floor_div(subregion.end.x - bounds.start.x, minification);
+                let ery = pow2::floor_div(subregion.end.y - bounds.start.y, minification);
+                tx.send((
+                    rx,
+                    ry,
+                    whole_chunk_result.clone(),
+                    GridRect::with_start_end(GridPoint::new(srx, sry), GridPoint::new(erx, ery)),
+                ))
+                .unwrap();
+            });
+        drop(tx);
+
+        result_assembler.join().unwrap()
+    }
+
     // Intended for small power of 2 factors due to overall complexity. If higher minification
     // is required consider an approach with pregenerated mip-maps. While not viable for real-time
     // updates it's still somewhat interactive for minification factors <=8 on typical resolutions.

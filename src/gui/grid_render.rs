@@ -1,15 +1,18 @@
-﻿use eframe::egui;
+﻿use std::cell::RefCell;
+use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
 };
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::collections::BTreeMap;
+use std::ops::Deref;
 use std::sync::Arc;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
-use ulam_leapers::grid::{FrozenGrid, GridPoint, GridRect};
+use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, GridPoint, GridRect};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
+use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +42,7 @@ pub struct GridRenderer {
     colors: Vec<Color32>,
     mipmaps_by_minification_factor: BTreeMap<Pow2, Array2D<Color32>>,
     mipmap_bounds: GridRect,
+    cache: Option<RefCell<LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>>>,
 }
 
 impl GridRenderer {
@@ -55,6 +59,15 @@ impl GridRenderer {
             colors: colors.to_vec(),
             mipmaps_by_minification_factor: Default::default(),
             mipmap_bounds: GridRect::with_start_end(GridPoint::new(0, 0), GridPoint::new(0, 0)),
+            cache: None,
+        }
+    }
+
+    pub fn set_cache_size(&mut self, max_cache_size: usize) {
+        if let Some(cache) = &mut self.cache {
+            cache.borrow_mut().set_max_memory_cost(max_cache_size);
+        } else {
+            self.cache = Some(RefCell::new(LockStepCache::new(max_cache_size)));
         }
     }
 
@@ -70,6 +83,9 @@ impl GridRenderer {
         );
 
         self.colors = colors.to_vec();
+        if let Some(cache) = &mut self.cache {
+            cache.borrow_mut().invalidate_all();
+        }
     }
 
     pub fn has_mipmaps(&self) -> bool {
@@ -113,35 +129,57 @@ impl GridRenderer {
                 a: c.a() as u32,
             })
             .collect::<Vec<_>>();
-        self.grid.sample_range2d_small_zoom_out_map_par(
-            bounds,
-            factor,
-            self.colors[0],
-            || AccCol {
-                r: 0,
-                g: 0,
-                b: 0,
-                a: 0,
-            },
-            |acc, v| {
-                // SAFETY: We can't guarantee the safety here,
-                //         the caller must make sure there is enough colors.
-                //         However, this is a hot loop, we need it for speed.
-                let color = unsafe { colors_u32.get_unchecked(v.index()) };
-                acc.r += color.r;
-                acc.g += color.g;
-                acc.b += color.b;
-                acc.a += color.a;
-            },
-            |acc, width, height| {
-                let count = Pow2::new(width * height);
-                Color32::from_rgb(
-                    floor_div(acc.r, count) as u8,
-                    floor_div(acc.g, count) as u8,
-                    floor_div(acc.b, count) as u8,
-                )
-            },
-        )
+
+        let fzero = || AccCol {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        };
+
+        let freduce = |acc: &mut AccCol, v: PlayerId| {
+            // SAFETY: We can't guarantee the safety here,
+            //         the caller must make sure there is enough colors.
+            //         However, this is a hot loop, we need it for speed.
+            let color = unsafe { colors_u32.get_unchecked(v.index()) };
+            acc.r += color.r;
+            acc.g += color.g;
+            acc.b += color.b;
+            acc.a += color.a;
+        };
+
+        let ffinalize = |acc: AccCol, width: usize, height: usize| {
+            let count = Pow2::new(width * height);
+            Color32::from_rgb(
+                floor_div(acc.r, count) as u8,
+                floor_div(acc.g, count) as u8,
+                floor_div(acc.b, count) as u8,
+            )
+        };
+
+        if let Some(cache) = &self.cache {
+            let res = self.grid.sample_range2d_small_zoom_out_cached_map_par(
+                &*cache.borrow(),
+                bounds,
+                factor,
+                self.colors[0],
+                fzero,
+                freduce,
+                ffinalize,
+            );
+            // We must call update to settle new cached values.
+            cache.borrow_mut().update();
+            res
+        } else {
+            self.grid.sample_range2d_small_zoom_out_map_par(
+                bounds,
+                factor,
+                self.colors[0],
+                fzero,
+                freduce,
+                ffinalize,
+            )
+        }
     }
 
     fn render_to_rgba_samples_for_minification_using_mipmaps(
@@ -199,6 +237,7 @@ impl GridRenderer {
     pub fn render_to_rgba_samples(&self, bounds: &GridRect, zoom: Zoom) -> Array2D<Color32> {
         match zoom {
             Magnification(_factor) => {
+                let colors = &self.colors;
                 self.grid
                     // We use sample_range2d_small_zoom_out_map_par with no minification
                     // because it's parallelized.
@@ -210,7 +249,7 @@ impl GridRenderer {
                         Pow2::new(1),
                         self.colors[0],
                         || Color32::from_rgb(0, 0, 0),
-                        |acc, v| *acc = self.colors[v.index()],
+                        |acc, v| *acc = colors[v.index()],
                         |acc, _width, _height| acc,
                     )
             }
