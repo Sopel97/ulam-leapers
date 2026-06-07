@@ -3,6 +3,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+pub trait CacheEnabled {
+    type CacheType;
+    type KeyType;
+    type EntryType;
+    
+    fn make_cache(max_memory_cost: usize) -> Self::CacheType;
+}
+
 struct Entry<V> {
     computation_cost: usize,
     memory_cost: usize,

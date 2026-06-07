@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::grid::{GridPoint, GridRect, GridVector};
+use ulam_leapers::grid::{FrozenGridSampler, GridPoint, GridRect, GridVector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
 
@@ -406,6 +406,12 @@ pub struct SimulationCreator {
     worker_results: mpsc::Receiver<SimulationCreatorWorkerResult>,
 }
 
+impl Default for SimulationCreator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimulationCreator {
     pub fn new() -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
@@ -464,9 +470,14 @@ impl SimulationCreator {
                                 (shells * 2 + 1) as i32,
                                 (shells * 2 + 1) as i32,
                             );
-                            let samples: Array2D<Color32> =
-                                frozen_grid
-                                    .sample_range2d_map(&bounds, colors[0], |v| colors[v.index()]);
+
+                            let fzero = || Color32::from_rgb(0, 0, 0);
+                            let freduce = |acc: &mut Color32, v: PlayerId| *acc = colors[v.index()];
+                            let ffinalize = |acc, (_width, _height)| acc;
+                            let sampler = FrozenGridSampler::new(
+                                &frozen_grid, bounds, colors[0], fzero, freduce, ffinalize,
+                            );
+                            let samples: Array2D<Color32> = sampler.par_sample();
                             let image = ColorImage::new(
                                 [samples.width(), samples.height()],
                                 samples.as_flat_slice().to_vec(),

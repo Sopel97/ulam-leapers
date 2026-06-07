@@ -1,15 +1,15 @@
-﻿use std::cell::RefCell;
-use eframe::egui;
+﻿use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
 };
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
-use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, GridPoint, GridRect};
+use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
@@ -148,7 +148,7 @@ impl GridRenderer {
             acc.a += color.a;
         };
 
-        let ffinalize = |acc: AccCol, width: usize, height: usize| {
+        let ffinalize = |acc: AccCol, (width, height): (usize, usize)| {
             let count = Pow2::new(width * height);
             Color32::from_rgb(
                 floor_div(acc.r, count) as u8,
@@ -157,28 +157,22 @@ impl GridRenderer {
             )
         };
 
+        let sampler = FrozenGridSampler::new_with_minification(
+            &self.grid,
+            *bounds,
+            factor,
+            self.colors[0],
+            fzero,
+            freduce,
+            ffinalize,
+        );
         if let Some(cache) = &self.cache {
-            let res = self.grid.sample_range2d_small_zoom_out_cached_map_par(
-                &*cache.borrow(),
-                bounds,
-                factor,
-                self.colors[0],
-                fzero,
-                freduce,
-                ffinalize,
-            );
+            let res = sampler.par_sample_with_cache(&*cache.borrow());
             // We must call update to settle new cached values.
             cache.borrow_mut().update();
             res
         } else {
-            self.grid.sample_range2d_small_zoom_out_map_par(
-                bounds,
-                factor,
-                self.colors[0],
-                fzero,
-                freduce,
-                ffinalize,
-            )
+            sampler.par_sample()
         }
     }
 
@@ -238,20 +232,15 @@ impl GridRenderer {
         match zoom {
             Magnification(_factor) => {
                 let colors = &self.colors;
-                self.grid
-                    // We use sample_range2d_small_zoom_out_map_par with no minification
-                    // because it's parallelized.
-                    // Not actually faster in our current case ona a 1080p window,
-                    // however it may be faster on larger displays or with differently shaped chunks.
-                    // Should not be meaningfully slower in fast cases and will speed up slow cases.
-                    .sample_range2d_small_zoom_out_map_par(
-                        bounds,
-                        Pow2::new(1),
-                        self.colors[0],
-                        || Color32::from_rgb(0, 0, 0),
-                        |acc, v| *acc = colors[v.index()],
-                        |acc, _width, _height| acc,
-                    )
+                let fzero = || Color32::from_rgb(0, 0, 0);
+                let freduce = |acc: &mut Color32, v: PlayerId| *acc = colors[v.index()];
+                let ffinalize = |acc, (_width, _height)| acc;
+                let sampler = FrozenGridSampler::new(
+                    &self.grid, *bounds, colors[0], fzero, freduce, ffinalize,
+                );
+                // Do not use a cache for magnification because it's cheap to
+                // compute and the results take more memory than the probed chunk cells.
+                sampler.par_sample()
             }
             Minification(factor) => {
                 if self.has_mipmap(factor) {
