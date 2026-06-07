@@ -3,3 +3,4 @@ pub mod memory;
 pub mod pow2;
 pub mod time;
 pub mod bitstream;
+pub mod cache;
