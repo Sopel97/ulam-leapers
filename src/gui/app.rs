@@ -2,7 +2,7 @@
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Ui};
-use eframe::{Frame, egui};
+use eframe::{egui, Frame};
 use std::path::PathBuf;
 
 #[derive(Default)]

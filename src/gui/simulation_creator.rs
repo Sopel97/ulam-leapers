@@ -4,11 +4,11 @@ use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{
-    Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
-    TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b, pos2,
+    pos2, Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider,
+    TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b,
 };
 use eframe::epaint::TextureHandle;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;

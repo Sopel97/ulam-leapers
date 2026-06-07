@@ -6,14 +6,13 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
-use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
+use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {

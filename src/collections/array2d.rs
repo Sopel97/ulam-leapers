@@ -404,8 +404,8 @@ impl<T> MutSlice2D<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::AssertUnwindSafe;
     use super::*;
+    use std::panic::AssertUnwindSafe;
 
     #[derive(Clone, Copy, Eq, PartialEq, Debug, Ord, PartialOrd)]
     struct NonzeroDefault(u32);

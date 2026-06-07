@@ -1,6 +1,4 @@
-﻿use std::mem;
-
-// Making this a type parameter of LittleEndianBitReader
+﻿// Making this a type parameter of LittleEndianBitReader
 // is not feasible due to lack of duck typing.
 // This is unfortunate, because due to `read_bits_as_u64` it requires `WORD_BITS >= 64` to compile.
 // A generic implementation would allow us to create specializations based on the word size
