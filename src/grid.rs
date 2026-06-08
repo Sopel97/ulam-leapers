@@ -1051,7 +1051,7 @@ impl ReadFrom for Box<dyn Chunker> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compression::ZstdCompression;
+    use crate::compression::zstd::ZstdCompression;
     use std::panic::AssertUnwindSafe;
 
     fn point(x: i32, y: i32) -> GridPoint {

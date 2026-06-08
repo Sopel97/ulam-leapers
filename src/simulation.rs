@@ -1,5 +1,4 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
-use crate::compression::ZstdCompression;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
@@ -11,6 +10,7 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use crate::compression::zstd::ZstdCompression;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
