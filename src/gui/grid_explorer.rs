@@ -1,10 +1,10 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{default_player_colors, GridRenderer, Zoom};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui};
+use eframe::egui::{Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
-use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 pub enum SaveState {
     NotSaved,
@@ -77,6 +77,16 @@ impl Subwindow for GridExplorer {
                 });
 
             let rect = ui.clip_rect(); // Full canvas
+
+            // For the caching to be effective there needs to space for at least a few
+            // framebuffers worth of data.
+            const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
+            let framebuffer_size =
+                rect.width() as usize * rect.height() as usize * size_of::<Color32>();
+            self.grid_renderer
+                .lock()
+                .unwrap()
+                .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
             self.grid_view_controls.update_from_canvas_events(ui, &rect);
 
@@ -142,10 +152,6 @@ impl GridExplorer {
             &finalized_simulation,
             default_player_colors().as_slice(),
         )));
-
-        // TODO: configurable by user. 
-        //       But needs to be at least a few times larger than the framebuffer to make any sense.
-        grid_renderer.lock().unwrap().set_cache_size(1024 * 1024 * 128);
 
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
