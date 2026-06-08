@@ -21,6 +21,11 @@ pub enum Zoom {
 }
 use Zoom::*;
 
+pub enum UseCache {
+    Yes,
+    No
+}
+
 pub fn default_player_colors() -> Vec<Color32> {
     vec![
         Color32::WHITE,
@@ -103,6 +108,7 @@ impl GridRenderer {
         &self,
         bounds: &GridRect,
         factor: Pow2,
+        use_cache: UseCache,
     ) -> Array2D<Color32> {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
@@ -165,7 +171,7 @@ impl GridRenderer {
             freduce,
             ffinalize,
         );
-        if let Some(cache) = &self.cache {
+        if matches!(use_cache, UseCache::Yes) && let Some(cache) = &self.cache {
             let res = sampler.par_sample_with_cache(&*cache.borrow());
             // We must call update to settle new cached values.
             cache.borrow_mut().update();
@@ -245,7 +251,7 @@ impl GridRenderer {
                 if self.has_mipmap(factor) {
                     self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
                 } else {
-                    self.render_to_rgba_samples_for_minification_direct(bounds, factor)
+                    self.render_to_rgba_samples_for_minification_direct(bounds, factor, UseCache::Yes)
                 }
             }
         }
@@ -396,6 +402,8 @@ impl GridRenderer {
 
     // Private function, parameters are assumed to be correct.
     fn make_mipmap_from_scratch(&self, bounds: &GridRect, minification: Pow2) -> Array2D<Color32> {
-        self.render_to_rgba_samples(bounds, Minification(minification))
+        // We do not want to pollute the cache. We are likely to generate more data
+        // than can be cached, in which case it would be equal to complete cache invalidation.
+        self.render_to_rgba_samples_for_minification_direct(bounds, minification, UseCache::No)
     }
 }
