@@ -614,6 +614,10 @@ impl Simulation {
             }
             job_tx.send(Job::Place(placements)).unwrap();
 
+            // Update the farthest cell because it may have changed significantly during
+            // the simulation step.
+            let farthest_cell = self.farthest_player_spiral_position();
+
             // Compress the grid every few steps to reduce memory usage.
             // We don't want to be doing it too often because it requires a whole chunk to be
             // outside the active area and the chunks are large; reduces redundant searches
