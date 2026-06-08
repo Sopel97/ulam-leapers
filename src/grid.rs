@@ -325,6 +325,9 @@ pub trait Chunker: Send + Sync {
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
     fn minimum_chunk_alignment(&self) -> usize;
     fn minimum_chunk_extent(&self) -> usize;
+    fn minimum_covered_shells(&self) -> usize;
+    fn average_cell_count(&self) -> usize;
+    fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize;
 
     fn as_standard_chunker(&self) -> Option<StandardChunker>;
 }
@@ -377,6 +380,24 @@ impl Chunker for SquareChunker {
         self.size.into()
     }
 
+    fn minimum_covered_shells(&self) -> usize {
+        self.size.into()
+    }
+
+    fn average_cell_count(&self) -> usize {
+        self.size.as_usize() * self.size.as_usize()
+    }
+
+    fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize {
+        let chunk_size = self.size.as_usize() * self.size.as_usize();
+        // Corners in extreme case
+        if steps < 4 {
+            steps * chunk_size
+        } else {
+            (4 + (steps - 4).div_ceil(self.size.as_usize())) * chunk_size
+        }
+    }
+
     fn as_standard_chunker(&self) -> Option<StandardChunker> {
         StandardChunker::try_from(self).ok()
     }
@@ -391,16 +412,20 @@ pub struct Grid<T> {
 }
 
 impl<T: Default + Send + Sync> Grid<T> {
-    pub fn freeze(&mut self, region: &GridRect) {
+    /// Freezes at most `n` chunks in the given `region`.
+    /// Returns the number of chunks frozen.
+    pub fn freeze_n(&mut self, region: &GridRect, n: usize) -> usize {
         // While amortized this function won't do much it may be called on many chunks
         // at the time. There is no good way to change that without possibly blowing
         // up memory usage due to the number of uncompressed chunks growing.
         let to_freeze = self
             .active_chunks
             .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
+            .take(n)
             // Not sure if there's a better way,
             // extract_if doesn't produce a par-compatible iterator.
             .collect::<Vec<_>>();
+
         let frozen = to_freeze
             .into_par_iter()
             .map(|entry| {
@@ -409,20 +434,30 @@ impl<T: Default + Send + Sync> Grid<T> {
                 (origin, chunk.compress(&self.compression))
             })
             .collect::<Vec<_>>();
+        let count = frozen.len();
+
         // Collecting to a vector is not great but should be fine. Other ways of converting
         // parallel processing to sequential are annoying.
         for (origin, chunk) in frozen {
             self.frozen_chunks_memory_usage += chunk.memory_usage();
             self.frozen_chunks.insert(origin, chunk);
         }
+
+        count
     }
 
-    pub fn freeze_all(&mut self) {
+    /// Returns the number of chunks frozen.
+    pub fn freeze(&mut self, region: &GridRect) -> usize {
+        self.freeze_n(region, usize::MAX)
+    }
+
+    /// Returns the number of chunks frozen.
+    pub fn freeze_all(&mut self) -> usize {
         // TODO: Remove this hack. We can't represent the full range properly.
         self.freeze(&GridRect::with_start_end(
             GridPoint::new(i32::MIN, i32::MIN),
             GridPoint::new(i32::MAX, i32::MAX),
-        ));
+        ))
     }
 }
 
@@ -439,6 +474,10 @@ impl<T> Grid<T> {
     pub fn is_chunk_containing_frozen(&self, point: &GridPoint) -> bool {
         let origin = self.chunker.resolve_chunk_origin(point);
         self.is_chunk_at_frozen(&origin)
+    }
+
+    pub fn chunker(&self) -> &Box<dyn Chunker + Send + Sync> {
+        &self.chunker
     }
 }
 

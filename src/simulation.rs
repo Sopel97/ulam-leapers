@@ -5,11 +5,11 @@ use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
 use crate::piece::LeaperAttacks;
 use crate::util::pow2::Pow2;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
@@ -150,6 +150,14 @@ pub trait Game {
             .iter()
             .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
             .min()
+            .unwrap()
+    }
+
+    fn farthest_player_spiral_position(&self) -> UlamSpiralPoint {
+        self.players()
+            .iter()
+            .map(|p| p.cursor.spiral_position())
+            .max()
             .unwrap()
     }
 
@@ -490,14 +498,27 @@ impl Simulation {
             return Ok(SimulationLimit::CompleteShells);
         }
 
-        const STEP_SIZE: usize = 1024 * 16;
-        const COMPRESSION_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
-        const MEMORY_USAGE_INTERVAL_STEPS: usize = 1024 * 1024 / STEP_SIZE;
-        // Ultimately determines how long compression stalls we can amortize.
-        const NUM_PLACEMENT_BUFFERS: usize = 64;
+        const TURNS_PER_STEP: usize = 1024 * 16;
+        // Limit this to have some other cell based processing.
+        const MAX_CELLS_PER_STEP: usize = 1024 * 256;
+        // We don't want to check for `MAX_STEP_CELLS` being reached every turn
+        // because it's not free. This should be safe aside from most extreme cases.
+        const TURNS_PER_STEP_MINIBATCH: usize = MAX_CELLS_PER_STEP / 256;
+        // We use cells instead of steps as the unit here because the number of cells
+        // created in a single step can very wildly, depending on the simulation parameters.
+        const COMPRESSION_INTERVAL_CELLS: usize = 1024 * 1024;
+        const MEMORY_USAGE_INTERVAL_CELLS: usize = 1024 * 1024;
+        // We attempt to amortize chunk freezing so we shouldn't need very many placement buffers.
+        const NUM_PLACEMENT_BUFFERS: usize = 8;
 
         // We transfer ownership of the grid to the worker thread for the time of processing.
         let mut grid = self.grid.take().unwrap();
+        let average_cell_count_per_chunk = grid.chunker().average_cell_count();
+        let maximum_cells_created_between_compressions = grid
+            .chunker()
+            .maximum_cells_created_by_spiral_steps(COMPRESSION_INTERVAL_CELLS);
+        // We amortize compression, but we can still benefit from some available concurrency in the system.
+        let minimum_compression_batch = rayon::current_num_threads() / 2;
         let player_ids = self
             .players
             .iter()
@@ -508,7 +529,7 @@ impl Simulation {
 
         enum Job {
             Place(Vec<Vec<GridPoint>>),
-            Compress(GridRect),
+            Compress(GridRect, usize),
             MemoryUsage,
             Stop,
         }
@@ -518,7 +539,7 @@ impl Simulation {
             let placements: Vec<Vec<GridPoint>> = (0..self.players.len() + 1)
                 .map(|i| match i {
                     0 => Vec::new(),
-                    _ => Vec::with_capacity(STEP_SIZE),
+                    _ => Vec::with_capacity(TURNS_PER_STEP),
                 })
                 .collect();
             buffer_tx.send(placements).unwrap();
@@ -549,8 +570,8 @@ impl Simulation {
 
                         buffer_tx.send(placements).unwrap();
                     }
-                    Job::Compress(region) => {
-                        grid.freeze(&region);
+                    Job::Compress(region, n) => {
+                        grid.freeze_n(&region, n);
                     }
                     Job::MemoryUsage => {
                         let mut grid_memory_usage_worker = grid_memory_usage_worker.lock().unwrap();
@@ -566,16 +587,30 @@ impl Simulation {
         });
 
         let mut progress = SimulationProgress::default();
-        let mut step = 0;
         let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX) - self.simulated_turns;
         let mut hit_limit = SimulationLimit::Turns;
+        let mut last_compression_farthest_cell = UlamSpiralPoint::new(0);
+        let mut last_memory_usage_farthest_cell = UlamSpiralPoint::new(0);
         while turns_to_simulate > 0 {
-            let turns_to_simulate_this_step = min(STEP_SIZE, turns_to_simulate);
+            let turns_to_simulate_this_step = min(TURNS_PER_STEP, turns_to_simulate);
+            let farthest_cell = self.farthest_player_spiral_position();
 
             let mut placements = get_clear_buffer();
-            for _ in 0..turns_to_simulate_this_step {
-                // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
-                self.simulate_single_turn(placements.as_mut_slice());
+            for bt in (0..turns_to_simulate_this_step).step_by(TURNS_PER_STEP_MINIBATCH) {
+                let turns_to_simulate_this_minibatch =
+                    min(TURNS_PER_STEP_MINIBATCH, turns_to_simulate_this_step - bt);
+                for _ in 0..turns_to_simulate_this_minibatch {
+                    // Collect all grid placements first, then we can set them all more efficiently at the end of the step.
+                    self.simulate_single_turn(placements.as_mut_slice());
+                }
+                turns_to_simulate -= turns_to_simulate_this_minibatch;
+
+                // If we advanced by an abnormally high amount of cells then break early
+                // to allow other important checks to be made.
+                let now_farthest_cell = self.farthest_player_spiral_position();
+                if (now_farthest_cell - farthest_cell) as usize > MAX_CELLS_PER_STEP {
+                    break;
+                }
             }
             job_tx.send(Job::Place(placements)).unwrap();
 
@@ -583,13 +618,46 @@ impl Simulation {
             // We don't want to be doing it too often because it requires a whole chunk to be
             // outside the active area and the chunks are large; reduces redundant searches
             // for no longer active chunks.
-            if step % COMPRESSION_INTERVAL_STEPS == COMPRESSION_INTERVAL_STEPS - 1
+            //
+            // Normally, due to the behavior of the grid, it would lead to exceedingly
+            // longer pause times as the simulation progresses if we always froze all
+            // eligible chunks. We amortize this behavior by estimating how many chunks
+            // we need to freeze every `COMPRESSION_INTERVAL_CELLS` to eventually catch up
+            // with the chunks being newly created.
+            // When close to the memory limit this amortization scheme is overriden.
+            if farthest_cell >= last_compression_farthest_cell + COMPRESSION_INTERVAL_CELLS
                 && let Some(region) = self.grid_region_past_modification()
             {
-                job_tx.send(Job::Compress(region)).unwrap();
+                let new_cells = farthest_cell - last_compression_farthest_cell;
+                let n = if limits.memory.is_some_and(|limit| {
+                    let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
+                    // Do some best-effort estimation on how much memory can be allocated
+                    // before the next check. Early on this will severely overestimate
+                    // due to small number of chunks in a straight line being traversed,
+                    // but at the same time it shouldn't matter in those cases because
+                    // overall memory usage is low at the beginning.
+                    // Ideally we would use the chunker here with `new_cell` but the `grid`
+                    // is not available at this point.
+                    let estimated_new_memory_before_next_check =
+                        maximum_cells_created_between_compressions * size_of::<PlayerId>();
+                    total + estimated_new_memory_before_next_check >= limit
+                }) {
+                    // No limit, force all eligible chunks to be frozen.
+                    usize::MAX
+                } else {
+                    // factor of 2 to overshoot a little
+                    max(
+                        minimum_compression_batch,
+                        (new_cells as usize / average_cell_count_per_chunk + 1) * 2,
+                    )
+                };
+
+                job_tx.send(Job::Compress(region, n)).unwrap();
+
+                last_compression_farthest_cell = farthest_cell;
             }
 
-            if step % MEMORY_USAGE_INTERVAL_STEPS == MEMORY_USAGE_INTERVAL_STEPS - 1 {
+            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
                 progress.memory_usage = total;
@@ -600,6 +668,8 @@ impl Simulation {
                 }
 
                 job_tx.send(Job::MemoryUsage).unwrap();
+
+                last_memory_usage_farthest_cell = farthest_cell;
             }
 
             progress.complete_shells = self.complete_shells() as usize;
@@ -621,9 +691,6 @@ impl Simulation {
             }
 
             self.update_forbiddances_origin();
-
-            turns_to_simulate -= turns_to_simulate_this_step;
-            step += 1;
 
             progress.turns = self.simulated_turns;
 

@@ -42,6 +42,22 @@ impl UlamSpiralPoint {
     }
 }
 
+impl Sub for UlamSpiralPoint {
+    type Output = i64;
+
+    fn sub(self, rhs: UlamSpiralPoint) -> i64 {
+        self.0 - rhs.0
+    }
+}
+
+impl Add<usize> for UlamSpiralPoint {
+    type Output = UlamSpiralPoint;
+
+    fn add(self, rhs: usize) -> UlamSpiralPoint {
+        UlamSpiralPoint(self.0 + rhs as i64)
+    }
+}
+
 impl<T> Point2D<T> {
     pub fn new(x: T, y: T) -> Point2D<T> {
         Point2D::<T> { x, y }
