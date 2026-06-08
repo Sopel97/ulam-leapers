@@ -1,4 +1,6 @@
-﻿// Making this a type parameter of LittleEndianBitReader
+﻿use crate::util::bytestream::{ByteReader, ByteReaderError};
+
+// Making this a type parameter of LittleEndianBitReader
 // is not feasible due to lack of duck typing.
 // This is unfortunate, because due to `read_bits_as_u64` it requires `WORD_BITS >= 64` to compile.
 // A generic implementation would allow us to create specializations based on the word size
@@ -32,7 +34,7 @@ impl<'a> LittleEndianBitReader<'a> {
     /// Inlining is suggested because intended usage is with a constant number of bits,
     /// in which case some branches can be omitted in most cases.
     #[inline]
-    fn read_bits_as_u64(&mut self, bits: usize) -> u64 {
+    pub fn read_bits_as_u64(&mut self, bits: usize) -> u64 {
         const { assert!(WORD_BITS >= 64) }
         assert!(
             bits <= WORD_BITS,
@@ -66,6 +68,19 @@ impl<'a> LittleEndianBitReader<'a> {
         }
 
         res
+    }
+    
+    pub fn is_byte_aligned(&self) -> bool {
+        self.prefill_low_bits % 8 == 0
+    }
+
+    pub fn try_into_byte_reader(self) -> Option<ByteReader<'a>> {
+        if self.prefill_low_bits % 8 != 0 {
+            None
+        } else {
+            let actual_offset = self.offset - WORD_BYTES - (self.prefill_low_bits / 8);
+            Some(ByteReader::new(&self.data[actual_offset..]))
+        }
     }
 }
 

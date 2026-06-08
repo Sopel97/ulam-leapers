@@ -50,6 +50,34 @@ impl<'a> ByteReader<'a> {
     impl_try_read_le!(i32, try_read_i32);
     impl_try_read_le!(i64, try_read_i64);
 
+    // Panics if n > 8.
+    pub fn try_read_bytes_as_u64(&mut self, n: usize) -> Result<u64, ByteReaderError> {
+        assert!(n <= 8);
+
+        if self.cursor + n > self.data.len() {
+            return Err(ByteReaderError::UnexpectedEndOfStream);
+        }
+
+        let mut res = 0u64;
+        for i in 0..n {
+            res |= (self.data[self.cursor + i] as u64) << (8 * i as u64);
+        }
+        
+        self.cursor += n;
+        
+        Ok(res)
+    }
+
+    pub fn try_read_slice(&mut self, n: usize) -> Result<&'a [u8], ByteReaderError> {
+        if self.cursor + n > self.data.len() {
+            return Err(ByteReaderError::UnexpectedEndOfStream);
+        }
+
+        let res = &self.data[self.cursor..self.cursor + n];
+        self.cursor += n;
+        Ok(res)
+    }
+
     /// Skips `cursor` by `n` bytes iff the positions after skip would be valid.
     /// All cursor positions within the `data` slice are valid, as well
     /// as the one past the end position.
@@ -64,6 +92,10 @@ impl<'a> ByteReader<'a> {
 
     pub fn is_eof(&self) -> bool {
         self.cursor >= self.data.len()
+    }
+    
+    pub fn cursor(&self) -> usize {
+        self.cursor
     }
 }
 

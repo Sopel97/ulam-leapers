@@ -1,4 +1,5 @@
 ﻿pub mod zstd;
+pub mod inspect;
 
 use crate::compression::zstd::ZstdCompression;
 use std::fmt;

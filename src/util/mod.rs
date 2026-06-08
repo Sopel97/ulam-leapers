@@ -5,3 +5,4 @@ pub mod time;
 pub mod bitstream;
 pub mod cache;
 pub mod blit;
+pub mod bytestream;
