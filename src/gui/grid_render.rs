@@ -81,6 +81,7 @@ impl SampleCollector for AvgColorCollector {
     type AccumulatorType = AccCol;
     type OutputType = Color32;
 
+    #[inline(always)]
     fn zero(&self) -> Self::AccumulatorType {
         AccCol {
             r: 0,
@@ -90,6 +91,7 @@ impl SampleCollector for AvgColorCollector {
         }
     }
 
+    #[inline(always)]
     fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
         // SAFETY: We can't guarantee the safety here,
         //         the caller must make sure there is enough colors.
@@ -101,6 +103,7 @@ impl SampleCollector for AvgColorCollector {
         acc.a += color.a;
     }
 
+    #[inline(always)]
     fn finalize(
         &self,
         acc: Self::AccumulatorType,
