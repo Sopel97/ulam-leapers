@@ -386,12 +386,15 @@ impl GridViewControls {
     fn ui(&mut self, ui: &mut Ui, save_state: &mut SaveState) {
         let turns = self.finalized_simulation.simulated_turns();
         let complete_shells = self.finalized_simulation.complete_shells();
+        let side_cells = complete_shells.max(1) as usize * 2 - 1;
+        let cells = side_cells * side_cells;
         let memory_usage = self.finalized_simulation.memory_usage();
         let player_count = self.finalized_simulation.player_count();
 
         ui.heading("Info");
         ui.label(format!("Turns: {}M", turns / 1000 / 1000));
         ui.label(format!("Complete shells: {}", complete_shells));
+        ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
         ui.label(format!("Size in memory: {}MiB", memory_usage / 1024 / 1024));
         ui.label(format!(
             "Pointer: {}, {}",
