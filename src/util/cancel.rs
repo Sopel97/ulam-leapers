@@ -23,7 +23,7 @@ impl CancellationToken {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
-    pub fn is_cancelled(&self) -> bool {
+    pub fn is_canceled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
 }

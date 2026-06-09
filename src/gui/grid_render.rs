@@ -6,7 +6,9 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{
     ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect, SampleCollector,
@@ -14,6 +16,7 @@ use ulam_leapers::grid::{
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
+use ulam_leapers::util::cancel::CancellationToken;
 use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,14 +41,61 @@ pub fn default_player_colors() -> Vec<Color32> {
 }
 
 type CacheType = LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>;
+type MipmapStorageType = BTreeMap<Pow2, Array2D<Color32>>;
 
 pub struct GridRenderer {
     grid: Arc<FrozenGrid<PlayerId>>,
     highest_player_id: PlayerId,
     colors: Vec<Color32>,
-    mipmaps_by_minification_factor: BTreeMap<Pow2, Array2D<Color32>>,
-    mipmap_bounds: GridRect,
+    // We don't have a good way to collect this job, but it's generally not a problem.
+    // At worst we have a completed but unjoined thread handle.
+    mipmap_generator_job: Option<Arc<MipmapGenerationJobHandle>>,
+    mipmaps_by_minification_factor: Arc<Mutex<MipmapStorageType>>,
+    mipmap_bounds: Arc<Mutex<GridRect>>,
     cache: Option<RefCell<CacheType>>,
+}
+
+pub struct MipmapGenerationJobHandle {
+    worker: Option<JoinHandle<()>>,
+    cancellation_token: CancellationToken,
+    progress: Arc<Mutex<(usize, usize)>>,
+    is_finished: Arc<AtomicBool>,
+}
+
+impl Drop for MipmapGenerationJobHandle {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
+        if let Some(jh) = self.worker.take() {
+            jh.join().unwrap()
+        }
+    }
+}
+
+impl MipmapGenerationJobHandle {
+    pub fn new(worker: JoinHandle<()>, cancellation_token: CancellationToken, progress: Arc<Mutex<(usize, usize)>>, is_finished: Arc<AtomicBool>) -> Self {
+        Self {
+            worker: Some(worker),
+            cancellation_token,
+            progress,
+            is_finished,
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.is_finished.load(Ordering::Acquire)
+    }
+
+    pub fn progress(&self) -> (usize, usize) {
+        *self.progress.lock().unwrap()
+    }
+
+    pub fn cancel(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    pub fn is_canceled(&self) -> bool {
+        self.cancellation_token.is_canceled()
+    }
 }
 
 #[repr(align(16))]
@@ -152,8 +202,9 @@ impl GridRenderer {
             grid: sim.grid(),
             highest_player_id,
             colors: colors.to_vec(),
+            mipmap_generator_job: None,
             mipmaps_by_minification_factor: Default::default(),
-            mipmap_bounds: GridRect::with_start_end(GridPoint::new(0, 0), GridPoint::new(0, 0)),
+            mipmap_bounds: Arc::from(Mutex::new(GridRect::with_start_end(GridPoint::new(0, 0), GridPoint::new(0, 0)))),
             cache: None,
         }
     }
@@ -183,16 +234,20 @@ impl GridRenderer {
         }
     }
 
+    pub fn can_set_colors(&self) -> bool {
+        !self.has_mipmaps() && self.mipmap_generator_job.is_none()
+    }
+
     pub fn has_mipmaps(&self) -> bool {
-        !self.mipmaps_by_minification_factor.is_empty()
+        !self.mipmaps_by_minification_factor.lock().unwrap().is_empty()
     }
 
     pub fn mipmap_bounds(&self) -> GridRect {
-        self.mipmap_bounds
+        *self.mipmap_bounds.lock().unwrap()
     }
 
     pub fn highest_mipmap_minification_factor(&self) -> Option<Pow2> {
-        self.mipmaps_by_minification_factor.keys().max().copied()
+        self.mipmaps_by_minification_factor.lock().unwrap().keys().max().copied()
     }
 
     fn make_sampler_for_minification(
@@ -246,10 +301,12 @@ impl GridRenderer {
             panic!("Mipmaps cannot handle this minification factor.");
         }
 
-        assert!(self.mipmap_bounds.is_aligned_to_pow2(factor));
+        let mipmap_bounds = self.mipmap_bounds();
+
+        assert!(mipmap_bounds.is_aligned_to_pow2(factor));
 
         // We convert the bounds into local coordinates (after minification).
-        let mut src_bounds = self.mipmap_bounds;
+        let mut src_bounds = mipmap_bounds;
         src_bounds.start.x = floor_div(src_bounds.start.x, factor);
         src_bounds.start.y = floor_div(src_bounds.start.y, factor);
         src_bounds.end.x = floor_div(src_bounds.end.x, factor);
@@ -268,7 +325,11 @@ impl GridRenderer {
             dst_bounds.height() as usize,
             CACHE_LINE_SIZE,
         );
-        let mipmap = self.mipmaps_by_minification_factor.get(&factor).unwrap();
+
+        // We could maybe make this lock shorter but who cares. This struct is not supposed
+        // to be used concurrently anyway.
+        let mipmaps = self.mipmaps_by_minification_factor.lock().unwrap();
+        let mipmap = mipmaps.get(&factor).unwrap();
 
         // Every index within the intersection is valid for both src and dst.
         for y in intersection.start.y..intersection.end.y {
@@ -337,7 +398,7 @@ impl GridRenderer {
     }
 
     pub fn has_mipmap(&self, factor: Pow2) -> bool {
-        self.mipmaps_by_minification_factor.contains_key(&factor)
+        self.mipmaps_by_minification_factor.lock().unwrap().contains_key(&factor)
     }
 
     pub fn estimate_memory_requirement(
@@ -362,11 +423,22 @@ impl GridRenderer {
         pixels_at_lowest_minification * 4 * size_of::<Color32>() / 3
     }
 
-    pub fn generate_mipmaps(&mut self, lowest_minification: Pow2, highest_minification: Pow2) {
+    pub fn generate_mipmaps_async(&mut self, lowest_minification: Pow2, highest_minification: Pow2) -> Arc<MipmapGenerationJobHandle> {
         // We allow a single level, but not less than that.
         assert!(lowest_minification <= highest_minification);
 
-        assert!(self.mipmaps_by_minification_factor.is_empty());
+        if let Some(prev_job) = &self.mipmap_generator_job {
+            assert!(
+                prev_job.is_canceled() || prev_job.is_finished(),
+                "Previous mipmap generation job has neither been canceled nor has finished."
+            );
+            
+            // Cleanup. Should also join the thread on drop. If it was canceled, or it has finished
+            // the thread should have finished too, and be joinable immediately.
+            self.mipmap_generator_job = None;
+        }
+
+        assert!(self.mipmaps_by_minification_factor.lock().unwrap().is_empty());
 
         // Strictly speaking we only require the width and height to be aligned to
         // the higher minification factor, but having this constraint on the whole rect
@@ -381,28 +453,75 @@ impl GridRenderer {
         assert!(grid_bounds.width() > 0);
         assert!(grid_bounds.height() > 0);
 
-        self.mipmap_bounds = grid_bounds;
-        self.mipmaps_by_minification_factor = BTreeMap::new();
+        let is_finished = Arc::new(AtomicBool::new(false));
+        let cancellation_token = CancellationToken::new();
+        let progress = Arc::new(Mutex::new((0usize, 1usize)));
+        let progress_clone = progress.clone();
+        let progress_callback = move |done: usize, total: usize| {
+            *progress_clone.lock().unwrap() = (done, total);
+        };
 
-        self.mipmaps_by_minification_factor.insert(
-            lowest_minification,
-            self.make_mipmap_from_scratch(&grid_bounds, lowest_minification),
-        );
-        let mut prev_minification = lowest_minification;
-        let mut curr_minification = lowest_minification.next();
-        while curr_minification <= highest_minification {
-            // We know it exists because we put it either during the init or during the previous iteration.
-            let prev_mipmap = self
-                .mipmaps_by_minification_factor
-                .get(&prev_minification)
-                .unwrap();
+        let grid_ref = self.grid.clone();
+        let default_color = self.colors[0];
+        let collector = AvgColorCollector::new(self.colors.as_slice());
+        let slf_mipmaps_by_minification_factor = self.mipmaps_by_minification_factor.clone();
+        let slf_mipmap_bounds = self.mipmap_bounds.clone();
 
-            self.mipmaps_by_minification_factor
-                .insert(curr_minification, Self::reduce_mipmap_2x(prev_mipmap));
+        let is_finished_clone = is_finished.clone();
+        let cancellation_token_clone = cancellation_token.clone();
+        let job = move || {
+            let mut mipmaps = MipmapStorageType::new();
 
-            prev_minification = curr_minification;
-            curr_minification = curr_minification.next();
-        }
+            let sampler =
+                FrozenGridSampler::new_with_minification(
+                    grid_ref.as_ref(),
+                    grid_bounds,
+                    lowest_minification,
+                    default_color,
+                    collector,
+                );
+            let master_mipmap = sampler.par_sample_cancellable(cancellation_token_clone.clone(), progress_callback);
+            if master_mipmap.is_none() {
+                return;
+            }
+
+            mipmaps.insert(
+                lowest_minification,
+                master_mipmap.unwrap(),
+            );
+            let mut prev_minification = lowest_minification;
+            let mut curr_minification = lowest_minification.next();
+            while curr_minification <= highest_minification {
+                if cancellation_token_clone.is_canceled() {
+                    return;
+                }
+                
+                // We know it exists because we put it either during the init or during the previous iteration.
+                let prev_mipmap = mipmaps
+                    .get(&prev_minification)
+                    .unwrap();
+
+                mipmaps
+                    .insert(curr_minification, Self::reduce_mipmap_2x(prev_mipmap));
+
+                prev_minification = curr_minification;
+                curr_minification = curr_minification.next();
+            }
+
+            *slf_mipmaps_by_minification_factor.lock().unwrap() = mipmaps;
+            *slf_mipmap_bounds.lock().unwrap() = grid_bounds;
+
+            is_finished_clone.store(true, Ordering::Release);
+        };
+
+        self.mipmap_generator_job = Some(Arc::new(MipmapGenerationJobHandle::new(
+            std::thread::spawn(job),
+            cancellation_token,
+            progress.clone(),
+            is_finished,
+        )));
+        
+        self.mipmap_generator_job.as_ref().unwrap().clone()
     }
 
     fn reduce_mipmap_2x(prev_mipmap: &Array2D<Color32>) -> Array2D<Color32> {

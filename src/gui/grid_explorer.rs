@@ -1,5 +1,5 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors, MipmapGenerationJobHandle};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
@@ -115,6 +115,7 @@ impl Subwindow for GridExplorer {
                     &curr_grid_render_params.bounds,
                     curr_grid_render_params.zoom,
                 ));
+                self.last_grid_render_params = curr_grid_render_params;
             }
 
             if let Some(handle) = &self.grid_render_texture {
@@ -157,6 +158,8 @@ impl GridExplorer {
         let grid_view_controls = GridViewControls {
             finalized_simulation: finalized_simulation.clone(),
             grid_renderer: grid_renderer.clone(),
+            mipmap_generation_job_handle: None,
+
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
             player_colors: default_player_colors()[..=player_count].to_vec(),
@@ -193,6 +196,7 @@ impl GridExplorer {
 pub struct GridViewControls {
     finalized_simulation: Arc<FinalizedSimulation>,
     grid_renderer: Arc<Mutex<GridRenderer>>,
+    mipmap_generation_job_handle: Option<Arc<MipmapGenerationJobHandle>>,
 
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
@@ -427,7 +431,20 @@ impl GridViewControls {
 
         ui.heading("Controls");
 
-        if self.grid_renderer.lock().unwrap().has_mipmaps() {
+        if let Some(job) = &self.mipmap_generation_job_handle {
+            if job.is_finished() {
+                self.mipmap_generation_job_handle = None;
+                ui.label("Mipmaps are generated.");
+            } else {
+                if ui.button("Cancel mipmap generation.").clicked() {
+                    job.cancel();
+                    self.mipmap_generation_job_handle = None;
+                } else {
+                    let progress = job.progress();
+                    ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
+                }
+            }
+        } else if self.grid_renderer.lock().unwrap().has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
@@ -447,19 +464,10 @@ impl GridViewControls {
                 ))
                 .clicked()
             {
-                let timer = std::time::Instant::now();
-                self.grid_renderer
+                self.mipmap_generation_job_handle = Some(self.grid_renderer
                     .lock()
                     .unwrap()
-                    .generate_mipmaps(lowest_minification, highest_minification);
-                let elapsed = timer.elapsed().as_secs_f32();
-                let mipmap_bounds = self.grid_renderer.lock().unwrap().mipmap_bounds();
-                println!(
-                    "Mipmaps of area {}x{} generated in {:?}",
-                    mipmap_bounds.width(),
-                    mipmap_bounds.height(),
-                    elapsed
-                );
+                    .generate_mipmaps_async(lowest_minification, highest_minification));
             }
         }
 
@@ -492,7 +500,7 @@ impl GridViewControls {
         for player_id in 0..=player_count {
             ui.horizontal_wrapped(|ui| {
                 // Disallow color picking after mipmaps have been generated
-                if self.grid_renderer.lock().unwrap().has_mipmaps() {
+                if !self.grid_renderer.lock().unwrap().can_set_colors() {
                     color_picker::show_color(ui, self.player_colors[player_id], vec2(16.0, 16.0));
                 } else {
                     if color_picker::color_edit_button_srgba(

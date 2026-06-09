@@ -886,7 +886,7 @@ where
                     .into_par_iter()
                     .flat_map(|origin| self.grid.frozen_chunks.get(&origin))
                     .for_each(|compressed_chunk| {
-                        if cancellation_token.is_cancelled() {
+                        if cancellation_token.is_canceled() {
                             return;
                         }
 
@@ -968,7 +968,7 @@ where
 
             let res = self.assemble_result(rx);
 
-            if cancellation_token.is_cancelled() {
+            if cancellation_token.is_canceled() {
                 None
             } else {
                 Some(res)
