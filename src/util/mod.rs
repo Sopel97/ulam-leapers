@@ -7,3 +7,4 @@ pub mod cache;
 pub mod blit;
 pub mod bytestream;
 pub mod cancel;
+pub mod sync;
