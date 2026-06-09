@@ -8,7 +8,9 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
-use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect, SampleCollector};
+use ulam_leapers::grid::{
+    ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect, SampleCollector,
+};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
@@ -20,11 +22,6 @@ pub enum Zoom {
     Minification(Pow2),
 }
 use Zoom::*;
-
-pub enum UseCache {
-    Yes,
-    No,
-}
 
 pub fn default_player_colors() -> Vec<Color32> {
     vec![
@@ -104,7 +101,11 @@ impl SampleCollector for AvgColorCollector {
         acc.a += color.a;
     }
 
-    fn finalize(&self, acc: Self::AccumulatorType, (width, height): (usize, usize)) -> Self::OutputType {
+    fn finalize(
+        &self,
+        acc: Self::AccumulatorType,
+        (width, height): (usize, usize),
+    ) -> Self::OutputType {
         let count = Pow2::new(width * height);
         Color32::from_rgb(
             floor_div(acc.r, count) as u8,
@@ -195,11 +196,7 @@ impl GridRenderer {
         &self,
         bounds: &GridRect,
         factor: Pow2,
-    ) -> FrozenGridSampler<
-        '_,
-        PlayerId,
-        AvgColorCollector,
-    > {
+    ) -> FrozenGridSampler<'_, PlayerId, AvgColorCollector> {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
         assert!(
@@ -220,13 +217,10 @@ impl GridRenderer {
         &self,
         bounds: &GridRect,
         factor: Pow2,
-        use_cache: UseCache,
     ) -> Array2D<Color32> {
         let sampler = self.make_sampler_for_minification(bounds, factor);
 
-        if matches!(use_cache, UseCache::Yes)
-            && let Some(cache) = &self.cache
-        {
+        if let Some(cache) = &self.cache {
             let res = sampler.par_sample_with_cache(&*cache.borrow());
             // We must call update to settle new cached values.
             cache.borrow_mut().update();
@@ -293,7 +287,10 @@ impl GridRenderer {
             Magnification(_factor) => {
                 let colors = &self.colors;
                 let sampler = FrozenGridSampler::new(
-                    &self.grid, *bounds, colors[0], LastColorCollector { colors },
+                    &self.grid,
+                    *bounds,
+                    colors[0],
+                    LastColorCollector { colors },
                 );
                 // Do not use a cache for magnification because it's cheap to
                 // compute and the results take more memory than the probed chunk cells.
@@ -303,11 +300,7 @@ impl GridRenderer {
                 if self.has_mipmap(factor) {
                     self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
                 } else {
-                    self.render_to_rgba_samples_for_minification_direct(
-                        bounds,
-                        factor,
-                        UseCache::Yes,
-                    )
+                    self.render_to_rgba_samples_for_minification_direct(bounds, factor)
                 }
             }
         }
@@ -460,6 +453,7 @@ impl GridRenderer {
     fn make_mipmap_from_scratch(&self, bounds: &GridRect, minification: Pow2) -> Array2D<Color32> {
         // We do not want to pollute the cache. We are likely to generate more data
         // than can be cached, in which case it would be equal to complete cache invalidation.
-        self.render_to_rgba_samples_for_minification_direct(bounds, minification, UseCache::No)
+        let sampler = self.make_sampler_for_minification(bounds, minification);
+        sampler.par_sample()
     }
 }
