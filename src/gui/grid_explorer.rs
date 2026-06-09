@@ -429,15 +429,14 @@ impl GridViewControls {
 
         ui.heading("Controls");
 
-        if self.grid_renderer.lock().unwrap().has_mipmaps() {
+        let mut grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
+
+        if grid_renderer_mutex_guard.has_mipmaps() {
             ui.label("Mipmaps are generated.");
-        } else if self.grid_renderer.lock().unwrap().can_generate_mipmaps() {
+        } else if grid_renderer_mutex_guard.can_generate_mipmaps() {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
-            let estimated_mipmap_memory_requirement = self
-                .grid_renderer
-                .lock()
-                .unwrap()
+            let estimated_mipmap_memory_requirement = grid_renderer_mutex_guard
                 .estimate_memory_requirement(lowest_minification, highest_minification);
             let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
             if ui
@@ -449,16 +448,14 @@ impl GridViewControls {
                 ))
                 .clicked()
             {
-                self.grid_renderer
-                    .lock()
-                    .unwrap()
+                grid_renderer_mutex_guard
                     .generate_mipmaps_async(lowest_minification, highest_minification);
             }
         } else {
             if ui.button("Cancel mipmap generation.").clicked() {
-                self.grid_renderer.lock().unwrap().cancel_mipmap_generation();
+                grid_renderer_mutex_guard.cancel_mipmap_generation();
             } else {
-                let progress = self.grid_renderer.lock().unwrap().mipmap_generation_progress();
+                let progress = grid_renderer_mutex_guard.mipmap_generation_progress();
                 ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
                 // Maybe some better notification in the future, but chunks get processed fast
                 // enough that this shouldn't be doing any redundant work.
@@ -466,7 +463,7 @@ impl GridViewControls {
             }
         }
 
-        let zoom_range = self.zoom_range(&self.grid_renderer.lock().unwrap());
+        let zoom_range = self.zoom_range(&grid_renderer_mutex_guard);
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
                 .text("Zoom")
@@ -495,7 +492,7 @@ impl GridViewControls {
         for player_id in 0..=player_count {
             ui.horizontal_wrapped(|ui| {
                 // Disallow color picking after mipmaps have been generated
-                if !self.grid_renderer.lock().unwrap().can_set_colors() {
+                if !grid_renderer_mutex_guard.can_set_colors() {
                     color_picker::show_color(ui, self.player_colors[player_id], vec2(16.0, 16.0));
                 } else {
                     if color_picker::color_edit_button_srgba(
@@ -546,10 +543,7 @@ impl GridViewControls {
             let s = self.png_extent;
             let render_params =
                 Self::render_params(self.zoom_pow2_png, self.origin_x, self.origin_y, s, s);
-            let image = self
-                .grid_renderer
-                .lock()
-                .unwrap()
+            let image = grid_renderer_mutex_guard
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);
 
             let file = File::create(path).unwrap();
