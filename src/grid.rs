@@ -602,6 +602,16 @@ impl<T> FrozenGrid<T> {
     }
 }
 
+pub trait SampleCollector: Send + Sync {
+    type InputType: Default + Clone + Copy + Send + Sync;
+    type AccumulatorType: Send + Sync;
+    type OutputType: Default + Clone + Copy + Send + Sync + 'static;
+
+    fn zero(&self) -> Self::AccumulatorType;
+    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType);
+    fn finalize(&self, acc: Self::AccumulatorType, size: (usize, usize)) -> Self::OutputType;
+}
+
 /// Intended for sampling the grid with small power of 2 minification factors due
 /// to overall complexity being linear with the number of cells visited.
 /// If higher minification is required consider an approach with pregenerated mip-maps
@@ -616,56 +626,49 @@ impl<T> FrozenGrid<T> {
 ///
 /// DEV NOTE: There is a little bit of unsafe Array2D accesses
 ///           because it is around 30% faster overall.
-pub struct FrozenGridSampler<'a, T, FZero, FReduce, FFinalize, TAcc, U> {
+pub struct FrozenGridSampler<'a, T, TCollector>
+where
+    TCollector: SampleCollector<InputType = T>
+{
     grid: &'a FrozenGrid<T>,
     region: GridRect,
     minification: Pow2,
-    default_value: U,
-    fzero: FZero,
-    freduce: FReduce,
-    ffinalize: FFinalize,
-    _marker: PhantomData<(TAcc, U)>,
+    default_value: TCollector::OutputType,
+    collector: TCollector,
 }
 
-impl<'a, T, FZero, FReduce, FFinalize, TAcc, U> CacheEnabled
-    for FrozenGridSampler<'a, T, FZero, FReduce, FFinalize, TAcc, U>
+impl<'a, T, TCollector> CacheEnabled
+    for FrozenGridSampler<'a, T, TCollector>
+where
+    TCollector: SampleCollector<InputType = T>
 {
     type CacheType = LockStepCache<Self::KeyType, Self::EntryType>;
     type KeyType = (ChunkOrigin, Pow2);
-    type EntryType = Array2D<U>;
+    type EntryType = Array2D<TCollector::OutputType>;
 
     fn make_cache(max_memory_cost: usize) -> Self::CacheType {
         Self::CacheType::new(max_memory_cost)
     }
 }
 
-impl<'a, T, FZero, FReduce, FFinalize, TAcc, U>
-    FrozenGridSampler<'a, T, FZero, FReduce, FFinalize, TAcc, U>
+impl<'a, T, TCollector>
+    FrozenGridSampler<'a, T, TCollector>
 where
     T: Default + Clone + Copy + Send + Sync,
-    FZero: Fn() -> TAcc + Send + Sync,
-    FReduce: Fn(&mut TAcc, T) + Send + Sync,
-    FFinalize: Fn(TAcc, (usize, usize)) -> U + Send + Sync,
-    TAcc: Send + Sync,
-    U: Default + Clone + Copy + Send + Sync + 'static,
+    TCollector: SampleCollector<InputType = T>
 {
     pub fn new(
         grid: &'a FrozenGrid<T>,
         region: GridRect,
-        default_value: U,
-        fzero: FZero,
-        freduce: FReduce,
-        ffinalize: FFinalize,
-    ) -> FrozenGridSampler<'a, T, FZero, FReduce, FFinalize, TAcc, U> {
-        FrozenGridSampler {
+        default_value: TCollector::OutputType,
+        collector: TCollector,
+    ) -> Self {
+        Self {
             grid,
             region,
             minification: Pow2::new(1),
             default_value,
-            fzero,
-            freduce,
-            ffinalize,
-            _marker: Default::default(),
+            collector,
         }
     }
 
@@ -673,11 +676,9 @@ where
         grid: &'a FrozenGrid<T>,
         region: GridRect,
         minification: Pow2,
-        default_value: U,
-        fzero: FZero,
-        freduce: FReduce,
-        ffinalize: FFinalize,
-    ) -> FrozenGridSampler<'a, T, FZero, FReduce, FFinalize, TAcc, U> {
+        default_value: TCollector::OutputType,
+        collector: TCollector,
+    ) -> Self {
         if !region.is_aligned_to_pow2(minification) {
             panic!("Region is not aligned to the minification factor.");
         }
@@ -690,24 +691,21 @@ where
             panic!("Minification factor is smaller than minimum chunk extent.");
         }
 
-        FrozenGridSampler {
+        Self {
             grid,
             region,
             minification,
             default_value,
-            fzero,
-            freduce,
-            ffinalize,
-            _marker: Default::default(),
+            collector,
         }
     }
 
-    fn assemble_result(&self, rx: Receiver<(Arc<Array2D<U>>, Blit2D)>) -> Array2D<U> {
+    fn assemble_result(&self, rx: Receiver<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>) -> Array2D<TCollector::OutputType> {
         let region = self.region;
         let minification = self.minification;
         let default_value = self.default_value;
 
-        let mut result: Array2D<U> = Array2D::new(
+        let mut result: Array2D<TCollector::OutputType> = Array2D::new(
             pow2::floor_div(region.width(), minification) as usize,
             pow2::floor_div(region.height(), minification) as usize,
         );
@@ -727,11 +725,11 @@ where
     ///
     /// The index range must be contained within the chunk.
     #[inline]
-    unsafe fn collect_block(&self, chunk: &Chunk<T>, xs: Range<i32>, ys: Range<i32>) -> U {
+    unsafe fn collect_block(&self, chunk: &Chunk<T>, xs: Range<i32>, ys: Range<i32>) -> TCollector::OutputType {
         let width = xs.len();
         let height = ys.len();
 
-        let mut acc = (self.fzero)();
+        let mut acc = self.collector.zero();
 
         // Fill in the input block for the mapping function.
         for y in ys {
@@ -740,16 +738,16 @@ where
                 //         was computed based on its bounds.
                 let val = unsafe { chunk.get_unchecked(GridPoint::new(x, y)) };
 
-                (self.freduce)(&mut acc, *val);
+                self.collector.push(&mut acc, *val);
             }
         }
 
-        (self.ffinalize)(acc, (width, height))
+        self.collector.finalize(acc, (width, height))
     }
 
-    pub fn par_sample_with_cache(&self, cache: &<Self as CacheEnabled>::CacheType) -> Array2D<U> {
+    pub fn par_sample_with_cache(&self, cache: &<Self as CacheEnabled>::CacheType) -> Array2D<TCollector::OutputType> {
         rayon::scope(|s| {
-            let (tx, rx) = mpsc::channel::<(Arc<Array2D<U>>, Blit2D)>();
+            let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
             s.spawn(|_| {
                 self.grid
@@ -773,7 +771,7 @@ where
                                     pow2::floor_div(bounds.width(), self.minification) as usize;
                                 let block_size: i32 = self.minification.into();
 
-                                let mut whole_chunk_result: Array2D<U> =
+                                let mut whole_chunk_result: Array2D<TCollector::OutputType> =
                                     Array2D::new(blocks_x, blocks_y);
 
                                 for by in 0..blocks_y {
@@ -800,7 +798,7 @@ where
 
                                 let cost = whole_chunk_result.width()
                                     * whole_chunk_result.height()
-                                    * size_of::<U>();
+                                    * size_of::<TCollector::OutputType>();
                                 (whole_chunk_result, cost)
                             },
                         );
@@ -853,9 +851,9 @@ where
         })
     }
     
-    pub fn par_sample(&self) -> Array2D<U> {
+    pub fn par_sample(&self) -> Array2D<TCollector::OutputType> {
         rayon::scope(|s| {
-            let (tx, rx) = mpsc::channel::<(Arc<Array2D<U>>, Blit2D)>();
+            let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
             s.spawn(|_| {
                 self.grid
@@ -875,7 +873,7 @@ where
 
                         let block_size: i32 = self.minification.into();
 
-                        let mut subregion_result: Array2D<U> = Array2D::new(
+                        let mut subregion_result: Array2D<TCollector::OutputType> = Array2D::new(
                             pow2::floor_div(subregion.width(), self.minification) as usize,
                             pow2::floor_div(subregion.height(), self.minification) as usize,
                         );
@@ -1253,6 +1251,26 @@ mod tests {
         FrozenGrid::from(grid)
     }
 
+    struct SumCollector;
+
+    impl SampleCollector for SumCollector {
+        type InputType = u8;
+        type AccumulatorType = u8;
+        type OutputType = u8;
+
+        fn zero(&self) -> Self::AccumulatorType {
+            0
+        }
+
+        fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+            *acc += input;
+        }
+
+        fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
+            acc
+        }
+    }
+
     // Convenience: build a sum-based sampler (minification = 1 just reads each cell).
     #[allow(clippy::type_complexity)]
     fn sum_sampler(
@@ -1261,20 +1279,34 @@ mod tests {
     ) -> FrozenGridSampler<
         '_,
         u8,
-        impl Fn() -> u64,
-        impl Fn(&mut u64, u8),
-        impl Fn(u64, (usize, usize)) -> u8,
-        u64,
-        u8,
+        SumCollector,
     > {
         FrozenGridSampler::new(
             grid,
             region,
             0u8,
-            || 0u64,
-            |acc, v| *acc += v as u64,
-            |acc, _dims| acc as u8,
+            SumCollector
         )
+    }
+
+    struct AverageCollector;
+
+    impl SampleCollector for AverageCollector {
+        type InputType = u8;
+        type AccumulatorType = u64;
+        type OutputType = u8;
+
+        fn zero(&self) -> Self::AccumulatorType {
+            0
+        }
+
+        fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+            *acc += input as u64
+        }
+
+        fn finalize(&self, acc: Self::AccumulatorType, (w, h): (usize, usize)) -> Self::OutputType {
+            (acc / (w * h) as u64) as u8
+        }
     }
 
     // Convenience: build an averaging sampler with a given minification factor.
@@ -1286,20 +1318,14 @@ mod tests {
     ) -> FrozenGridSampler<
         '_,
         u8,
-        impl Fn() -> u64,
-        impl Fn(&mut u64, u8),
-        impl Fn(u64, (usize, usize)) -> u8,
-        u64,
-        u8,
+        AverageCollector,
     > {
         FrozenGridSampler::new_with_minification(
             grid,
             region,
             minification,
             0u8,
-            || 0u64,
-            |acc, v| *acc += v as u64,
-            |acc, (w, h)| (acc / (w * h) as u64) as u8,
+            AverageCollector,
         )
     }
 
@@ -1423,13 +1449,31 @@ mod tests {
             region,
             Pow2::new(4),
             0u8,
-            || 0u64,
-            |acc, v| *acc += v as u64,
-            |acc, _dims| acc as u8,
+            SumCollector,
         );
         let result = sampler.par_sample();
         // The 4×4 block lives in output cell (0,0); all other blocks are zero.
         assert_eq!(result[(0, 0)], 16);
+    }
+
+    struct SaturatingSumCollector;
+
+    impl SampleCollector for SaturatingSumCollector {
+        type InputType = u8;
+        type AccumulatorType = u64;
+        type OutputType = u8;
+
+        fn zero(&self) -> Self::AccumulatorType {
+            0
+        }
+
+        fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+            *acc += input as u64
+        }
+
+        fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
+            acc.min(255) as u8
+        }
     }
 
     #[test]
@@ -1445,11 +1489,7 @@ mod tests {
             region,
             Pow2::new(64),
             0u8,
-            || 0u64,
-            |acc, v| *acc += v as u64,
-            // 64×64 cells each with value 1 → sum = 4096, truncated to u8 = 0
-            // Use saturating cast to make the intent clear.
-            |acc, _dims| acc.min(255) as u8,
+            SaturatingSumCollector,
         );
         let result = sampler.par_sample();
         assert_eq!(result.width(), 1);
@@ -1470,32 +1510,19 @@ mod tests {
         let frozen = make_frozen_grid(Pow2::new(64), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
 
-        type S<'a> = FrozenGridSampler<
+        type S<'a> = FrozenGridSampler::<
             'a,
             u8,
-            fn() -> u64,
-            fn(&mut u64, u8),
-            fn(u64, (usize, usize)) -> u8,
-            u64,
-            u8,
+            AverageCollector,
         >;
 
         // Using function pointers so `CacheEnabled` has a concrete type.
-        let sampler = FrozenGridSampler::<
-            u8,
-            fn() -> u64,
-            fn(&mut u64, u8),
-            fn(u64, (usize, usize)) -> u8,
-            u64,
-            u8,
-        >::new_with_minification(
+        let sampler = S::<'_>::new_with_minification(
             &frozen,
             region,
             Pow2::new(2),
             0u8,
-            (|| 0u64) as fn() -> u64,
-            (|acc, v| *acc += v as u64) as fn(&mut u64, u8),
-            (|acc, (w, h)| (acc / (w * h) as u64) as u8) as fn(u64, (usize, usize)) -> u8,
+            AverageCollector,
         );
 
         let no_cache_result = sampler.par_sample();

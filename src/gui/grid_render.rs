@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
-use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect};
+use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect, SampleCollector};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
@@ -49,6 +49,91 @@ pub struct GridRenderer {
     mipmaps_by_minification_factor: BTreeMap<Pow2, Array2D<Color32>>,
     mipmap_bounds: GridRect,
     cache: Option<RefCell<CacheType>>,
+}
+
+#[repr(align(16))]
+struct AccCol {
+    r: u32,
+    g: u32,
+    b: u32,
+    a: u32,
+}
+
+struct AvgColorCollector {
+    colors_u32: Vec<AccCol>,
+}
+
+impl AvgColorCollector {
+    pub fn new(colors: &[Color32]) -> Self {
+        let colors_u32 = colors
+            .iter()
+            .map(|c| AccCol {
+                r: c.r() as u32,
+                g: c.g() as u32,
+                b: c.b() as u32,
+                a: c.a() as u32,
+            })
+            .collect::<Vec<_>>();
+
+        Self { colors_u32 }
+    }
+}
+
+impl SampleCollector for AvgColorCollector {
+    type InputType = PlayerId;
+    type AccumulatorType = AccCol;
+    type OutputType = Color32;
+
+    fn zero(&self) -> Self::AccumulatorType {
+        AccCol {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        }
+    }
+
+    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+        // SAFETY: We can't guarantee the safety here,
+        //         the caller must make sure there is enough colors.
+        //         However, this is a hot loop, we need it for speed.
+        let color = unsafe { self.colors_u32.get_unchecked(input.index()) };
+        acc.r += color.r;
+        acc.g += color.g;
+        acc.b += color.b;
+        acc.a += color.a;
+    }
+
+    fn finalize(&self, acc: Self::AccumulatorType, (width, height): (usize, usize)) -> Self::OutputType {
+        let count = Pow2::new(width * height);
+        Color32::from_rgb(
+            floor_div(acc.r, count) as u8,
+            floor_div(acc.g, count) as u8,
+            floor_div(acc.b, count) as u8,
+        )
+    }
+}
+
+struct LastColorCollector<'a> {
+    colors: &'a [Color32],
+}
+
+impl<'a> SampleCollector for LastColorCollector<'a> {
+    type InputType = PlayerId;
+    type AccumulatorType = Color32;
+    type OutputType = Color32;
+
+    fn zero(&self) -> Self::AccumulatorType {
+        Color32::from_rgb(0, 0, 0)
+    }
+
+    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+        *acc = self.colors[input.index()]
+    }
+
+    fn finalize(&self, acc: Self::AccumulatorType, size: (usize, usize)) -> Self::OutputType {
+        acc
+    }
 }
 
 impl GridRenderer {
@@ -106,12 +191,15 @@ impl GridRenderer {
         self.mipmaps_by_minification_factor.keys().max().copied()
     }
 
-    fn render_to_rgba_samples_for_minification_direct(
+    fn make_sampler_for_minification(
         &self,
         bounds: &GridRect,
         factor: Pow2,
-        use_cache: UseCache,
-    ) -> Array2D<Color32> {
+    ) -> FrozenGridSampler<
+        '_,
+        PlayerId,
+        AvgColorCollector,
+    > {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
         assert!(
@@ -119,60 +207,23 @@ impl GridRenderer {
             "Minification too high, could overflow accumulator"
         );
 
-        #[repr(align(16))]
-        struct AccCol {
-            r: u32,
-            g: u32,
-            b: u32,
-            a: u32,
-        }
-        let colors_u32 = self
-            .colors
-            .iter()
-            .map(|c| AccCol {
-                r: c.r() as u32,
-                g: c.g() as u32,
-                b: c.b() as u32,
-                a: c.a() as u32,
-            })
-            .collect::<Vec<_>>();
-
-        let fzero = || AccCol {
-            r: 0,
-            g: 0,
-            b: 0,
-            a: 0,
-        };
-
-        let freduce = |acc: &mut AccCol, v: PlayerId| {
-            // SAFETY: We can't guarantee the safety here,
-            //         the caller must make sure there is enough colors.
-            //         However, this is a hot loop, we need it for speed.
-            let color = unsafe { colors_u32.get_unchecked(v.index()) };
-            acc.r += color.r;
-            acc.g += color.g;
-            acc.b += color.b;
-            acc.a += color.a;
-        };
-
-        let ffinalize = |acc: AccCol, (width, height): (usize, usize)| {
-            let count = Pow2::new(width * height);
-            Color32::from_rgb(
-                floor_div(acc.r, count) as u8,
-                floor_div(acc.g, count) as u8,
-                floor_div(acc.b, count) as u8,
-            )
-        };
-
-        let sampler = FrozenGridSampler::new_with_minification(
+        FrozenGridSampler::new_with_minification(
             &self.grid,
             *bounds,
             factor,
             self.colors[0],
-            fzero,
-            freduce,
-            ffinalize,
-        );
+            AvgColorCollector::new(self.colors.as_slice()),
+        )
+    }
+
+    fn render_to_rgba_samples_for_minification_direct(
+        &self,
+        bounds: &GridRect,
+        factor: Pow2,
+        use_cache: UseCache,
+    ) -> Array2D<Color32> {
+        let sampler = self.make_sampler_for_minification(bounds, factor);
+
         if matches!(use_cache, UseCache::Yes)
             && let Some(cache) = &self.cache
         {
@@ -241,11 +292,8 @@ impl GridRenderer {
         match zoom {
             Magnification(_factor) => {
                 let colors = &self.colors;
-                let fzero = || Color32::from_rgb(0, 0, 0);
-                let freduce = |acc: &mut Color32, v: PlayerId| *acc = colors[v.index()];
-                let ffinalize = |acc, (_width, _height)| acc;
                 let sampler = FrozenGridSampler::new(
-                    &self.grid, *bounds, colors[0], fzero, freduce, ffinalize,
+                    &self.grid, *bounds, colors[0], LastColorCollector { colors },
                 );
                 // Do not use a cache for magnification because it's cheap to
                 // compute and the results take more memory than the probed chunk cells.

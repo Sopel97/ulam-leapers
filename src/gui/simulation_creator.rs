@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::grid::{FrozenGridSampler, GridPoint, GridRect, GridVector};
+use ulam_leapers::grid::{FrozenGridSampler, GridPoint, GridRect, GridVector, SampleCollector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
 
@@ -412,6 +412,28 @@ impl Default for SimulationCreator {
     }
 }
 
+struct LastColorCollector<'a> {
+    colors: &'a [Color32],
+}
+
+impl<'a> SampleCollector for LastColorCollector<'a> {
+    type InputType = PlayerId;
+    type AccumulatorType = Color32;
+    type OutputType = Color32;
+
+    fn zero(&self) -> Self::AccumulatorType {
+        Color32::from_rgb(0, 0, 0)
+    }
+
+    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
+        *acc = self.colors[input.index()]
+    }
+
+    fn finalize(&self, acc: Self::AccumulatorType, size: (usize, usize)) -> Self::OutputType {
+        acc
+    }
+} 
+
 impl SimulationCreator {
     pub fn new() -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
@@ -470,12 +492,10 @@ impl SimulationCreator {
                                 (shells * 2 + 1) as i32,
                                 (shells * 2 + 1) as i32,
                             );
-
-                            let fzero = || Color32::from_rgb(0, 0, 0);
-                            let freduce = |acc: &mut Color32, v: PlayerId| *acc = colors[v.index()];
-                            let ffinalize = |acc, (_width, _height)| acc;
+                            
+                            let collector = LastColorCollector { colors: colors.as_slice() };
                             let sampler = FrozenGridSampler::new(
-                                &frozen_grid, bounds, colors[0], fzero, freduce, ffinalize,
+                                &frozen_grid, bounds, colors[0], collector,
                             );
                             let samples: Array2D<Color32> = sampler.par_sample();
                             let image = ColorImage::new(
