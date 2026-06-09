@@ -442,6 +442,9 @@ impl GridViewControls {
                 } else {
                     let progress = job.progress();
                     ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
+                    // Maybe some better notification in the future, but chunks get processed fast
+                    // enough that this shouldn't be doing any redundant work.
+                    ui.ctx().request_repaint();
                 }
             }
         } else if self.grid_renderer.lock().unwrap().has_mipmaps() {

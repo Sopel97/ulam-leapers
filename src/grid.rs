@@ -7,7 +7,7 @@ use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
-use crate::util::cancel::CancellationToken;
+use crate::util::cancel::{Canceled, CancellationToken};
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -882,12 +882,12 @@ where
                 let num_chunks_to_process = chunks_to_process.len();
                 let num_finished_chunks = AtomicUsize::new(0);
 
-                chunks_to_process
+                let _res = chunks_to_process
                     .into_par_iter()
                     .flat_map(|origin| self.grid.frozen_chunks.get(&origin))
-                    .for_each(|compressed_chunk| {
+                    .try_for_each(|compressed_chunk| {
                         if cancellation_token.is_canceled() {
-                            return;
+                            return Err(Canceled);
                         }
 
                         let subregion = compressed_chunk
@@ -962,7 +962,10 @@ where
                             num_finished_chunks.fetch_add(1, Ordering::Relaxed),
                             num_chunks_to_process,
                         );
+
+                        Ok(())
                     });
+
                 drop(tx);
             });
 

@@ -48,7 +48,7 @@ pub struct GridRenderer {
     highest_player_id: PlayerId,
     colors: Vec<Color32>,
     // We don't have a good way to collect this job, but it's generally not a problem.
-    // At worst we have a completed but unjoined thread handle.
+    // At worst, we have a completed but unjoined thread handle.
     mipmap_generator_job: Option<Arc<MipmapGenerationJobHandle>>,
     mipmaps_by_minification_factor: Arc<Mutex<MipmapStorageType>>,
     mipmap_bounds: Arc<Mutex<GridRect>>,

@@ -1,6 +1,9 @@
 ﻿use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct Canceled;
+
 #[derive(Clone)]
 pub struct CancellationToken {
     cancelled: Arc<AtomicBool>,
