@@ -1,5 +1,5 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors, MipmapGenerationJobHandle};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
@@ -158,7 +158,6 @@ impl GridExplorer {
         let grid_view_controls = GridViewControls {
             finalized_simulation: finalized_simulation.clone(),
             grid_renderer: grid_renderer.clone(),
-            mipmap_generation_job_handle: None,
 
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
@@ -196,7 +195,6 @@ impl GridExplorer {
 pub struct GridViewControls {
     finalized_simulation: Arc<FinalizedSimulation>,
     grid_renderer: Arc<Mutex<GridRenderer>>,
-    mipmap_generation_job_handle: Option<Arc<MipmapGenerationJobHandle>>,
 
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
@@ -431,25 +429,9 @@ impl GridViewControls {
 
         ui.heading("Controls");
 
-        if let Some(job) = &self.mipmap_generation_job_handle {
-            if job.is_finished() {
-                self.mipmap_generation_job_handle = None;
-                ui.label("Mipmaps are generated.");
-            } else {
-                if ui.button("Cancel mipmap generation.").clicked() {
-                    job.cancel();
-                    self.mipmap_generation_job_handle = None;
-                } else {
-                    let progress = job.progress();
-                    ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
-                    // Maybe some better notification in the future, but chunks get processed fast
-                    // enough that this shouldn't be doing any redundant work.
-                    ui.ctx().request_repaint();
-                }
-            }
-        } else if self.grid_renderer.lock().unwrap().has_mipmaps() {
+        if self.grid_renderer.lock().unwrap().has_mipmaps() {
             ui.label("Mipmaps are generated.");
-        } else {
+        } else if self.grid_renderer.lock().unwrap().can_generate_mipmaps() {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
             let estimated_mipmap_memory_requirement = self
@@ -467,10 +449,20 @@ impl GridViewControls {
                 ))
                 .clicked()
             {
-                self.mipmap_generation_job_handle = Some(self.grid_renderer
+                self.grid_renderer
                     .lock()
                     .unwrap()
-                    .generate_mipmaps_async(lowest_minification, highest_minification));
+                    .generate_mipmaps_async(lowest_minification, highest_minification);
+            }
+        } else {
+            if ui.button("Cancel mipmap generation.").clicked() {
+                self.grid_renderer.lock().unwrap().cancel_mipmap_generation();
+            } else {
+                let progress = self.grid_renderer.lock().unwrap().mipmap_generation_progress();
+                ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
+                // Maybe some better notification in the future, but chunks get processed fast
+                // enough that this shouldn't be doing any redundant work.
+                ui.ctx().request_repaint();
             }
         }
 

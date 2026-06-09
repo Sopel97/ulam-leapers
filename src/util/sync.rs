@@ -88,6 +88,11 @@ impl<T> AsyncValue<T> {
         self.value.get().is_some()
     }
 
+    /// Returns `true` if it's empty and there is no running constructor.
+    pub fn is_empty_and_idle(&self) -> bool {
+        self.value.get().is_none() && self.executor_state.read().unwrap().is_none()
+    }
+
     /// If there is a constructor running it attempts its cancellation and blocks until
     /// the executor is dismantled. Even if the constructor has finished and yielded a result,
     /// though that result has not yet been finalized, the cancellation takes precedence.
@@ -421,5 +426,47 @@ mod tests {
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get().unwrap().len(), 10_000_000);
+    }
+
+    #[test]
+    fn new_is_empty_and_idle() {
+        let av: AsyncValue<i32> = AsyncValue::new();
+        assert!(av.is_empty_and_idle());
+    }
+
+    #[test]
+    fn is_empty_and_idle_after_cancelation() {
+        let mut av: AsyncValue<i32> = AsyncValue::new();
+        av.try_set_with(|_| Ok(123)).unwrap();
+        av.try_cancel();
+        assert!(av.is_empty_and_idle());
+    }
+
+    #[test]
+    fn is_not_empty_and_idle_after_construction() {
+        let mut av: AsyncValue<i32> = AsyncValue::new();
+        av.try_set_with(|_| Ok(123)).unwrap();
+        av.get(); // for poll
+        assert!(!av.is_empty_and_idle());
+    }
+
+    #[test]
+    fn is_not_empty_and_idle_during_construction() {
+        let barrier = Arc::new(Barrier::new(2));
+        let barrier_clone = Arc::clone(&barrier);
+
+        let mut av: AsyncValue<i32> = AsyncValue::new();
+        av.try_set_with(move |_| {
+            barrier_clone.wait(); // signal: started
+            barrier_clone.wait(); // hold until released
+            Ok(1)
+        })
+            .unwrap();
+
+        barrier.wait(); // wait until first worker is running
+
+        assert!(!av.is_empty_and_idle());
+
+        barrier.wait(); // unblock first worker so drop doesn't deadlock
     }
 }
