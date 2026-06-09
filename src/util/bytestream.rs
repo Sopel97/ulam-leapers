@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn skip_advances_cursor() {
         let mut r = ByteReader::new(&[0x01, 0x02, 0x03, 0x04]);
-        assert_eq!(r.try_skip(2), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(r.try_skip(2), Ok(()));
         assert_eq!(r.try_read_u8(), Ok(0x03));
     }
 
