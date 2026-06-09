@@ -5,11 +5,11 @@ use crate::compression::{AnyCompression, CompressedBlob, Compression, Compressio
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
-use crate::util::blit::{blit_array2d_unchecked, Blit2D};
+use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut};
 use crate::util::pow2;
-use crate::util::pow2::{floor_to_multiple, Pow2};
+use crate::util::pow2::{Pow2, floor_to_multiple};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::sync::mpsc::Receiver;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -852,67 +852,86 @@ where
             self.assemble_result(rx)
         })
     }
-    pub fn par_sample(
-        &self
-    ) -> Array2D<U> {
+    
+    pub fn par_sample(&self) -> Array2D<U> {
         rayon::scope(|s| {
             let (tx, rx) = mpsc::channel::<(Arc<Array2D<U>>, Blit2D)>();
 
             s.spawn(|_| {
-        self.grid.chunker
-            .origins_of_intersecting_chunks(&self.region)
-            .into_par_iter()
-            .flat_map(|origin| self.grid.frozen_chunks.get(&origin))
-            .for_each(|compressed_chunk| {
-                let subregion = compressed_chunk
-                    .bounds()
-                    .intersection(&self.region)
-                    .expect("Chunker should have returned only intersecting chunks.");
+                self.grid
+                    .chunker
+                    .origins_of_intersecting_chunks(&self.region)
+                    .into_par_iter()
+                    .flat_map(|origin| self.grid.frozen_chunks.get(&origin))
+                    .for_each(|compressed_chunk| {
+                        let subregion = compressed_chunk
+                            .bounds()
+                            .intersection(&self.region)
+                            .expect("Chunker should have returned only intersecting chunks.");
 
-                assert!(subregion.is_aligned_to_pow2(self.minification));
+                        assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                let chunk = compressed_chunk.decompress();
+                        let chunk = compressed_chunk.decompress();
 
-                let block_size: i32 = self.minification.into();
+                        let block_size: i32 = self.minification.into();
 
-                let mut subregion_result: Array2D<U> = Array2D::new(
-                    pow2::floor_div(subregion.width(), self.minification) as usize,
-                    pow2::floor_div(subregion.height(), self.minification) as usize,
-                );
+                        let mut subregion_result: Array2D<U> = Array2D::new(
+                            pow2::floor_div(subregion.width(), self.minification) as usize,
+                            pow2::floor_div(subregion.height(), self.minification) as usize,
+                        );
 
-                for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize) {
-                    for bx in (subregion.start.x..subregion.end.x).step_by(block_size as usize) {
-                        // SAFETY: We are iterating within `bounds`,
-                        //         which are taken directly from the chunk.
-                        let v = unsafe {
-                            self.collect_block(&chunk, bx..bx + block_size, by..by + block_size)
-                        };
+                        for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize)
+                        {
+                            for bx in
+                                (subregion.start.x..subregion.end.x).step_by(block_size as usize)
+                            {
+                                // SAFETY: We are iterating within `bounds`,
+                                //         which are taken directly from the chunk.
+                                let v = unsafe {
+                                    self.collect_block(
+                                        &chunk,
+                                        bx..bx + block_size,
+                                        by..by + block_size,
+                                    )
+                                };
 
-                        // Map the block and store into the actual result.
-                        let srx = pow2::floor_div(bx - subregion.start.x, self.minification) as usize;
-                        let sry = pow2::floor_div(by - subregion.start.y, self.minification) as usize;
-                        // SAFETY: Explicitly iterating within the subregion.
-                        unsafe {
-                            *subregion_result.get_unchecked_mut(srx, sry) = v;
+                                // Map the block and store into the actual result.
+                                let srx = pow2::floor_div(bx - subregion.start.x, self.minification)
+                                    as usize;
+                                let sry = pow2::floor_div(by - subregion.start.y, self.minification)
+                                    as usize;
+                                // SAFETY: Explicitly iterating within the subregion.
+                                unsafe {
+                                    *subregion_result.get_unchecked_mut(srx, sry) = v;
+                                }
+                            }
                         }
-                    }
-                }
 
-                let dst_x = pow2::floor_div(subregion.start.x - self.region.start.x, self.minification) as usize;
-                let dst_y = pow2::floor_div(subregion.start.y - self.region.start.y, self.minification) as usize;
+                        let dst_x = pow2::floor_div(
+                            subregion.start.x - self.region.start.x,
+                            self.minification,
+                        ) as usize;
+                        let dst_y = pow2::floor_div(
+                            subregion.start.y - self.region.start.y,
+                            self.minification,
+                        ) as usize;
 
-                let width = subregion_result.width();
-                let height = subregion_result.height();
+                        let width = subregion_result.width();
+                        let height = subregion_result.height();
 
-                tx.send((Arc::new(subregion_result), Blit2D {
-                    src_x: 0,
-                    src_y: 0,
-                    dst_x,
-                    dst_y,
-                    width,
-                    height,
-                })).unwrap();
-            });
+                        tx.send((
+                            Arc::new(subregion_result),
+                            Blit2D {
+                                src_x: 0,
+                                src_y: 0,
+                                dst_x,
+                                dst_y,
+                                width,
+                                height,
+                            },
+                        ))
+                        .unwrap();
+                    });
                 drop(tx);
             });
 
@@ -1223,10 +1242,7 @@ mod tests {
     // ----------------------------
 
     // Helper: create a FrozenGrid<u8> populated with a function of (x, y).
-    fn make_frozen_grid(
-        chunk_size: Pow2,
-        points: &[(i32, i32, u8)],
-    ) -> FrozenGrid<u8> {
+    fn make_frozen_grid(chunk_size: Pow2, points: &[(i32, i32, u8)]) -> FrozenGrid<u8> {
         let mut grid: Grid<u8> = Grid::new(
             Box::new(SquareChunker::new(chunk_size)),
             ZstdCompression::new_with_level(1).into(),
@@ -1242,8 +1258,15 @@ mod tests {
     fn sum_sampler(
         grid: &'_ FrozenGrid<u8>,
         region: GridRect,
-    ) -> FrozenGridSampler<'_, u8, impl Fn() -> u64, impl Fn(&mut u64, u8), impl Fn(u64, (usize, usize)) -> u8, u64, u8>
-    {
+    ) -> FrozenGridSampler<
+        '_,
+        u8,
+        impl Fn() -> u64,
+        impl Fn(&mut u64, u8),
+        impl Fn(u64, (usize, usize)) -> u8,
+        u64,
+        u8,
+    > {
         FrozenGridSampler::new(
             grid,
             region,
@@ -1260,8 +1283,15 @@ mod tests {
         grid: &'_ FrozenGrid<u8>,
         region: GridRect,
         minification: Pow2,
-    ) -> FrozenGridSampler<'_, u8, impl Fn() -> u64, impl Fn(&mut u64, u8), impl Fn(u64, (usize, usize)) -> u8, u64, u8>
-    {
+    ) -> FrozenGridSampler<
+        '_,
+        u8,
+        impl Fn() -> u64,
+        impl Fn(&mut u64, u8),
+        impl Fn(u64, (usize, usize)) -> u8,
+        u64,
+        u8,
+    > {
         FrozenGridSampler::new_with_minification(
             grid,
             region,
@@ -1317,10 +1347,7 @@ mod tests {
     #[test]
     fn frozen_grid_sampler_reads_across_multiple_chunks() {
         // chunk size 64: (0,0) and (64,0) are in different chunks.
-        let frozen = make_frozen_grid(
-            Pow2::new(64),
-            &[(0, 0, 7), (64, 0, 13)],
-        );
+        let frozen = make_frozen_grid(Pow2::new(64), &[(0, 0, 7), (64, 0, 13)]);
         let region = GridRect::with_size(point(0, 0), 128, 64);
         let result = sum_sampler(&frozen, region).par_sample();
         assert_eq!(result[(0, 0)], 7);
@@ -1454,7 +1481,14 @@ mod tests {
         >;
 
         // Using function pointers so `CacheEnabled` has a concrete type.
-        let sampler = FrozenGridSampler::<u8, fn() -> u64, fn(&mut u64, u8), fn(u64, (usize, usize)) -> u8, u64, u8>::new_with_minification(
+        let sampler = FrozenGridSampler::<
+            u8,
+            fn() -> u64,
+            fn(&mut u64, u8),
+            fn(u64, (usize, usize)) -> u8,
+            u64,
+            u8,
+        >::new_with_minification(
             &frozen,
             region,
             Pow2::new(2),
@@ -1471,8 +1505,14 @@ mod tests {
         // Second call should hit the cache.
         let cached_result2 = sampler.par_sample_with_cache(&cache);
 
-        assert_eq!(no_cache_result.as_flat_slice(), cached_result.as_flat_slice());
-        assert_eq!(no_cache_result.as_flat_slice(), cached_result2.as_flat_slice());
+        assert_eq!(
+            no_cache_result.as_flat_slice(),
+            cached_result.as_flat_slice()
+        );
+        assert_eq!(
+            no_cache_result.as_flat_slice(),
+            cached_result2.as_flat_slice()
+        );
     }
 
     #[test]
