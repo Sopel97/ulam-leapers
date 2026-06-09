@@ -461,10 +461,14 @@ impl SimulationRunner {
                 ui.add(ProgressBar::new(t).show_percentage());
             }
             if let Some(shells) = limits.complete_shells() {
+                let complete_shells = progress.complete_shells();
+                let side_cells = complete_shells.max(1) * 2 - 1;
+                let cells = side_cells * side_cells;
                 ui.label(format!(
-                    "Complete shells {} / {}",
-                    progress.complete_shells(),
-                    shells
+                    "Complete shells {} / {} ({}M cells)",
+                    complete_shells,
+                    shells,
+                    cells / (1000 * 1000),
                 ));
                 let t = (progress.complete_shells() as f32 / shells as f32).clamp(0.0, 1.0);
                 ui.add(
