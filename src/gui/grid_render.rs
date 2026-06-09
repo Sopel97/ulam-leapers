@@ -12,7 +12,7 @@ use ulam_leapers::grid::{ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, 
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
-use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {
@@ -23,7 +23,7 @@ use Zoom::*;
 
 pub enum UseCache {
     Yes,
-    No
+    No,
 }
 
 pub fn default_player_colors() -> Vec<Color32> {
@@ -40,13 +40,15 @@ pub fn default_player_colors() -> Vec<Color32> {
     ]
 }
 
+type CacheType = LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>;
+
 pub struct GridRenderer {
     grid: Arc<FrozenGrid<PlayerId>>,
     highest_player_id: PlayerId,
     colors: Vec<Color32>,
     mipmaps_by_minification_factor: BTreeMap<Pow2, Array2D<Color32>>,
     mipmap_bounds: GridRect,
-    cache: Option<RefCell<LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>>>,
+    cache: Option<RefCell<CacheType>>,
 }
 
 impl GridRenderer {
@@ -171,7 +173,9 @@ impl GridRenderer {
             freduce,
             ffinalize,
         );
-        if matches!(use_cache, UseCache::Yes) && let Some(cache) = &self.cache {
+        if matches!(use_cache, UseCache::Yes)
+            && let Some(cache) = &self.cache
+        {
             let res = sampler.par_sample_with_cache(&*cache.borrow());
             // We must call update to settle new cached values.
             cache.borrow_mut().update();
@@ -251,7 +255,11 @@ impl GridRenderer {
                 if self.has_mipmap(factor) {
                     self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
                 } else {
-                    self.render_to_rgba_samples_for_minification_direct(bounds, factor, UseCache::Yes)
+                    self.render_to_rgba_samples_for_minification_direct(
+                        bounds,
+                        factor,
+                        UseCache::Yes,
+                    )
                 }
             }
         }
