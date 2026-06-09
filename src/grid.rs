@@ -7,6 +7,7 @@ use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
+use crate::util::cancel::CancellationToken;
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
@@ -16,6 +17,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, mpsc};
 
@@ -628,7 +630,7 @@ pub trait SampleCollector: Send + Sync {
 ///           because it is around 30% faster overall.
 pub struct FrozenGridSampler<'a, T, TCollector>
 where
-    TCollector: SampleCollector<InputType = T>
+    TCollector: SampleCollector<InputType = T>,
 {
     grid: &'a FrozenGrid<T>,
     region: GridRect,
@@ -637,10 +639,9 @@ where
     collector: TCollector,
 }
 
-impl<'a, T, TCollector> CacheEnabled
-    for FrozenGridSampler<'a, T, TCollector>
+impl<'a, T, TCollector> CacheEnabled for FrozenGridSampler<'a, T, TCollector>
 where
-    TCollector: SampleCollector<InputType = T>
+    TCollector: SampleCollector<InputType = T>,
 {
     type CacheType = LockStepCache<Self::KeyType, Self::EntryType>;
     type KeyType = (ChunkOrigin, Pow2);
@@ -651,11 +652,10 @@ where
     }
 }
 
-impl<'a, T, TCollector>
-    FrozenGridSampler<'a, T, TCollector>
+impl<'a, T, TCollector> FrozenGridSampler<'a, T, TCollector>
 where
     T: Default + Clone + Copy + Send + Sync,
-    TCollector: SampleCollector<InputType = T>
+    TCollector: SampleCollector<InputType = T>,
 {
     pub fn new(
         grid: &'a FrozenGrid<T>,
@@ -700,7 +700,10 @@ where
         }
     }
 
-    fn assemble_result(&self, rx: Receiver<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>) -> Array2D<TCollector::OutputType> {
+    fn assemble_result(
+        &self,
+        rx: Receiver<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>,
+    ) -> Array2D<TCollector::OutputType> {
         let region = self.region;
         let minification = self.minification;
         let default_value = self.default_value;
@@ -725,7 +728,12 @@ where
     ///
     /// The index range must be contained within the chunk.
     #[inline]
-    unsafe fn collect_block(&self, chunk: &Chunk<T>, xs: Range<i32>, ys: Range<i32>) -> TCollector::OutputType {
+    unsafe fn collect_block(
+        &self,
+        chunk: &Chunk<T>,
+        xs: Range<i32>,
+        ys: Range<i32>,
+    ) -> TCollector::OutputType {
         let width = xs.len();
         let height = ys.len();
 
@@ -745,7 +753,10 @@ where
         self.collector.finalize(acc, (width, height))
     }
 
-    pub fn par_sample_with_cache(&self, cache: &<Self as CacheEnabled>::CacheType) -> Array2D<TCollector::OutputType> {
+    pub fn par_sample_with_cache(
+        &self,
+        cache: &<Self as CacheEnabled>::CacheType,
+    ) -> Array2D<TCollector::OutputType> {
         rayon::scope(|s| {
             let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
@@ -850,18 +861,35 @@ where
             self.assemble_result(rx)
         })
     }
-    
-    pub fn par_sample(&self) -> Array2D<TCollector::OutputType> {
+
+    pub fn par_sample_cancellable<C>(
+        &self,
+        cancellation_token: CancellationToken,
+        progress_callback: C,
+    ) -> Option<Array2D<TCollector::OutputType>>
+    where
+        C: Fn(usize, usize) + Send + Sync,
+    {
         rayon::scope(|s| {
             let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
             s.spawn(|_| {
-                self.grid
+                let chunks_to_process = self
+                    .grid
                     .chunker
-                    .origins_of_intersecting_chunks(&self.region)
+                    .origins_of_intersecting_chunks(&self.region);
+
+                let num_chunks_to_process = chunks_to_process.len();
+                let num_finished_chunks = AtomicUsize::new(0);
+
+                chunks_to_process
                     .into_par_iter()
                     .flat_map(|origin| self.grid.frozen_chunks.get(&origin))
                     .for_each(|compressed_chunk| {
+                        if cancellation_token.is_cancelled() {
+                            return;
+                        }
+
                         let subregion = compressed_chunk
                             .bounds()
                             .intersection(&self.region)
@@ -929,12 +957,30 @@ where
                             },
                         ))
                         .unwrap();
+
+                        progress_callback(
+                            num_finished_chunks.fetch_add(1, Ordering::Relaxed),
+                            num_chunks_to_process,
+                        );
                     });
                 drop(tx);
             });
 
-            self.assemble_result(rx)
+            let res = self.assemble_result(rx);
+
+            if cancellation_token.is_cancelled() {
+                None
+            } else {
+                Some(res)
+            }
         })
+    }
+
+    pub fn par_sample(&self) -> Array2D<TCollector::OutputType> {
+        let cancellation_token = CancellationToken::new();
+        let callback = |_: usize, _: usize| {};
+        self.par_sample_cancellable(cancellation_token, callback)
+            .expect("This job should never be cancelled.")
     }
 }
 
@@ -1276,17 +1322,8 @@ mod tests {
     fn sum_sampler(
         grid: &'_ FrozenGrid<u8>,
         region: GridRect,
-    ) -> FrozenGridSampler<
-        '_,
-        u8,
-        SumCollector,
-    > {
-        FrozenGridSampler::new(
-            grid,
-            region,
-            0u8,
-            SumCollector
-        )
+    ) -> FrozenGridSampler<'_, u8, SumCollector> {
+        FrozenGridSampler::new(grid, region, 0u8, SumCollector)
     }
 
     struct AverageCollector;
@@ -1315,18 +1352,8 @@ mod tests {
         grid: &'_ FrozenGrid<u8>,
         region: GridRect,
         minification: Pow2,
-    ) -> FrozenGridSampler<
-        '_,
-        u8,
-        AverageCollector,
-    > {
-        FrozenGridSampler::new_with_minification(
-            grid,
-            region,
-            minification,
-            0u8,
-            AverageCollector,
-        )
+    ) -> FrozenGridSampler<'_, u8, AverageCollector> {
+        FrozenGridSampler::new_with_minification(grid, region, minification, 0u8, AverageCollector)
     }
 
     #[test]
@@ -1510,20 +1537,11 @@ mod tests {
         let frozen = make_frozen_grid(Pow2::new(64), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
 
-        type S<'a> = FrozenGridSampler::<
-            'a,
-            u8,
-            AverageCollector,
-        >;
+        type S<'a> = FrozenGridSampler<'a, u8, AverageCollector>;
 
         // Using function pointers so `CacheEnabled` has a concrete type.
-        let sampler = S::<'_>::new_with_minification(
-            &frozen,
-            region,
-            Pow2::new(2),
-            0u8,
-            AverageCollector,
-        );
+        let sampler =
+            S::<'_>::new_with_minification(&frozen, region, Pow2::new(2), 0u8, AverageCollector);
 
         let no_cache_result = sampler.par_sample();
 
