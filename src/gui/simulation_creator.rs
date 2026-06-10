@@ -4,11 +4,11 @@ use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{
-    pos2, Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider,
-    TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b,
+    Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
+    TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b, pos2,
 };
 use eframe::epaint::TextureHandle;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -595,69 +595,16 @@ impl Subwindow for SimulationCreator {
 
         self.maybe_update_preview(ui.ctx());
 
-        egui::Panel::left("player_setup_panel")
+        egui::Panel::left("simulation_setup_panel")
             .resizable(false)
             .show_inside(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.add(
-                        Slider::new(
-                            &mut self.state.player_count,
-                            MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT,
-                        )
-                        .integer()
-                        .text("Player count"),
-                    );
-
-                    match self.show_player_configs(ui) {
-                        Some(SimulationCreatorAction::Submit) => {
-                            submit = true;
-                        }
-                        None => {}
-                    };
-                });
+                if let Some(SimulationCreatorAction::Submit) = self.simulation_setup_panel(ui) {
+                    submit = true
+                };
             });
 
         egui::CentralPanel::no_frame().show_inside(ui, |ui| {
-            egui::Frame::default().show(ui, |ui| {
-                ui.add(
-                    Slider::new(
-                        &mut self.state.preview_shells,
-                        MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS,
-                    )
-                    .integer()
-                    .text("Preview shells"),
-                );
-            });
-
-            egui::Frame::default().show(ui, |ui| {
-                let rect = ui.max_rect();
-
-                let mut last_result = None;
-                while let Ok(result) = self.worker_results.try_recv() {
-                    last_result = Some(result);
-                }
-
-                match last_result {
-                    None => { /* No new preview */ }
-                    Some(SimulationCreatorWorkerResult::PreviewImage(handle)) => {
-                        self.preview_texture_handle = Some(handle);
-                    }
-                }
-
-                if let Some(handle) = &self.preview_texture_handle {
-                    // y-flip via uv
-                    let painter = ui.painter_at(rect);
-                    let target_rect_size = rect.width().min(rect.height());
-                    let target_rect =
-                        Rect::from_center_size(rect.center(), Vec2::splat(target_rect_size));
-                    painter.image(
-                        handle.id(),
-                        target_rect,
-                        Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
-                        Color32::WHITE,
-                    );
-                }
-            });
+            self.preview_panel(ui);
         });
 
         if submit {
@@ -674,6 +621,66 @@ impl Subwindow for SimulationCreator {
 }
 
 impl SimulationCreator {
+    #[must_use]
+    fn simulation_setup_panel(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
+        ui.vertical(|ui| {
+            ui.add(
+                Slider::new(
+                    &mut self.state.player_count,
+                    MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT,
+                )
+                .integer()
+                .text("Player count"),
+            );
+
+            self.show_all_configs(ui)
+        })
+        .inner
+    }
+
+    fn preview_panel(&mut self, ui: &mut Ui) {
+        egui::Frame::default().show(ui, |ui| {
+            ui.add(
+                Slider::new(
+                    &mut self.state.preview_shells,
+                    MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS,
+                )
+                .integer()
+                .text("Preview shells"),
+            );
+        });
+
+        egui::Frame::default().show(ui, |ui| {
+            let rect = ui.max_rect();
+
+            let mut last_result = None;
+            while let Ok(result) = self.worker_results.try_recv() {
+                last_result = Some(result);
+            }
+
+            match last_result {
+                None => { /* No new preview */ }
+                Some(SimulationCreatorWorkerResult::PreviewImage(handle)) => {
+                    self.preview_texture_handle = Some(handle);
+                }
+            }
+
+            if let Some(handle) = &self.preview_texture_handle {
+                // y-flip via uv
+                let painter = ui.painter_at(rect);
+                let target_rect_size = rect.width().min(rect.height());
+                let target_rect =
+                    Rect::from_center_size(rect.center(), Vec2::splat(target_rect_size));
+                painter.image(
+                    handle.id(),
+                    target_rect,
+                    Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
+                    Color32::WHITE,
+                );
+            }
+        });
+    }
+
     fn update_state_json(&mut self) {
         self.state_json_actual = self.state.to_json().to_string();
         let json = &serde_json::from_str(self.state_json_actual.as_str()).unwrap();
@@ -729,104 +736,125 @@ impl SimulationCreator {
         }
     }
 
+    fn show_enemy_map(ui: &mut Ui, player_count: usize, enemy_config: &mut EnemyConfigState) {
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
+        ui.vertical(|ui| {
+            for y in 0..player_count {
+                ui.horizontal(|ui| {
+                    for x in 0..player_count {
+                        if ui
+                            .checkbox(&mut enemy_config.enemy_map[(x, y)], "")
+                            .changed()
+                            && enemy_config.is_enemy_map_symmetric
+                        {
+                            enemy_config.copy_symmetrically(x, y);
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    fn show_enemy_config(ui: &mut Ui, player_count: usize, enemy_config: &mut EnemyConfigState) {
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label("Enemies ❓").on_hover_text(
+                    "Specifies which player can and cannot be placed\n\
+                                    on a square attacked by a different player.\n\
+                                    Player *column* fears player *row*.",
+                );
+                if ui
+                    .checkbox(
+                        &mut enemy_config.is_enemy_map_symmetric,
+                        "Symmetric",
+                    )
+                    .changed()
+                    && enemy_config.is_enemy_map_symmetric
+                {
+                    enemy_config.apply_enabled_symmetrically();
+                }
+            });
+
+            Self::show_enemy_map(ui, player_count, enemy_config);
+        });
+    }
+
+    fn show_limits(ui: &mut Ui, limits: &mut LimitsState) {
+        ui.group(|ui| {
+            ui.label("Limits:");
+            ui.label("Turns:");
+            ui.add(
+                Slider::new(&mut limits.turns_m, MIN_TURNS_M..=MAX_TURNS_M)
+                    .integer()
+                    .logarithmic(true)
+                    .suffix(" mil"),
+            );
+
+            ui.label("Complete shells:");
+            ui.add(
+                Slider::new(
+                    &mut limits.complete_shells,
+                    MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
+                )
+                .integer()
+                .logarithmic(true),
+            );
+
+            ui.label("Memory usage:");
+            ui.add(
+                Slider::new(
+                    &mut limits.memory_usage,
+                    MIN_MEMORY_USAGE.bytes()..=MAX_MEMORY_USAGE.bytes(),
+                )
+                .integer()
+                .logarithmic(true)
+                .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
+            );
+        });
+    }
+
+    fn show_import_export(ui: &mut Ui, state_json_ui: &mut String) {
+        ScrollArea::both().show(ui, |ui| {
+            let line_count = state_json_ui.lines().count();
+            let json_code_block = egui::TextEdit::multiline(state_json_ui)
+                .font(egui::TextStyle::Monospace)
+                .desired_rows(line_count + 1)
+                .lock_focus(true)
+                .desired_width(f32::INFINITY);
+            ui.add(json_code_block);
+        });
+    }
+
+    fn show_player_configs(&mut self, ui: &mut Ui) {
+        egui::Frame::default().show(ui, |ui| {
+            ui.vertical(|ui| {
+                // Players
+                for player_config in self.state.player_configs[..self.state.player_count].iter_mut()
+                {
+                    ui.group(|ui| {
+                        Self::show_player_config(ui, player_config);
+                    });
+                }
+            });
+        });
+    }
+
     #[must_use]
-    fn show_player_configs(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
+    fn show_all_configs(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
         let mut submit = false;
 
         ui.horizontal_top(|ui| {
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
                 .show(ui, |ui| {
-                    egui::Frame::default().show(ui, |ui| {
-                        ui.vertical(|ui| {
-                            // Players
-                            for player_config in
-                                self.state.player_configs[..self.state.player_count].iter_mut()
-                            {
-                                ui.group(|ui| {
-                                    Self::show_player_config(ui, player_config);
-                                });
-                            }
-                        });
-                    });
+                    self.show_player_configs(ui);
                 });
 
             egui::Frame::default().show(ui, |ui| {
                 ui.vertical(|ui| {
-                    // Enemy map
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("Enemies ❓").on_hover_text(
-                                "Specifies which player can and cannot be placed\n\
-                                    on a square attacked by a different player.\n\
-                                    Player *column* fears player *row*.",
-                            );
-                            if ui
-                                .checkbox(
-                                    &mut self.state.enemy_config.is_enemy_map_symmetric,
-                                    "Symmetric",
-                                )
-                                .changed()
-                                && self.state.enemy_config.is_enemy_map_symmetric
-                            {
-                                self.state.enemy_config.apply_enabled_symmetrically();
-                            }
-                        });
-                        ui.spacing_mut().item_spacing = Vec2::ZERO;
-                        ui.vertical(|ui| {
-                            for y in 0..self.state.player_count {
-                                ui.horizontal(|ui| {
-                                    for x in 0..self.state.player_count {
-                                        if ui
-                                            .checkbox(
-                                                &mut self.state.enemy_config.enemy_map[(x, y)],
-                                                "",
-                                            )
-                                            .changed()
-                                            && self.state.enemy_config.is_enemy_map_symmetric
-                                        {
-                                            self.state.enemy_config.copy_symmetrically(x, y);
-                                        }
-                                    }
-                                });
-                            }
-                        });
-                    });
+                    Self::show_enemy_config(ui, self.state.player_count, &mut self.state.enemy_config);
 
-                    // Limits
-                    ui.group(|ui| {
-                        ui.label("Limits:");
-                        ui.label("Turns:");
-                        ui.add(
-                            Slider::new(&mut self.state.limits.turns_m, MIN_TURNS_M..=MAX_TURNS_M)
-                                .integer()
-                                .logarithmic(true)
-                                .suffix(" mil"),
-                        );
-
-                        ui.label("Complete shells:");
-                        ui.add(
-                            Slider::new(
-                                &mut self.state.limits.complete_shells,
-                                MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
-                            )
-                            .integer()
-                            .logarithmic(true),
-                        );
-
-                        ui.label("Memory usage:");
-                        ui.add(
-                            Slider::new(
-                                &mut self.state.limits.memory_usage,
-                                MIN_MEMORY_USAGE.bytes()..=MAX_MEMORY_USAGE.bytes(),
-                            )
-                            .integer()
-                            .logarithmic(true)
-                            .custom_formatter(|s, _| {
-                                MemSize::b(s as usize).display().si().to_string()
-                            }),
-                        );
-                    });
+                    Self::show_limits(ui, &mut self.state.limits);
 
                     // Actions
                     ui.group(|ui| {
@@ -835,16 +863,7 @@ impl SimulationCreator {
                         }
                     });
 
-                    // Import/export strings
-                    ScrollArea::both().show(ui, |ui| {
-                        let line_count = self.state_json_ui.lines().count();
-                        let json_code_block = egui::TextEdit::multiline(&mut self.state_json_ui)
-                            .font(egui::TextStyle::Monospace)
-                            .desired_rows(line_count + 1)
-                            .lock_focus(true)
-                            .desired_width(f32::INFINITY);
-                        ui.add(json_code_block);
-                    });
+                    Self::show_import_export(ui, &mut self.state_json_ui);
                 });
             });
         });
@@ -853,6 +872,27 @@ impl SimulationCreator {
             Some(SimulationCreatorAction::Submit)
         } else {
             None
+        }
+    }
+
+    fn show_player_config_attack_map(ui: &mut Ui, player_config: &mut PlayerConfigState) {
+        ui.spacing_mut().item_spacing = Vec2::ZERO;
+        for y in 0..player_config.attack_map.height() {
+            ui.horizontal(|ui| {
+                for x in 0..player_config.attack_map.width() {
+                    let enabled = x != MAX_PIECE_RANGE || y != MAX_PIECE_RANGE;
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            Checkbox::without_text(&mut player_config.attack_map[(x, y)]),
+                        )
+                        .changed()
+                        && player_config.is_attack_map_symmetric
+                    {
+                        player_config.copy_symmetrically(x, y);
+                    }
+                }
+            });
         }
     }
 
@@ -876,26 +916,8 @@ impl SimulationCreator {
                             player_config.apply_enabled_symmetrically();
                         }
                     });
-                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-                    for y in 0..player_config.attack_map.height() {
-                        ui.horizontal(|ui| {
-                            for x in 0..player_config.attack_map.width() {
-                                let enabled = x != MAX_PIECE_RANGE || y != MAX_PIECE_RANGE;
-                                if ui
-                                    .add_enabled(
-                                        enabled,
-                                        Checkbox::without_text(
-                                            &mut player_config.attack_map[(x, y)],
-                                        ),
-                                    )
-                                    .changed()
-                                    && player_config.is_attack_map_symmetric
-                                {
-                                    player_config.copy_symmetrically(x, y);
-                                }
-                            }
-                        });
-                    }
+
+                    Self::show_player_config_attack_map(ui, player_config);
                 });
             });
 
