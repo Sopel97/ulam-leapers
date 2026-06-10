@@ -221,7 +221,7 @@ pub struct GridViewControls {
 }
 
 fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
-    let n = n as i32;
+    let n = n.round() as i32;
     if n >= 0 {
         format!("{}x", 1 << n)
     } else {
