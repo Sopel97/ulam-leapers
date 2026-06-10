@@ -1,7 +1,7 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use eframe::egui::{Button, PointerButton, Ui};
+use eframe::egui::{Button, PointerButton, Sense, Ui, Widget};
 use eframe::{Frame, egui};
 use std::path::PathBuf;
 
@@ -151,22 +151,28 @@ impl App {
         }
     }
 
-    pub fn tab_bar(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+    fn tab_bar(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let mut selected_tab_id = self.state.selected_tab_id;
+        let mut tab_labels = vec![];
+
         for tab in self.state.tabs.iter_mut() {
             let mut do_close = false;
             match tab.subwindow {
                 SubwindowState::Active(ref mut subwindow) => {
                     ui.separator();
 
-                    let label = ui.selectable_label(selected_tab_id == tab.id, subwindow.name());
-                    if label.clicked() {
+                    let tab_label_widget =
+                        Button::selectable(selected_tab_id == tab.id, subwindow.name())
+                            .sense(Sense::click() | Sense::drag());
+
+                    let tab_label = ui.add(tab_label_widget);
+                    if tab_label.clicked() {
                         selected_tab_id = tab.id;
                     }
 
                     if subwindow.is_closeable() {
                         if (tab.id == self.state.selected_tab_id && ui.small_button("✖").clicked())
-                            || label.clicked_by(PointerButton::Middle)
+                            || tab_label.clicked_by(PointerButton::Middle)
                         {
                             subwindow.on_close();
                             do_close = true;
@@ -175,6 +181,8 @@ impl App {
                         // TODO: somehow make it not display the X.
                         ui.add_enabled(false, Button::new("✖").small());
                     }
+
+                    tab_labels.push((tab.id, tab_label));
                 }
                 SubwindowState::Closed => {}
             }
@@ -185,9 +193,43 @@ impl App {
         }
 
         self.state.selected_tab_id = selected_tab_id;
+
+        // Process tab movement. We can only do this now because we need
+        // positions of all tabs to determine which ones to swap.
+        let mut swap_tabs = None;
+        for (tab_id, label) in &tab_labels {
+            if label.drag_stopped_by(PointerButton::Primary) {
+                let mouse_pos = ui.ctx().input(|i| i.pointer.latest_pos());
+                println!("{:?}", mouse_pos);
+                if let Some(mouse_pos) = mouse_pos {
+                    // We know there is a first tab. We need to swap with it if the
+                    // user drags beyond it to the left.
+                    let mut swap_tab_id = tab_labels[0].0;
+
+                    for (tab_id_other, label_other) in &tab_labels {
+                        if mouse_pos.x > label_other.rect.min.x {
+                            swap_tab_id = *tab_id_other;
+                        }
+                    }
+
+                    swap_tabs = Some((*tab_id, swap_tab_id));
+                }
+
+                // No other tab may be dragged in the same frame.
+                break;
+            }
+        }
+
+        // Apply the tab swap if any. Needs to be done out of tab iteration.
+        if let Some((lhs_tab_id, rhs_tab_id)) = swap_tabs.take()
+            && let Some(lhs_tab_pos) = self.state.tabs.iter().position(|tab| tab.id == lhs_tab_id)
+            && let Some(rhs_tab_pos) = self.state.tabs.iter().position(|tab| tab.id == rhs_tab_id)
+        {
+            self.state.tabs.swap(lhs_tab_pos, rhs_tab_pos);
+        }
     }
 
-    pub fn process_tabs(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+    fn process_tabs(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let mut pending_children = vec![];
         for tab in self.state.tabs.iter_mut() {
             let is_selected = tab.id == self.state.selected_tab_id;
