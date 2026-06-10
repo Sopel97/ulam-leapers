@@ -1,10 +1,12 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors, MipmapGenerationProgress};
+use crate::gui::grid_render::{
+    GridRenderer, MipmapGenerationProgress, Zoom, default_player_colors,
+};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
+use eframe::egui::{Button, Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -145,6 +147,8 @@ const MAX_ZOOM_POW2: i32 = 3;
 const MIN_PNG_EXTENT: i32 = 256;
 const DEFAULT_PNG_EXTENT: i32 = 2048;
 const MAX_PNG_EXTENT: i32 = 8192;
+
+const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: usize = 128 * 1024 * 1024;
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
@@ -433,6 +437,9 @@ impl GridViewControls {
 
         let mut grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
 
+        // Handle various stages of mipmap generation.
+        // We rely directly on the state reported by the grid renderer instead of the
+        // progress from the callback.
         if grid_renderer_mutex_guard.has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else if grid_renderer_mutex_guard.can_generate_mipmaps() {
@@ -440,26 +447,44 @@ impl GridViewControls {
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
             let estimated_mipmap_memory_requirement = grid_renderer_mutex_guard
                 .estimate_memory_requirement(lowest_minification, highest_minification);
-            let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
+            let on_hover_text = if estimated_mipmap_memory_requirement
+                >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
+            {
+                let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
+                format!(
+                    "WARNING: While this will enable up to {}x minification \
+                it does require roughly {}MiB of RAM and may take a long time.\
+                This process is asynchronous.",
+                    highest_minification.as_usize(),
+                    mip_ram_mib
+                )
+            } else {
+                format!(
+                    "This will enable up to {}x minification.",
+                    highest_minification.as_usize()
+                )
+            };
+
             if ui
                 .button("Generate mipmaps")
-                .on_hover_text(format!(
-                    "WARNING: While this will enable up to 4096x minification \
-                it does require roughly {}MiB of RAM",
-                    mip_ram_mib
-                ))
+                .on_hover_text(on_hover_text)
                 .clicked()
             {
-                self.mipmap_generation_progress = Some(grid_renderer_mutex_guard
-                    .generate_mipmaps_async(lowest_minification, highest_minification));
+                self.mipmap_generation_progress = Some(
+                    grid_renderer_mutex_guard
+                        .generate_mipmaps_async(lowest_minification, highest_minification),
+                );
             }
-        } else {
+        } else /* if mipmap generation in progress */ {
             if ui.button("Cancel mipmap generation.").clicked() {
                 grid_renderer_mutex_guard.cancel_mipmap_generation();
             } else if let Some(progress) = &self.mipmap_generation_progress {
                 let progress = progress.get();
                 let progress_pct = (progress.0 * 100).checked_div(progress.1).unwrap_or(0);
-                ui.label(format!("{} / {} chunks ({}%)", progress.0, progress.1, progress_pct));
+                ui.label(format!(
+                    "{} / {} chunks ({}%)",
+                    progress.0, progress.1, progress_pct
+                ));
                 // Maybe some better notification in the future, but chunks get processed fast
                 // enough that this shouldn't be doing any redundant work.
                 ui.ctx().request_repaint();
