@@ -1,8 +1,8 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use eframe::egui::{Button, Color32, PointerButton, Sense, Ui, Widget};
-use eframe::{Frame, egui};
+use eframe::egui::{Button, Color32, PointerButton, Response, Sense, Ui};
+use eframe::{egui, Frame};
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -195,10 +195,14 @@ impl App {
 
         self.state.selected_tab_id = selected_tab_id;
 
+        self.process_tab_movement(ui, tab_labels.as_slice());
+    }
+
+    fn process_tab_movement(&mut self, ui: &mut Ui, tab_labels: &[(TabId, Response)]) {
         // Process tab movement. We can only do this now because we need
         // positions of all tabs to determine which ones to swap.
         let mut swap_tabs = None;
-        for (tab_id, label) in &tab_labels {
+        for (tab_id, label) in tab_labels {
             let is_dragging = label.dragged_by(PointerButton::Primary);
             let stopped_dragging = label.drag_stopped_by(PointerButton::Primary);
 
@@ -209,7 +213,7 @@ impl App {
                     // user drags beyond it to the left.
                     let mut swap_candidate = &tab_labels[0];
 
-                    for e in &tab_labels {
+                    for e in tab_labels {
                         let (_, label_other) = e;
                         if mouse_pos.x > label_other.rect.min.x
                             && mouse_pos.y > label_other.rect.min.y
