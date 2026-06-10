@@ -83,45 +83,12 @@ impl Subwindow for GridExplorer {
 
             let rect = ui.clip_rect(); // Full canvas
 
-            // For the caching to be effective there needs to space for at least a few
-            // framebuffers worth of data.
-            const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
-            let framebuffer_size =
-                rect.width() as usize * rect.height() as usize * size_of::<Color32>();
-            self.grid_renderer
-                .lock()
-                .unwrap()
-                .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
-
-            self.grid_view_controls.update_from_canvas_events(ui, &rect);
+            self.maybe_update_canvas_texture(ui, rect);
 
             let painter = ui.painter_at(rect);
 
-            // Check for changed colors and notify the renderer.
-            // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
-            //       The control panel must ensure the controls are disabled.
-            if self.grid_view_controls.have_colors_changed {
-                self.grid_renderer
-                    .lock()
-                    .unwrap()
-                    .set_colors(self.grid_view_controls.player_colors.as_slice());
-                self.grid_view_controls.have_colors_changed = false;
-            }
-
             // background
             painter.rect_filled(rect, 0.0, self.grid_view_controls.player_colors[0]);
-
-            let curr_grid_render_params = self
-                .grid_view_controls
-                .to_render_params(rect.width() as usize, rect.height() as usize);
-            if self.last_grid_render_params != curr_grid_render_params {
-                self.grid_render_texture = Some(self.grid_renderer.lock().unwrap().render_texture(
-                    ui.ctx(),
-                    &curr_grid_render_params.bounds,
-                    curr_grid_render_params.zoom,
-                ));
-                self.last_grid_render_params = curr_grid_render_params;
-            }
 
             if let Some(handle) = &self.grid_render_texture {
                 // y-flip via uv
@@ -197,6 +164,52 @@ impl GridExplorer {
         let mut explorer = GridExplorer::new(simulation);
         explorer.save_state = SaveState::Saved;
         Ok(explorer)
+    }
+
+    fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
+        // For the caching to be effective there needs to space for at least a few
+        // framebuffers worth of data.
+        const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
+
+        self.grid_view_controls.update_from_canvas_events(ui, &rect);
+
+        let framebuffer_size =
+            rect.width() as usize * rect.height() as usize * size_of::<Color32>();
+
+        self.grid_renderer
+            .lock()
+            .unwrap()
+            .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
+
+        let curr_grid_render_params = self
+            .grid_view_controls
+            .to_render_params(rect.width() as usize, rect.height() as usize);
+
+        if self.last_grid_render_params != curr_grid_render_params
+            || self.grid_view_controls.have_colors_changed
+        {
+            // Check for changed colors and notify the renderer.
+            // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
+            //       The control panel must ensure the controls are disabled.
+            if self.grid_view_controls.have_colors_changed {
+                self.grid_renderer
+                    .lock()
+                    .unwrap()
+                    .set_colors(self.grid_view_controls.player_colors.as_slice());
+
+                // Do not forget to reset the colors changed flag.
+                self.grid_view_controls.have_colors_changed = false;
+            }
+
+            self.grid_render_texture = Some(self.grid_renderer.lock().unwrap().render_texture(
+                ui.ctx(),
+                &curr_grid_render_params.bounds,
+                curr_grid_render_params.zoom,
+            ));
+
+            // Do not forget to update grid params.
+            self.last_grid_render_params = curr_grid_render_params;
+        }
     }
 }
 

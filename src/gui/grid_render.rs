@@ -197,7 +197,7 @@ impl GridRenderer {
     /// Panics if mipmaps have been generated.
     pub fn set_colors(&mut self, colors: &[Color32]) {
         assert!(
-            !self.has_mipmaps(),
+            self.can_set_colors(),
             "Cannot change colors after mipmaps have been generated."
         );
         assert!(
