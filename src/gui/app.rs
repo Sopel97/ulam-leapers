@@ -2,7 +2,8 @@
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Color32, PointerButton, Response, Sense, Ui};
-use eframe::{egui, Frame};
+use eframe::{Frame, egui};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -157,9 +158,40 @@ impl App {
         }
     }
 
+    fn make_tab_names(tabs: &[Tab]) -> BTreeMap<TabId, String> {
+        let subwindow_names_by_tab_id = tabs
+            .iter()
+            .flat_map(|tab| match &tab.subwindow {
+                SubwindowState::Active(subwindow) => Some((tab.id, subwindow.name())),
+                SubwindowState::Closed => None,
+            })
+            .collect::<Vec<_>>();
+
+        // We want to show tab id for disambiguation, but only if necessary.
+        subwindow_names_by_tab_id
+            .iter()
+            .map(|(tab_id, subwindow_name)| {
+                let num_subwindow_name_occurrences = subwindow_names_by_tab_id
+                    .iter()
+                    .filter(|v| v.1 == *subwindow_name)
+                    .count();
+
+                let tab_name = if num_subwindow_name_occurrences > 1 {
+                    format!("({}) {}", tab_id.0, subwindow_name)
+                } else {
+                    subwindow_name.clone()
+                };
+
+                (*tab_id, tab_name)
+            })
+            .collect::<BTreeMap<_, _>>()
+    }
+
     fn tab_bar(&mut self, ui: &mut Ui, _frame: &mut Frame) {
         let mut selected_tab_id = self.state.selected_tab_id;
         let mut tab_labels = vec![];
+
+        let tab_names = Self::make_tab_names(&self.state.tabs);
 
         for tab in self.state.tabs.iter_mut() {
             let mut do_close = false;
@@ -167,9 +199,11 @@ impl App {
                 SubwindowState::Active(ref mut subwindow) => {
                     ui.separator();
 
-                    // We want to show tab id for disambiguation.
-                    let name = format!("({}) {}", tab.id.0, subwindow.name());
-                    let tab_label_widget = Button::selectable(selected_tab_id == tab.id, name)
+                    let tab_name = tab_names.get(&tab.id).expect(
+                        "`make_tab_names` should have been called with the same set of tabs.",
+                    );
+
+                    let tab_label_widget = Button::selectable(selected_tab_id == tab.id, tab_name)
                         .sense(Sense::click() | Sense::drag());
 
                     let tab_label = ui.add(tab_label_widget);
