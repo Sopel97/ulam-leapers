@@ -593,7 +593,7 @@ impl Simulation {
 
         let mut progress = SimulationProgress::default();
         let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX) - self.simulated_turns;
-        let mut hit_limit = SimulationLimit::Turns;
+        let mut hit_limit = None;
         let mut last_compression_farthest_cell = UlamSpiralPoint::new(0);
         let mut last_memory_usage_farthest_cell = UlamSpiralPoint::new(0);
         while turns_to_simulate > 0 {
@@ -672,8 +672,7 @@ impl Simulation {
                 progress.memory_usage = total;
 
                 if limits.memory.is_some_and(|limit| total >= limit) {
-                    hit_limit = SimulationLimit::Memory;
-                    break;
+                    hit_limit = Some(SimulationLimit::Memory);
                 }
 
                 job_tx.send(Job::MemoryUsage).unwrap();
@@ -681,13 +680,11 @@ impl Simulation {
                 last_memory_usage_farthest_cell = farthest_cell;
             }
 
-            progress.complete_shells = self.complete_shells() as usize;
             if limits
                 .complete_shells
                 .is_some_and(|v| progress.complete_shells >= v)
             {
-                hit_limit = SimulationLimit::CompleteShells;
-                break;
+                hit_limit = Some(SimulationLimit::CompleteShells);
             }
 
             if limits
@@ -695,22 +692,26 @@ impl Simulation {
                 .as_ref()
                 .is_some_and(|v| v.load(Ordering::Relaxed))
             {
-                hit_limit = SimulationLimit::StopFlag;
+                hit_limit = Some(SimulationLimit::StopFlag);
+            }
+
+            progress.complete_shells = self.complete_shells() as usize;
+            progress.turns = self.simulated_turns;
+
+            progress_callback(progress);
+
+            if hit_limit.is_some() {
                 break;
             }
 
             self.update_forbiddances_origin();
-
-            progress.turns = self.simulated_turns;
-
-            progress_callback(progress);
         }
 
         // Send final message to terminate the worker thread and get the grid back.
         job_tx.send(Job::Stop).unwrap();
         self.grid = Some(grid_worker.join().unwrap());
 
-        Ok(hit_limit)
+        Ok(hit_limit.unwrap_or(SimulationLimit::Turns))
     }
 
     // Freezes all chunks, deallocates simulation buffers, prohibits further simulation.
