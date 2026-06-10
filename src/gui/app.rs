@@ -19,6 +19,12 @@ pub struct TabIdAllocator {
     next_id: usize,
 }
 
+impl Default for TabIdAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TabIdAllocator {
     pub fn new() -> Self {
         Self { next_id: 1 }
@@ -28,7 +34,7 @@ impl TabIdAllocator {
         TabId(0)
     }
 
-    pub fn next(&mut self) -> TabId {
+    pub fn next_tab_id(&mut self) -> TabId {
         let curr = self.next_id;
         self.next_id += 1;
         TabId(curr)
@@ -141,7 +147,7 @@ impl App {
     }
 
     pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>) {
-        let id = self.state.tab_id_allocator.next();
+        let id = self.state.tab_id_allocator.next_tab_id();
         self.state.tabs.push(Tab {
             id,
             subwindow: SubwindowState::Active(subwindow),
