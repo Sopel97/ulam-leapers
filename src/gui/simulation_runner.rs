@@ -4,7 +4,7 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use ulam_leapers::simulation::{
@@ -152,7 +152,7 @@ impl SimulationRunner {
         let (result_sender, result_receiver) = mpsc::channel();
 
         let stop_flag = Arc::new(AtomicBool::new(false));
-        limits = limits.with_stop_flag_limit(stop_flag.clone());
+        limits = limits.with_stop_flag_limit(Arc::clone(&stop_flag));
 
         Self {
             simulation_state: SimulationRunnerState::Init(sim),
@@ -334,7 +334,7 @@ impl SimulationRunner {
                 .send(SimulationRunnerWorkerJob::Simulate(
                     sim,
                     self.limits.clone(),
-                    self.progress.clone(),
+                    Arc::clone(&self.progress),
                     ctx.clone(),
                 ))
                 .unwrap();

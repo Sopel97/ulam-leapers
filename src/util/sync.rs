@@ -44,7 +44,7 @@ impl<T> DeferredValue<T> {
             value: OnceLock::new(),
         }
     }
-    
+
     #[cold]
     fn poll_cold(&self) {
         let mut worker_finished = false;
@@ -173,7 +173,7 @@ mod tests {
             if predicate() {
                 return true;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            sleep(Duration::from_millis(10));
         }
         false
     }
@@ -308,7 +308,7 @@ mod tests {
         let mut av: DeferredValue<i32> = DeferredValue::new();
         av.try_set_with_async(|ct| {
             while !ct.is_canceled() {
-                std::thread::sleep(Duration::from_millis(10));
+                sleep(Duration::from_millis(10));
             }
             Err(Canceled)
         })
@@ -348,7 +348,7 @@ mod tests {
         let mut av: DeferredValue<i32> = DeferredValue::new();
         av.try_set_with_async(|ct| {
             while !ct.is_canceled() {
-                std::thread::sleep(Duration::from_millis(10));
+                sleep(Duration::from_millis(10));
             }
             Err(Canceled)
         })
@@ -373,7 +373,7 @@ mod tests {
             let mut av: DeferredValue<i32> = DeferredValue::new();
             av.try_set_with_async(move |ct| {
                 while !ct.is_canceled() {
-                    std::thread::sleep(Duration::from_millis(10));
+                    sleep(Duration::from_millis(10));
                 }
                 drop(tx); // signals that the worker actually exited
                 Err(Canceled)
@@ -439,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn is_empty_and_idle_after_cancelation() {
+    fn is_empty_and_idle_after_cancellation() {
         let mut av: DeferredValue<i32> = DeferredValue::new();
         av.try_set_with_async(|_| Ok(123)).unwrap();
         av.try_cancel();

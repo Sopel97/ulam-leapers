@@ -1,7 +1,7 @@
-﻿use std::cmp::{max, min};
+﻿use crate::util::memory::MemSize;
+use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut, RangeFrom};
-use crate::util::memory::MemSize;
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.

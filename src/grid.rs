@@ -5,12 +5,12 @@ use crate::compression::{AnyCompression, CompressedBlob, Compression, Compressio
 use crate::coords::{Point2D, Rect2D, Vector2D};
 use crate::io::{ReadFrom, WriteTo};
 use crate::util::align::CACHE_LINE_SIZE;
-use crate::util::blit::{Blit2D, blit_array2d_unchecked};
+use crate::util::blit::{blit_array2d_unchecked, Blit2D};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::cancel::{Canceled, CancellationToken};
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
 use crate::util::pow2;
-use crate::util::pow2::{Pow2, floor_to_multiple};
+use crate::util::pow2::{floor_to_multiple, Pow2};
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
@@ -19,7 +19,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 pub type GridPoint = Point2D<i32>;
 pub type GridVector = Vector2D<i32>;
@@ -843,7 +843,7 @@ where
                             pow2::floor_div(subregion.height(), self.minification) as usize;
 
                         tx.send((
-                            whole_chunk_result.clone(),
+                            Arc::clone(&whole_chunk_result),
                             Blit2D {
                                 src_x,
                                 src_y,

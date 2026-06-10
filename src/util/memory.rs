@@ -1,7 +1,7 @@
-﻿use std::{mem, slice};
-use std::fmt::{Display, Formatter};
+﻿use std::fmt::{Display, Formatter};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign};
+use std::slice;
 
 /// # SAFETY
 ///

@@ -6,19 +6,18 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::JoinHandle;
+use std::sync::{Arc, Mutex};
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{
-    ChunkOrigin, FrozenGrid, FrozenGridSampler, GridPoint, GridRect, SampleCollector,
+    ChunkOrigin, FrozenGrid, FrozenGridSampler, GridRect, SampleCollector,
 };
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
-use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
+use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::util::sync::DeferredValue;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,7 +159,7 @@ impl MipmapGenerationProgress {
     }
 
     pub fn get(&self) -> (usize, usize) {
-        self.slot.lock().unwrap().clone()
+        *self.slot.lock().unwrap()
     }
 }
 
@@ -376,7 +375,7 @@ impl GridRenderer {
         }
     }
 
-    pub fn estimate_memory_requirement(
+    pub fn estimate_mipmaps_memory_requirement(
         &self,
         lowest_minification: Pow2,
         highest_minification: Pow2,
@@ -425,16 +424,16 @@ impl GridRenderer {
 
         let is_finished = Arc::new(AtomicBool::new(false));
         let progress = Arc::new(Mutex::new((0usize, 1usize)));
-        let progress_clone = progress.clone();
+        let progress_clone = Arc::clone(&progress);
         let progress_callback = move |done: usize, total: usize| {
             *progress_clone.lock().unwrap() = (done, total);
         };
 
-        let grid_ref = self.grid.clone();
+        let grid_ref = Arc::clone(&self.grid);
         let default_color = self.colors[0];
         let collector = AvgColorCollector::new(self.colors.as_slice());
 
-        let is_finished_clone = is_finished.clone();
+        let is_finished_clone = Arc::clone(&is_finished);
         let job = move |ct: CancellationToken| {
             let mut mipmaps = MipmapStorageType::new();
 
@@ -535,13 +534,5 @@ impl GridRenderer {
         }
 
         curr_mipmap
-    }
-
-    // Private function, parameters are assumed to be correct.
-    fn make_mipmap_from_scratch(&self, bounds: &GridRect, minification: Pow2) -> Array2D<Color32> {
-        // We do not want to pollute the cache. We are likely to generate more data
-        // than can be cached, in which case it would be equal to complete cache invalidation.
-        let sampler = self.make_sampler_for_minification(bounds, minification);
-        sampler.par_sample()
     }
 }

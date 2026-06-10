@@ -1,17 +1,17 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
+use crate::compression::zstd::ZstdCompression;
 use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
 use crate::piece::LeaperAttacks;
+use crate::util::memory::MemSize;
 use crate::util::pow2::Pow2;
 use std::cmp::{max, min};
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use crate::compression::zstd::ZstdCompression;
-use crate::util::memory::MemSize;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -190,7 +190,7 @@ impl FinalizedSimulation {
     }
 
     pub fn grid(&self) -> Arc<FrozenGrid<PlayerId>> {
-        self.grid.clone()
+        Arc::clone(&self.grid)
     }
 
     pub fn highest_player_id(&self) -> PlayerId {
@@ -555,7 +555,7 @@ impl Simulation {
         };
 
         let grid_memory_usage = Arc::new(Mutex::new(MemSize::ZERO));
-        let grid_memory_usage_worker = grid_memory_usage.clone();
+        let grid_memory_usage_worker = Arc::clone(&grid_memory_usage);
         let grid_worker = thread::spawn(move || {
             loop {
                 let job = job_rx.recv().unwrap();

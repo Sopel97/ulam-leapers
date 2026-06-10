@@ -1,4 +1,4 @@
-﻿use crate::util::bytestream::{ByteReader, ByteReaderError};
+﻿use crate::util::bytestream::ByteReader;
 
 // Making this a type parameter of LittleEndianBitReader
 // is not feasible due to lack of duck typing.

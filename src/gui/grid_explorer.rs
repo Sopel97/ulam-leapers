@@ -1,12 +1,12 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
 use crate::gui::grid_render::{
-    GridRenderer, MipmapGenerationProgress, Zoom, default_player_colors,
+    default_player_colors, GridRenderer, MipmapGenerationProgress, Zoom,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{Button, Context, Rect, Response, Sense, TextureHandle, Ui, color_picker, vec2};
+use eframe::egui::{color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -18,7 +18,7 @@ use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::util::memory::MemSize;
-use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
+use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub enum SaveState {
     NotSaved,
@@ -161,8 +161,8 @@ impl GridExplorer {
 
         let player_count = finalized_simulation.player_count();
         let grid_view_controls = GridViewControls {
-            finalized_simulation: finalized_simulation.clone(),
-            grid_renderer: grid_renderer.clone(),
+            finalized_simulation: Arc::clone(&finalized_simulation),
+            grid_renderer: Arc::clone(&grid_renderer),
             mipmap_generation_progress: None,
 
             min_zoom_pow2: MIN_ZOOM_POW2,
@@ -446,9 +446,9 @@ impl GridViewControls {
         } else if grid_renderer_mutex_guard.can_generate_mipmaps() {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
-            let estimated_mipmap_memory_requirement = grid_renderer_mutex_guard
-                .estimate_memory_requirement(lowest_minification, highest_minification);
-            let on_hover_text = if estimated_mipmap_memory_requirement
+            let estimated_mipmaps_memory_requirement = grid_renderer_mutex_guard
+                .estimate_mipmaps_memory_requirement(lowest_minification, highest_minification);
+            let on_hover_text = if estimated_mipmaps_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
             {
                 format!(
@@ -456,7 +456,7 @@ impl GridViewControls {
                 it does require roughly {} of RAM and may take a long time.\
                 This process is asynchronous.",
                     highest_minification.as_usize(),
-                    estimated_mipmap_memory_requirement.display().si(),
+                    estimated_mipmaps_memory_requirement.display().si(),
                 )
             } else {
                 format!(

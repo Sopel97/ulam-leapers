@@ -81,7 +81,7 @@ where
     pub fn try_get(&self, key: &K) -> Option<Arc<V>> {
         self.entries.get(key).map(|entry| {
             entry.last_use_gen.store(self.curr_gen, Ordering::Release);
-            entry.value.clone()
+            Arc::clone(&entry.value)
         })
     }
 
@@ -111,7 +111,7 @@ where
                     memory_cost,
                     cost_ratio: (computation_cost as f64) / (memory_cost as f64),
                     last_use_gen: AtomicUsize::new(self.curr_gen),
-                    value: computed.clone(),
+                    value: Arc::clone(&computed),
                 },
             ));
         }
