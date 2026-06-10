@@ -208,7 +208,7 @@ impl App {
                     let mut swap_tab_id = tab_labels[0].0;
 
                     for (tab_id_other, label_other) in &tab_labels {
-                        if mouse_pos.x > label_other.rect.min.x {
+                        if mouse_pos.x > label_other.rect.min.x && mouse_pos.y > label_other.rect.min.y {
                             swap_tab_id = *tab_id_other;
                         }
                     }
