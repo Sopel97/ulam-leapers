@@ -4,11 +4,11 @@ use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{
-    pos2, Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider,
-    TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b,
+    Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
+    TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b, pos2,
 };
 use eframe::epaint::TextureHandle;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -435,7 +435,86 @@ impl<'a> SampleCollector for LastColorCollector<'a> {
     fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
         acc
     }
-} 
+}
+
+struct SimulationCreatorWorker {
+    job_receiver: mpsc::Receiver<SimulationCreatorWorkerJob>,
+    result_sender: mpsc::Sender<SimulationCreatorWorkerResult>,
+}
+
+impl SimulationCreatorWorker {
+    pub fn run(self) {
+        loop {
+            let mut job = self.job_receiver.recv().unwrap();
+            if let SimulationCreatorWorkerJob::Stop = job {
+                break;
+            }
+
+            // Consume jobs as long as there is something newer.
+            while let Ok(newer) = self.job_receiver.try_recv() {
+                job = newer;
+
+                if let SimulationCreatorWorkerJob::Stop = job {
+                    break;
+                }
+            }
+
+            match job {
+                SimulationCreatorWorkerJob::Stop => break,
+                SimulationCreatorWorkerJob::CancelAll => {
+                    while self.job_receiver.try_recv().is_ok() {}
+                }
+                SimulationCreatorWorkerJob::GeneratePreview(simulation, ctx, shells) => {
+                    self.generate_preview(simulation, ctx, shells);
+                }
+            }
+        }
+    }
+
+    fn generate_preview(&self, mut simulation: Simulation, ctx: Context, shells: usize) {
+        if shells == 0 {
+            return;
+        }
+
+        let limits = SimulationLimits::new().with_complete_shell_limit(shells);
+        let _ = simulation.simulate(limits);
+        let finalized = simulation.finalize();
+        let frozen_grid = finalized.grid();
+
+        let colors = default_player_colors();
+        let bounds = GridRect::with_size(
+            GridPoint::new(-(shells as i32), -(shells as i32)),
+            (shells * 2 + 1) as i32,
+            (shells * 2 + 1) as i32,
+        );
+
+        let collector = LastColorCollector {
+            colors: colors.as_slice(),
+        };
+        let sampler = FrozenGridSampler::new(&frozen_grid, bounds, colors[0], collector);
+        let samples: Array2D<Color32> = sampler.par_sample();
+        let image = ColorImage::new(
+            [samples.width(), samples.height()],
+            samples.as_flat_slice().to_vec(),
+        );
+
+        let texture_options = TextureOptions {
+            magnification: TextureFilter::Nearest,
+            minification: TextureFilter::Linear,
+            wrap_mode: TextureWrapMode::ClampToEdge,
+            mipmap_mode: None,
+        };
+        let handle = ctx.load_texture("name", image, texture_options);
+
+        self.result_sender
+            .send(SimulationCreatorWorkerResult::PreviewImage(handle))
+            .unwrap();
+
+        // The UI should now receive the preview texture, but it's reactive
+        // so we should force a repaint.
+        ctx.request_repaint();
+    }
+}
 
 impl SimulationCreator {
     pub fn new() -> Self {
@@ -453,77 +532,11 @@ impl SimulationCreator {
             // IMPORTANT: The worker skips jobs and only focuses on the most recent one
             // TODO: clearer abstraction for this.
             worker: Some(std::thread::spawn(move || {
-                let job_receiver = job_receiver;
-                let result_sender = result_sender;
-                loop {
-                    let mut job = job_receiver.recv().unwrap();
-                    if let SimulationCreatorWorkerJob::Stop = job {
-                        break;
-                    }
-
-                    // Consume jobs as long as there is something newer.
-                    while let Ok(newer) = job_receiver.try_recv() {
-                        job = newer;
-
-                        if let SimulationCreatorWorkerJob::Stop = job {
-                            break;
-                        }
-                    }
-
-                    match job {
-                        SimulationCreatorWorkerJob::Stop => break,
-                        SimulationCreatorWorkerJob::CancelAll => {
-                            while job_receiver.try_recv().is_ok() {}
-                        }
-                        SimulationCreatorWorkerJob::GeneratePreview(
-                            mut simulation,
-                            ctx,
-                            shells,
-                        ) => {
-                            if shells == 0 {
-                                continue;
-                            }
-
-                            let limits = SimulationLimits::new().with_complete_shell_limit(shells);
-                            let _ = simulation.simulate(limits);
-                            let finalized = simulation.finalize();
-                            let frozen_grid = finalized.grid();
-
-                            let colors = default_player_colors();
-                            let bounds = GridRect::with_size(
-                                GridPoint::new(-(shells as i32), -(shells as i32)),
-                                (shells * 2 + 1) as i32,
-                                (shells * 2 + 1) as i32,
-                            );
-                            
-                            let collector = LastColorCollector { colors: colors.as_slice() };
-                            let sampler = FrozenGridSampler::new(
-                                &frozen_grid, bounds, colors[0], collector,
-                            );
-                            let samples: Array2D<Color32> = sampler.par_sample();
-                            let image = ColorImage::new(
-                                [samples.width(), samples.height()],
-                                samples.as_flat_slice().to_vec(),
-                            );
-
-                            let texture_options = TextureOptions {
-                                magnification: TextureFilter::Nearest,
-                                minification: TextureFilter::Linear,
-                                wrap_mode: TextureWrapMode::ClampToEdge,
-                                mipmap_mode: None,
-                            };
-                            let handle = ctx.load_texture("name", image, texture_options);
-
-                            result_sender
-                                .send(SimulationCreatorWorkerResult::PreviewImage(handle))
-                                .unwrap();
-
-                            // The UI should now receive the preview texture, but it's reactive
-                            // so we should force a repaint.
-                            ctx.request_repaint();
-                        }
-                    }
+                SimulationCreatorWorker {
+                    job_receiver,
+                    result_sender,
                 }
+                .run()
             })),
             worker_jobs: job_sender,
             worker_results: result_receiver,
@@ -807,7 +820,9 @@ impl SimulationCreator {
                             )
                             .integer()
                             .logarithmic(true)
-                            .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
+                            .custom_formatter(|s, _| {
+                                MemSize::b(s as usize).display().si().to_string()
+                            }),
                         );
                     });
 
