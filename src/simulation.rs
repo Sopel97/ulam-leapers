@@ -146,7 +146,7 @@ pub trait Game {
     fn players(&self) -> &Vec<Player>;
     fn simulated_turns(&self) -> usize;
 
-    fn complete_shells(&self) -> i32 {
+    fn complete_shells(&self) -> u32 {
         self.players()
             .iter()
             .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
@@ -400,7 +400,7 @@ impl Simulation {
     fn grid_region_past_modification(&self) -> Option<GridRect> {
         let last_fully_simulated_shell = match self.complete_shells() {
             0 => return None,
-            s => s - 1,
+            s => s as i32 - 1,
         };
 
         let min_point = GridPoint::new(-last_fully_simulated_shell, -last_fully_simulated_shell);
@@ -416,18 +416,18 @@ impl Simulation {
         for player in self.players.iter_mut() {
             // In a lot of cases we can place the piece immediately where we currently are,
             // so special case it. Results in a significant speedup.
-            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().index()];
+            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().as_isize()];
             if !immediate_cell.is_set(player.id) {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
                 let pos = self
                     .forbiddances
-                    .position_or_first_empty(player.cursor.spiral_position().index() + 1.., |x| {
+                    .position_or_first_empty(player.cursor.spiral_position().as_isize() + 1.., |x| {
                         !x.is_set(player.id)
                     });
-                player.cursor.advance_to(UlamSpiralPoint::new(pos as i64));
-                self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
+                player.cursor.advance_to(UlamSpiralPoint::new(pos as u64));
+                self.forbiddances[player.cursor.spiral_position().as_isize()] = PlayerIdSet::full();
             }
 
             let attack_src = player.cursor.grid_position();
@@ -436,8 +436,8 @@ impl Simulation {
                 let u = UlamSpiralPoint::from(&attack_dst);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
-                if u.index() >= self.forbiddances.get_origin() {
-                    self.forbiddances[u.index()] |= player.enemies;
+                if u.as_isize() >= self.forbiddances.get_origin() {
+                    self.forbiddances[u.as_isize()] |= player.enemies;
                 }
             }
 
@@ -452,9 +452,9 @@ impl Simulation {
         let last_player = self
             .players
             .iter()
-            .min_by_key(|player| player.cursor.spiral_position().index())
+            .min_by_key(|player| player.cursor.spiral_position().as_usize())
             .unwrap();
-        let new_origin = last_player.cursor.spiral_position().index();
+        let new_origin = last_player.cursor.spiral_position().as_isize();
         self.forbiddances.set_origin(new_origin);
     }
 
@@ -630,7 +630,7 @@ impl Simulation {
             // we need to freeze every `COMPRESSION_INTERVAL_CELLS` to eventually catch up
             // with the chunks being newly created.
             // When close to the memory limit this amortization scheme is overriden.
-            if farthest_cell >= last_compression_farthest_cell + COMPRESSION_INTERVAL_CELLS
+            if farthest_cell >= last_compression_farthest_cell + COMPRESSION_INTERVAL_CELLS as u64
                 && let Some(region) = self.grid_region_past_modification()
             {
                 let new_cells = farthest_cell - last_compression_farthest_cell;
@@ -662,7 +662,7 @@ impl Simulation {
                 last_compression_farthest_cell = farthest_cell;
             }
 
-            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS {
+            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS as u64 {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
                 progress.memory_usage = total;

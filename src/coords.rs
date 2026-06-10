@@ -26,18 +26,18 @@ pub struct Rect2D<T> {
 }
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
-pub struct UlamSpiralPoint(i64);
+pub struct UlamSpiralPoint(u64);
 
 impl UlamSpiralPoint {
-    pub fn new(d: i64) -> UlamSpiralPoint {
-        if d < 0 {
-            panic!("UlamSpiralPoint is negative");
-        }
-
+    pub fn new(d: u64) -> UlamSpiralPoint {
         UlamSpiralPoint(d)
     }
 
-    pub fn index(self) -> isize {
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+    
+    pub fn as_isize(self) -> isize {
         self.0 as isize
     }
 }
@@ -46,15 +46,21 @@ impl Sub for UlamSpiralPoint {
     type Output = i64;
 
     fn sub(self, rhs: UlamSpiralPoint) -> i64 {
-        self.0 - rhs.0
+        self.0 as i64 - rhs.0 as i64
     }
 }
 
-impl Add<usize> for UlamSpiralPoint {
+impl Add<u64> for UlamSpiralPoint {
     type Output = UlamSpiralPoint;
 
-    fn add(self, rhs: usize) -> UlamSpiralPoint {
-        UlamSpiralPoint(self.0 + rhs as i64)
+    fn add(self, rhs: u64) -> UlamSpiralPoint {
+        UlamSpiralPoint(self.0 + rhs)
+    }
+}
+
+impl AddAssign<u64> for UlamSpiralPoint {
+    fn add_assign(&mut self, rhs: u64) {
+        self.0 += rhs;
     }
 }
 
@@ -98,6 +104,16 @@ where
     }
 }
 
+impl<T: Copy> AddAssign<Vector2D<T>> for Point2D<T>
+where
+    T: AddAssign<T>,
+{
+    fn add_assign(&mut self, rhs: Vector2D<T>) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+    }
+}
+
 impl<T: Copy> Sub<Vector2D<T>> for Point2D<T>
 where
     T: Sub<T, Output = T>,
@@ -109,6 +125,16 @@ where
             x: self.x - rhs.x,
             y: self.y - rhs.y,
         }
+    }
+}
+
+impl<T: Copy> SubAssign<Vector2D<T>> for Point2D<T>
+where
+    T: SubAssign<T>,
+{
+    fn sub_assign(&mut self, rhs: Vector2D<T>) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
     }
 }
 
@@ -159,13 +185,13 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
             (4 * x - 1) * x - y
         };
 
-        UlamSpiralPoint(p)
+        UlamSpiralPoint(p as u64)
     }
 }
 
 impl Point2D<i32> {
-    pub fn chebyshev_distance_from_origin(&self) -> i32 {
-        cmp::max(self.x.abs(), self.y.abs())
+    pub fn chebyshev_distance_from_origin(&self) -> u32 {
+        cmp::max(self.x.unsigned_abs(), self.y.unsigned_abs())
     }
 }
 
@@ -174,8 +200,8 @@ pub struct UlamSpiralCursor {
     spiral_position: UlamSpiralPoint,
 
     current_direction: GridVector,
-    current_line: usize,
-    steps_in_current_direction_left: usize,
+    current_line: u32,
+    steps_in_current_direction_left: u32,
 }
 
 impl Default for UlamSpiralCursor {
@@ -197,7 +223,7 @@ impl UlamSpiralCursor {
 
     pub fn advance(&mut self) {
         self.grid_position = self.grid_position + self.current_direction;
-        self.spiral_position.0 += 1;
+        self.spiral_position += 1;
         self.steps_in_current_direction_left -= 1;
 
         if self.steps_in_current_direction_left == 0 {
@@ -211,25 +237,24 @@ impl UlamSpiralCursor {
 
     pub fn advance_to(&mut self, to: UlamSpiralPoint) {
         // Extract predictable branch
-        if self.spiral_position.0 == to.0 {
+        if self.spiral_position == to {
             return;
         }
 
-        while (to.0 - self.spiral_position.0) as usize >= self.steps_in_current_direction_left {
-            self.grid_position = self.grid_position
-                + self.current_direction * self.steps_in_current_direction_left as i32;
-            self.spiral_position.0 += self.steps_in_current_direction_left as i64;
+        while (to - self.spiral_position) >= self.steps_in_current_direction_left as i64 {
+            self.grid_position += self.current_direction * self.steps_in_current_direction_left as i32;
+            self.spiral_position += self.steps_in_current_direction_left as u64;
             self.current_line += 1;
             self.steps_in_current_direction_left = self.current_line / 2 + 1;
             self.current_direction =
                 GridVector::new(-self.current_direction.y, self.current_direction.x);
         }
 
-        let diff = (to.0 - self.spiral_position.0) as usize;
-        if diff < self.steps_in_current_direction_left {
+        let diff = to - self.spiral_position;
+        if diff > 0 {
             self.grid_position = self.grid_position + self.current_direction * diff as i32;
-            self.spiral_position.0 += diff as i64;
-            self.steps_in_current_direction_left -= diff;
+            self.spiral_position += diff as u64;
+            self.steps_in_current_direction_left -= diff as u32;
         }
     }
 
@@ -401,7 +426,7 @@ impl WriteTo for UlamSpiralPoint {
 
 impl ReadFrom for UlamSpiralPoint {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(UlamSpiralPoint(i64::read_from(reader)?))
+        Ok(UlamSpiralPoint(u64::read_from(reader)?))
     }
 }
 

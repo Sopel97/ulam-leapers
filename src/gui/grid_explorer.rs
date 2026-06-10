@@ -507,7 +507,7 @@ impl GridViewControls {
         ui.add(
             egui::Slider::new(
                 &mut self.origin_x,
-                -complete_shells as f32..=complete_shells as f32,
+                -(complete_shells as f32)..=(complete_shells as f32),
             )
             .text("X")
             .drag_value_speed(coord_drag_speed),
@@ -515,7 +515,7 @@ impl GridViewControls {
         ui.add(
             egui::Slider::new(
                 &mut self.origin_y,
-                -complete_shells as f32..=complete_shells as f32,
+                -(complete_shells as f32)..=(complete_shells as f32),
             )
             .text("Y")
             .drag_value_speed(coord_drag_speed),
