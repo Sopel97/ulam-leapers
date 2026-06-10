@@ -430,10 +430,10 @@ impl Simulation {
                 self.forbiddances[player.cursor.spiral_position().index()] = PlayerIdSet::full();
             }
 
-            let point = player.cursor.grid_position();
-            placements[player.id.0 as usize].push(point);
-            for attack_vector in player.attacks.get_attacks_from(&point) {
-                let u = UlamSpiralPoint::from(&attack_vector);
+            let attack_src = player.cursor.grid_position();
+            placements[player.id.0 as usize].push(attack_src);
+            for attack_dst in player.attacks.get_attacks_from(&attack_src) {
+                let u = UlamSpiralPoint::from(&attack_dst);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
                 if u.index() >= self.forbiddances.get_origin() {
