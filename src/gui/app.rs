@@ -1,8 +1,8 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use eframe::egui::{Button, Ui};
-use eframe::{egui, Frame};
+use eframe::egui::{Button, PointerButton, Ui};
+use eframe::{Frame, egui};
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -159,15 +159,15 @@ impl App {
                 SubwindowState::Active(ref mut subwindow) => {
                     ui.separator();
 
-                    if ui
-                        .selectable_label(selected_tab_id == tab.id, subwindow.name())
-                        .clicked()
-                    {
+                    let label = ui.selectable_label(selected_tab_id == tab.id, subwindow.name());
+                    if label.clicked() {
                         selected_tab_id = tab.id;
                     }
 
-                    if subwindow.is_closeable() && tab.id == self.state.selected_tab_id {
-                        if ui.small_button("✖").clicked() {
+                    if subwindow.is_closeable() {
+                        if (tab.id == self.state.selected_tab_id && ui.small_button("✖").clicked())
+                            || label.clicked_by(PointerButton::Middle)
+                        {
                             subwindow.on_close();
                             do_close = true;
                         }
