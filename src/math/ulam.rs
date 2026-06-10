@@ -1,29 +1,8 @@
 ﻿use crate::grid::{GridPoint, GridVector};
 use crate::io::{ReadFrom, WriteTo};
-use crate::util::pow2;
-use crate::util::pow2::Pow2;
-use std::cmp;
+use crate::math::coords::Point2D;
 use std::io::{ErrorKind, Read, Write};
-use std::ops::*;
-
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
-pub struct Point2D<T> {
-    pub x: T,
-    pub y: T,
-}
-
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
-pub struct Vector2D<T> {
-    pub x: T,
-    pub y: T,
-}
-
-// Effectively forms a 2-dimensional [start, end) range.
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
-pub struct Rect2D<T> {
-    pub start: Point2D<T>,
-    pub end: Point2D<T>,
-}
+use std::ops::{Add, AddAssign, Sub};
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct UlamSpiralPoint(u64);
@@ -61,80 +40,6 @@ impl Add<u64> for UlamSpiralPoint {
 impl AddAssign<u64> for UlamSpiralPoint {
     fn add_assign(&mut self, rhs: u64) {
         self.0 += rhs;
-    }
-}
-
-impl<T> Point2D<T> {
-    pub fn new(x: T, y: T) -> Point2D<T> {
-        Point2D::<T> { x, y }
-    }
-}
-
-impl<T> Vector2D<T> {
-    pub fn new(x: T, y: T) -> Vector2D<T> {
-        Vector2D::<T> { x, y }
-    }
-}
-
-impl<T: Copy> Mul<T> for Vector2D<T>
-where
-    T: Mul<T, Output = T>,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: T) -> Self {
-        Vector2D::<T> {
-            x: self.x * rhs,
-            y: self.y * rhs,
-        }
-    }
-}
-
-impl<T: Copy> Add<Vector2D<T>> for Point2D<T>
-where
-    T: Add<T, Output = T>,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Vector2D<T>) -> Self {
-        Point2D::<T> {
-            x: self.x + rhs.x,
-            y: self.y + rhs.y,
-        }
-    }
-}
-
-impl<T: Copy> AddAssign<Vector2D<T>> for Point2D<T>
-where
-    T: AddAssign<T>,
-{
-    fn add_assign(&mut self, rhs: Vector2D<T>) {
-        self.x += rhs.x;
-        self.y += rhs.y;
-    }
-}
-
-impl<T: Copy> Sub<Vector2D<T>> for Point2D<T>
-where
-    T: Sub<T, Output = T>,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: Vector2D<T>) -> Self {
-        Point2D::<T> {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-}
-
-impl<T: Copy> SubAssign<Vector2D<T>> for Point2D<T>
-where
-    T: SubAssign<T>,
-{
-    fn sub_assign(&mut self, rhs: Vector2D<T>) {
-        self.x -= rhs.x;
-        self.y -= rhs.y;
     }
 }
 
@@ -186,12 +91,6 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
         };
 
         UlamSpiralPoint(p as u64)
-    }
-}
-
-impl Point2D<i32> {
-    pub fn chebyshev_distance_from_origin(&self) -> u32 {
-        cmp::max(self.x.unsigned_abs(), self.y.unsigned_abs())
     }
 }
 
@@ -267,155 +166,6 @@ impl UlamSpiralCursor {
     }
 }
 
-impl<T: Add<Output = T> + Clone + Copy> Rect2D<T> {
-    pub fn with_size(start: Point2D<T>, width: T, height: T) -> Rect2D<T> {
-        let end = Point2D::new(start.x + width, start.y + height);
-        Rect2D::<T> { start, end }
-    }
-
-    pub fn square_with_size(start: Point2D<T>, size: T) -> Rect2D<T> {
-        let end = Point2D::new(start.x + size, start.y + size);
-        Rect2D::<T> { start, end }
-    }
-
-    pub fn with_start_end(start: Point2D<T>, end: Point2D<T>) -> Rect2D<T> {
-        Rect2D::<T> { start, end }
-    }
-}
-
-impl<
-    T: BitAnd<Output = T> + From<u8> + Shl<Output = T> + Sub<Output = T> + PartialEq<T> + Clone + Copy,
-> Rect2D<T>
-{
-    pub fn is_aligned_to_pow2(&self, align: Pow2) -> bool {
-        pow2::floor_mod(self.start.x, align) == T::from(0)
-            && pow2::floor_mod(self.start.y, align) == T::from(0)
-            && pow2::floor_mod(self.end.x, align) == T::from(0)
-            && pow2::floor_mod(self.end.y, align) == T::from(0)
-    }
-}
-
-impl<T: Clone + Copy> Rect2D<T> {
-    pub fn start(&self) -> Point2D<T> {
-        self.start
-    }
-
-    pub fn end(&self) -> Point2D<T> {
-        self.end
-    }
-}
-
-impl<T: Sub<Output = T> + Clone + Copy> Rect2D<T> {
-    pub fn width(&self) -> T {
-        self.end.x - self.start.x
-    }
-
-    pub fn height(&self) -> T {
-        self.end.y - self.start.y
-    }
-}
-
-impl<T: Ord + Add<Output = T> + Copy + Clone> Rect2D<T> {
-    pub fn contains_point(&self, point: &Point2D<T>) -> bool {
-        point.x >= self.start.x
-            && point.y >= self.start.y
-            && point.x < self.end.x
-            && point.y < self.end.y
-    }
-
-    pub fn contains(&self, other: &Rect2D<T>) -> bool {
-        self.start.x <= other.start.x
-            && self.start.y <= other.start.y
-            && self.end.x >= other.end.x
-            && self.end.y >= other.end.y
-    }
-
-    pub fn intersection(&self, other: &Rect2D<T>) -> Option<Rect2D<T>> {
-        let start = Point2D::new(
-            cmp::max(self.start.x, other.start.x),
-            cmp::max(self.start.y, other.start.y),
-        );
-        let end = Point2D::new(
-            cmp::min(self.end.x, other.end.x),
-            cmp::min(self.end.y, other.end.y),
-        );
-        if start.x < end.x && start.y < end.y {
-            Some(Rect2D::with_start_end(start, end))
-        } else {
-            None
-        }
-    }
-}
-
-impl<T> WriteTo for Point2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.x.write_to(writer)?;
-        self.y.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Point2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Point2D {
-            x: T::read_from(reader)?,
-            y: T::read_from(reader)?,
-        })
-    }
-}
-
-impl<T> WriteTo for Vector2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.x.write_to(writer)?;
-        self.y.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Vector2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Vector2D {
-            x: T::read_from(reader)?,
-            y: T::read_from(reader)?,
-        })
-    }
-}
-
-impl<T> WriteTo for Rect2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.start.write_to(writer)?;
-        self.end.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Rect2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Rect2D {
-            start: Point2D::<T>::read_from(reader)?,
-            end: Point2D::<T>::read_from(reader)?,
-        })
-    }
-}
-
 pub const ULS_MAX_CURSOR_OFFSET: usize = 2_000_000_000;
 
 impl WriteTo for UlamSpiralPoint {
@@ -468,24 +218,6 @@ impl ReadFrom for UlamSpiralCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn can_add_vector_to_a_point() {
-        let p = Point2D::new(1, 2);
-        let v = Vector2D::new(3, 4);
-        let translated = p + v;
-        assert_eq!(translated.x, 4);
-        assert_eq!(translated.y, 6);
-    }
-
-    #[test]
-    fn can_sub_vector_from_a_point() {
-        let p = Point2D::new(1, 2);
-        let v = Vector2D::new(3, 4);
-        let translated = p - v;
-        assert_eq!(translated.x, -2);
-        assert_eq!(translated.y, -2);
-    }
 
     #[test]
     fn can_convert_point_to_ulam_spiral_point() {
@@ -558,51 +290,5 @@ mod tests {
         cursor.advance();
         assert_eq!(cursor.grid_position, GridPoint::new(0, -1));
         assert_eq!(cursor.spiral_position, UlamSpiralPoint(7));
-    }
-
-    fn some_rect() -> Rect2D<i32> {
-        Rect2D::with_size(Point2D::new(8, 9), 12, 13)
-    }
-
-    #[test]
-    fn rect_contains_its_start() {
-        let rect = some_rect();
-        assert!(rect.contains_point(&rect.start));
-    }
-
-    #[test]
-    fn rect_does_not_contain_its_end() {
-        let rect = some_rect();
-        assert!(!rect.contains_point(&rect.end));
-    }
-
-    #[test]
-    fn rect_contains_itself() {
-        let rect = some_rect();
-        assert!(rect.contains(&rect));
-    }
-
-    #[test]
-    fn rect_intersected_with_itself_stays_the_same() {
-        let rect = some_rect();
-        let intersection = rect.intersection(&rect).unwrap();
-        assert_eq!(rect, intersection);
-    }
-
-    #[test]
-    fn touching_rects_do_not_intersect() {
-        // In other words, no degenerate intersections.
-        let rect1 = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
-        let rect2 = Rect2D::with_size(Point2D::new(10, 0), 10, 10);
-        assert!(rect1.intersection(&rect2).is_none());
-    }
-
-    #[test]
-    fn rect_intersection_is_contained_by_both_rects() {
-        let rect1 = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
-        let rect2 = Rect2D::with_size(Point2D::new(5, 5), 10, 10);
-        let intersection = rect1.intersection(&rect2).unwrap();
-        assert!(rect1.contains(&intersection));
-        assert!(rect2.contains(&intersection));
     }
 }

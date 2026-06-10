@@ -1,11 +1,11 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
-use crate::coords::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
+use crate::math::pow2::Pow2;
+use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::piece::LeaperAttacks;
 use crate::util::memory::MemSize;
-use crate::util::pow2::Pow2;
 use std::cmp::{max, min};
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};

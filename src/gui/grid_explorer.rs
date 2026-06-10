@@ -16,9 +16,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
+use ulam_leapers::math::pow2::{floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::util::memory::MemSize;
-use ulam_leapers::util::pow2::{floor_div, floor_to_multiple, Pow2};
 
 pub enum SaveState {
     NotSaved,

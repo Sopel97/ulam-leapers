@@ -12,12 +12,12 @@ use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::grid::{
     ChunkOrigin, FrozenGrid, FrozenGridSampler, GridRect, SampleCollector,
 };
+use ulam_leapers::math::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
-use ulam_leapers::util::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::util::sync::DeferredValue;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
