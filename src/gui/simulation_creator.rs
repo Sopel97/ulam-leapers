@@ -430,7 +430,7 @@ impl<'a> SampleCollector for LastColorCollector<'a> {
         *acc = self.colors[input.index()]
     }
 
-    fn finalize(&self, acc: Self::AccumulatorType, size: (usize, usize)) -> Self::OutputType {
+    fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
         acc
     }
 } 

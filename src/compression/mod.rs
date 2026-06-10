@@ -216,7 +216,6 @@ mod tests {
 
     const HELLO: &[u8] = b"helllllo, world";
     const EMPTY: &[u8] = b"";
-    const COMPRESSIBLE: &[u8] = &[0xAB; 1024];
 
     #[test]
     fn none_compress_is_identity() {

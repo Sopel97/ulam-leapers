@@ -36,7 +36,7 @@ impl UlamSpiralPoint {
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }
-    
+
     pub fn as_isize(self) -> isize {
         self.0 as isize
     }
@@ -222,7 +222,7 @@ impl UlamSpiralCursor {
     }
 
     pub fn advance(&mut self) {
-        self.grid_position = self.grid_position + self.current_direction;
+        self.grid_position += self.current_direction;
         self.spiral_position += 1;
         self.steps_in_current_direction_left -= 1;
 
@@ -252,7 +252,7 @@ impl UlamSpiralCursor {
 
         let diff = to - self.spiral_position;
         if diff > 0 {
-            self.grid_position = self.grid_position + self.current_direction * diff as i32;
+            self.grid_position += self.current_direction * diff as i32;
             self.spiral_position += diff as u64;
             self.steps_in_current_direction_left -= diff as u32;
         }

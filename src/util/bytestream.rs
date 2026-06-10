@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn read_u8_at_eof_returns_none() {
         let mut r = ByteReader::new(&[0xFF]);
-        r.try_read_u8();
+        r.try_read_u8().unwrap();
         assert_eq!(r.try_read_u8(), Err(ByteReaderError::UnexpectedEndOfStream));
     }
 

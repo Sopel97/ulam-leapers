@@ -478,8 +478,8 @@ impl<T> Grid<T> {
         self.is_chunk_at_frozen(&origin)
     }
 
-    pub fn chunker(&self) -> &Box<dyn Chunker + Send + Sync> {
-        &self.chunker
+    pub fn chunker(&self) -> &(dyn Chunker + Send + Sync) {
+        self.chunker.as_ref()
     }
 }
 

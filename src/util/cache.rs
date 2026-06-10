@@ -163,7 +163,7 @@ where
             // by copying them before we can modify `self.entries`, this is reasonable
             // because we expect few removals compared to the number of entries.
             let mut keys_to_remove = Vec::new();
-            for (key, entry, memory_cost) in entries {
+            for (key, _value, memory_cost) in entries {
                 keys_to_remove.push(key.clone());
                 self.total_memory_cost -= memory_cost;
 

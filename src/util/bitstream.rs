@@ -71,15 +71,15 @@ impl<'a> LittleEndianBitReader<'a> {
     }
     
     pub fn is_byte_aligned(&self) -> bool {
-        self.prefill_low_bits % 8 == 0
+        self.prefill_low_bits.is_multiple_of(8)
     }
 
     pub fn try_into_byte_reader(self) -> Option<ByteReader<'a>> {
-        if self.prefill_low_bits % 8 != 0 {
-            None
-        } else {
+        if self.prefill_low_bits.is_multiple_of(8) {
             let actual_offset = self.offset - WORD_BYTES - (self.prefill_low_bits / 8);
             Some(ByteReader::new(&self.data[actual_offset..]))
+        } else {
+            None
         }
     }
 }
