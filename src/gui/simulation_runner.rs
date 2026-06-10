@@ -7,10 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use ulam_leapers::simulation::{
-    FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits,
-    SimulationProgress,
-};
+use ulam_leapers::game::simulation::{FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits, SimulationProgress};
 use ulam_leapers::util::time;
 
 enum SimulationRunnerWorkerJob {

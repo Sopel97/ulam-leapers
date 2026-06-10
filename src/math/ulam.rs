@@ -1,6 +1,5 @@
-﻿use crate::grid::{GridPoint, GridVector};
-use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::Point2D;
+﻿use crate::io::{ReadFrom, WriteTo};
+use crate::math::coords::{GridPoint, GridVector, Point2D};
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{Add, AddAssign, Sub};
 

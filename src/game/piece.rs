@@ -1,7 +1,7 @@
-﻿use crate::grid::{GridPoint, GridVector};
-use crate::io::{ReadFrom, WriteTo};
+﻿use crate::io::{ReadFrom, WriteTo};
 use std::collections::{BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
+use crate::math::coords::{GridPoint, GridVector};
 
 pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,

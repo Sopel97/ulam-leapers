@@ -13,6 +13,8 @@ pub struct Rect2D<T> {
     pub end: Point2D<T>,
 }
 
+pub type GridRect = Rect2D<i32>;
+
 impl<T: Add<Output = T> + Clone + Copy> Rect2D<T> {
     pub fn with_size(start: Point2D<T>, width: T, height: T) -> Rect2D<T> {
         let end = Point2D::new(start.x + width, start.y + height);

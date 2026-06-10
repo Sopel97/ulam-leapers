@@ -1,10 +1,10 @@
 use crate::gui::app::App;
 use eframe::wgpu::PresentMode;
 use std::io::Read;
-use ulam_leapers::grid::GridVector;
+use ulam_leapers::game::piece::LeaperAttacks;
+use ulam_leapers::game::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
 use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
+use ulam_leapers::math::coords::GridVector;
 use ulam_leapers::util::memory::MemSize;
 
 const GUI: bool = true;
@@ -47,7 +47,7 @@ fn main() {
         let finalized_sim = sim.finalize();
         let elapsed = start.elapsed();
 
-        let simulated_turns = finalized_sim.simulated_turns();
+        let simulated_turns = finalized_sim.complete_turns();
         let complete_shells = finalized_sim.complete_shells();
         let finalized_memory_usage = finalized_sim.memory_usage();
         println!(

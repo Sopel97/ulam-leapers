@@ -1,10 +1,8 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
-use crate::grid::{FrozenGrid, Grid, GridPoint, GridRect, SquareChunker};
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::pow2::Pow2;
 use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
-use crate::piece::LeaperAttacks;
 use crate::util::memory::MemSize;
 use std::cmp::{max, min};
 use std::io::{ErrorKind, Read, Write};
@@ -12,6 +10,11 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use crate::game::chunker::SquareChunker;
+use crate::game::grid::{FrozenGrid, Grid};
+use crate::game::piece::LeaperAttacks;
+use crate::math::coords::GridPoint;
+use crate::math::rect::GridRect;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -144,7 +147,7 @@ const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
 
 pub trait Game {
     fn players(&self) -> &Vec<Player>;
-    fn simulated_turns(&self) -> usize;
+    fn complete_turns(&self) -> usize;
 
     fn complete_shells(&self) -> u32 {
         self.players()
@@ -207,7 +210,7 @@ impl Game for FinalizedSimulation {
         &self.players
     }
 
-    fn simulated_turns(&self) -> usize {
+    fn complete_turns(&self) -> usize {
         self.simulated_turns
     }
 }
@@ -319,7 +322,7 @@ impl Game for Simulation {
         &self.players
     }
 
-    fn simulated_turns(&self) -> usize {
+    fn complete_turns(&self) -> usize {
         self.simulated_turns
     }
 }
@@ -838,9 +841,9 @@ impl ReadFrom for FinalizedSimulation {
 
 #[cfg(test)]
 mod tests {
-    use crate::grid::{GridPoint, GridVector};
-    use crate::piece::LeaperAttacks;
-    use crate::simulation::*;
+    use crate::game::piece::LeaperAttacks;
+    use crate::math::coords::GridVector;
+    use super::*;
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
@@ -864,7 +867,7 @@ mod tests {
         let mut sim = Simulation::new();
         sim.simulate(SimulationLimits::new().with_turn_limit(100))
             .unwrap();
-        assert_eq!(sim.simulated_turns(), 100);
+        assert_eq!(sim.complete_turns(), 100);
     }
 
     #[test]

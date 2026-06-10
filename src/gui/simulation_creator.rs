@@ -13,9 +13,11 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::grid::{FrozenGridSampler, GridPoint, GridRect, GridVector, SampleCollector};
-use ulam_leapers::piece::LeaperAttacks;
-use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::game::grid::{FrozenGridSampler, SampleCollector};
+use ulam_leapers::game::piece::LeaperAttacks;
+use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::math::coords::{GridPoint, GridVector};
+use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
 
 const MIN_PLAYER_COUNT: usize = 1;

@@ -2,6 +2,7 @@
 use std::cmp;
 use std::io::{Read, Write};
 use std::ops::*;
+use crate::math::rect::Rect2D;
 
 #[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
 pub struct Point2D<T> {
@@ -14,6 +15,9 @@ pub struct Vector2D<T> {
     pub x: T,
     pub y: T,
 }
+
+pub type GridPoint = Point2D<i32>;
+pub type GridVector = Vector2D<i32>;
 
 impl<T> Point2D<T> {
     pub fn new(x: T, y: T) -> Point2D<T> {

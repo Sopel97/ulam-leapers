@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
-use ulam_leapers::grid::{
-    ChunkOrigin, FrozenGrid, FrozenGridSampler, GridRect, SampleCollector,
-};
+use ulam_leapers::game::chunk::ChunkOrigin;
+use ulam_leapers::game::grid::{FrozenGrid, FrozenGridSampler, SampleCollector};
+use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
-use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
+use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};

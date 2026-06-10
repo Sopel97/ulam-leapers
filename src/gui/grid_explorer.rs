@@ -14,10 +14,11 @@ use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use ulam_leapers::grid::{GridPoint, GridRect};
+use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
+use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::pow2::{floor_div, floor_to_multiple, Pow2};
-use ulam_leapers::simulation::{FinalizedSimulation, Game};
+use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
 
 pub enum SaveState {
@@ -393,7 +394,7 @@ impl GridViewControls {
     }
 
     fn ui(&mut self, ui: &mut Ui, save_state: &mut SaveState) {
-        let turns = self.finalized_simulation.simulated_turns();
+        let turns = self.finalized_simulation.complete_turns();
         let complete_shells = self.finalized_simulation.complete_shells();
         let side_cells = complete_shells.max(1) as usize * 2 - 1;
         let cells = side_cells * side_cells;
