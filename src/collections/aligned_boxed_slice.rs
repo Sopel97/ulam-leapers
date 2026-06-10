@@ -2,12 +2,21 @@
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 pub struct AlignedBoxedSlice<T> {
     storage: Box<[T]>,
     align: MemoryAlignment,
     begin: usize,
     end: usize,
+}
+
+impl<T> PartialEq for AlignedBoxedSlice<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &AlignedBoxedSlice<T>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
 }
 
 impl<T> AlignedBoxedSlice<T> {

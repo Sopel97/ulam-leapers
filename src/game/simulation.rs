@@ -1,7 +1,12 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
+use crate::game::chunker::SquareChunker;
+use crate::game::grid::{FrozenGrid, Grid};
+use crate::game::piece::LeaperAttacks;
 use crate::io::{ReadFrom, WriteTo};
+use crate::math::coords::GridPoint;
 use crate::math::pow2::Pow2;
+use crate::math::rect::GridRect;
 use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::util::memory::MemSize;
 use std::cmp::{max, min};
@@ -10,13 +15,8 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use crate::game::chunker::SquareChunker;
-use crate::game::grid::{FrozenGrid, Grid};
-use crate::game::piece::LeaperAttacks;
-use crate::math::coords::GridPoint;
-use crate::math::rect::GridRect;
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
 
 impl PlayerId {
@@ -29,7 +29,7 @@ impl PlayerId {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 pub struct PlayerIdSet {
     bits: u64,
 }
@@ -136,6 +136,7 @@ impl BitXor<PlayerId> for PlayerIdSet {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Player {
     attacks: LeaperAttacks,
     id: PlayerId,
@@ -215,7 +216,7 @@ impl Game for FinalizedSimulation {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
 pub struct SimulationProgress {
     memory_usage: MemSize,
     turns: usize,
@@ -236,7 +237,7 @@ impl SimulationProgress {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum SimulationError {
     IsFinalized,
     InfiniteSimulation,
@@ -841,9 +842,9 @@ impl ReadFrom for FinalizedSimulation {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::game::piece::LeaperAttacks;
     use crate::math::coords::GridVector;
-    use super::*;
 
     #[test]
     fn empty_cell_distinguishable_from_player() {

@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::game::chunk::ChunkOrigin;
-use ulam_leapers::game::grid::{FrozenGrid, FrozenGridSampler, SampleCollector};
+use ulam_leapers::game::grid::FrozenGrid;
+use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
@@ -20,7 +21,7 @@ use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zoom {
     Magnification(Pow2),
     Minification(Pow2),
@@ -44,6 +45,7 @@ pub fn default_player_colors() -> Vec<Color32> {
 type CacheType = LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>;
 type MipmapStorageType = BTreeMap<Pow2, Array2D<Color32>>;
 
+#[derive(Debug)]
 pub struct Mipmaps {
     by_minification_factor: MipmapStorageType,
     grid_bounds: GridRect,
@@ -58,6 +60,7 @@ pub struct GridRenderer {
 }
 
 #[repr(align(16))]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 struct AccCol {
     r: u32,
     g: u32,
@@ -65,6 +68,7 @@ struct AccCol {
     a: u32,
 }
 
+#[derive(Debug)]
 struct AvgColorCollector {
     colors_u32: Vec<AccCol>,
 }
@@ -127,6 +131,7 @@ impl SampleCollector for AvgColorCollector {
     }
 }
 
+#[derive(Debug)]
 struct LastColorCollector<'a> {
     colors: &'a [Color32],
 }
@@ -149,6 +154,7 @@ impl<'a> SampleCollector for LastColorCollector<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct MipmapGenerationProgress {
     slot: Arc<Mutex<(usize, usize)>>,
 }

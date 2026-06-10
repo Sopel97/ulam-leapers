@@ -3,6 +3,7 @@ pub enum ByteReaderError {
     UnexpectedEndOfStream,
 }
 
+#[derive(Debug)]
 pub struct ByteReader<'a> {
     data: &'a [u8],
     cursor: usize,

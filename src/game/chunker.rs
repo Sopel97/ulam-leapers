@@ -1,9 +1,9 @@
-﻿use std::io::{ErrorKind, Read, Write};
-use crate::game::chunk::{ChunkOrigin, ULS_MAXIMUM_CHUNK_EXTENT, ULS_MAXIMUM_CHUNK_SIZE, ULS_MINIMUM_CHUNK_ALIGNMENT};
+﻿use crate::game::chunk::{ChunkOrigin, ULS_MAXIMUM_CHUNK_EXTENT, ULS_MAXIMUM_CHUNK_SIZE, ULS_MINIMUM_CHUNK_ALIGNMENT};
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
+use std::io::{ErrorKind, Read, Write};
 
 /// # NOTE
 ///
@@ -11,6 +11,7 @@ use crate::math::rect::GridRect;
 /// should be made via StandardChunker::try_* instead.
 /// This is a limitation of Rust that there is no way to validate enum
 /// values directly. May change with a more convoluted abstraction in the future.
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum StandardChunker {
     SquareChunker { chunk_size_pow2: u8 },
 }
@@ -61,6 +62,7 @@ pub trait Chunker: Send + Sync {
     fn as_standard_chunker(&self) -> Option<StandardChunker>;
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct SquareChunker {
     size: Pow2,
 }

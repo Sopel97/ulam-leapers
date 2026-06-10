@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::ops::{Add, BitAnd, Shl, Sub};
 
 // Effectively forms a 2-dimensional [start, end) range.
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Rect2D<T> {
     pub start: Point2D<T>,
     pub end: Point2D<T>,

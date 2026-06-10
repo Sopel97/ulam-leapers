@@ -4,17 +4,17 @@ use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{
-    Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
-    TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b, pos2,
+    pos2, Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider,
+    TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b,
 };
 use eframe::epaint::TextureHandle;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::game::grid::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::piece::LeaperAttacks;
+use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
@@ -37,7 +37,7 @@ const MIN_PREVIEW_SHELLS: usize = 100;
 const DEFAULT_PREVIEW_SHELLS: usize = 250;
 const MAX_PREVIEW_SHELLS: usize = 1000;
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct PlayerConfigState {
     id: usize,
     attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
@@ -176,7 +176,7 @@ impl Default for PlayerConfigState {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct EnemyConfigState {
     enemy_map: Array2D<bool>,
     is_enemy_map_symmetric: bool,
@@ -265,7 +265,7 @@ impl EnemyConfigState {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct LimitsState {
     memory_usage: usize,
     turns_m: usize,
@@ -314,7 +314,7 @@ impl Default for LimitsState {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct CreationState {
     player_count: usize,
     player_configs: Vec<PlayerConfigState>,
@@ -389,6 +389,7 @@ enum SimulationCreatorWorkerResult {
     PreviewImage(TextureHandle),
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 enum SimulationCreatorAction {
     Submit,
 }
@@ -415,6 +416,7 @@ impl Default for SimulationCreator {
     }
 }
 
+#[derive(Debug)]
 struct LastColorCollector<'a> {
     colors: &'a [Color32],
 }

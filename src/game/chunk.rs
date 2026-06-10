@@ -1,8 +1,4 @@
-﻿use std::io::{ErrorKind, Read, Write};
-use std::marker::PhantomData;
-use std::mem::MaybeUninit;
-use std::ops::{Index, IndexMut};
-use crate::algo::transpose::transpose_u8;
+﻿use crate::algo::transpose::transpose_u8;
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::Array2D;
 use crate::compression::{AnyCompression, CompressedBlob, Compression, CompressionKind};
@@ -11,13 +7,17 @@ use crate::math::coords::GridPoint;
 use crate::math::rect::GridRect;
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
+use std::io::{ErrorKind, Read, Write};
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
+use std::ops::{Index, IndexMut};
 
 // Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
 pub const ULS_MINIMUM_CHUNK_ALIGNMENT: usize = 64;
 pub const ULS_MAXIMUM_CHUNK_SIZE: usize = 2048 * 2048;
 pub const ULS_MAXIMUM_CHUNK_EXTENT: usize = 8192;
 
-#[derive(Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
 
 impl ChunkOrigin {
@@ -43,6 +43,7 @@ pub trait BoundedChunk {
 }
 
 // NOTE: T must be accessible as raw bytes.
+#[derive(Debug)]
 pub struct Chunk<T> {
     bounds: GridRect,
     cells: Array2D<T>,
@@ -119,6 +120,7 @@ impl<T> Chunk<T> {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum CompressedChunkTransform {
     None,
     Transposition,
@@ -147,6 +149,7 @@ impl ReadFrom for CompressedChunkTransform {
 }
 
 // Generic over T because we want to preserve type information of the underlying data.
+#[derive(Debug)]
 pub struct CompressedChunk<T> {
     bounds: GridRect,
     transform: CompressedChunkTransform,

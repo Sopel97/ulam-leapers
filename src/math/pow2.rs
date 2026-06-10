@@ -1,6 +1,6 @@
 ﻿use std::ops::{Add, BitAnd, Shl, Shr, Sub};
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy)]
 pub struct Pow2 {
     exponent: u8,
 }

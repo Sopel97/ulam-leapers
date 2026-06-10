@@ -5,17 +5,19 @@ use crate::compression::zstd::ZstdCompression;
 use std::fmt;
 use std::io::{Read, Write};
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum CompressionKind {
     Zstd,
     None,
 }
 
+#[derive(Debug)]
 pub struct CompressedBlob {
     kind: CompressionKind,
     data: Box<[u8]>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum CompressionError {
     InvalidCompressionLevel,
 }
@@ -78,6 +80,7 @@ pub trait Compression {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum AnyCompression {
     Zstd(ZstdCompression),
     None(NoneCompression),
@@ -112,6 +115,7 @@ impl Compression for AnyCompression {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct NoneCompression;
 
 impl Default for NoneCompression {

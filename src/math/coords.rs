@@ -2,15 +2,14 @@
 use std::cmp;
 use std::io::{Read, Write};
 use std::ops::*;
-use crate::math::rect::Rect2D;
 
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Point2D<T> {
     pub x: T,
     pub y: T,
 }
 
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct Vector2D<T> {
     pub x: T,
     pub y: T,

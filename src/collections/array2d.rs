@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 
 // Row-major 2-dimensional array.
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 pub struct Array2D<T> {
     data: AlignedBoxedSlice<T>,
     width: usize,
@@ -32,16 +32,8 @@ where
         if self.width != other.width || self.height != other.height {
             return false;
         }
-
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if self[(x, y)] != other[(x, y)] {
-                    return false;
-                }
-            }
-        }
-
-        true
+        
+        self.data == other.data
     }
 }
 

@@ -21,6 +21,7 @@ impl From<ByteReaderError> for ZstdInspectError {
 
 const ZSTD_FRAME_MAGIC: u32 = 0xFD2FB528;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct ZstdFrameHeaderDescriptor {
     byte: u8,
 }
@@ -75,6 +76,7 @@ impl ZstdFrameHeaderDescriptor {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct ZstdBlockHeader {
     last_block: bool,
     block_type: u8,
@@ -116,12 +118,14 @@ impl ZstdBlockHeader {
     }
 }
 
+#[derive(Debug)]
 pub enum ZstdDataBlock<'a> {
     Raw(&'a [u8]),
     Rle(u8, usize),
     Compressed(&'a [u8]),
 }
 
+#[derive(Debug)]
 pub struct ZstdDataBlockIter<'a> {
     stream: ByteReader<'a>,
     curr_frame_header_descriptor: Option<ZstdFrameHeaderDescriptor>,

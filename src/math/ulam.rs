@@ -1,9 +1,10 @@
 ﻿use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::{GridPoint, GridVector, Point2D};
+use std::cmp::Ordering;
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{Add, AddAssign, Sub};
 
-#[derive(Hash, Eq, PartialEq, Ord, PartialOrd, Debug, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
 pub struct UlamSpiralPoint(u64);
 
 impl UlamSpiralPoint {
@@ -93,6 +94,7 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct UlamSpiralCursor {
     grid_position: GridPoint,
     spiral_position: UlamSpiralPoint,
@@ -100,6 +102,16 @@ pub struct UlamSpiralCursor {
     current_direction: GridVector,
     current_line: u32,
     steps_in_current_direction_left: u32,
+}
+
+impl PartialOrd<Self> for UlamSpiralCursor {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+
+impl Ord for UlamSpiralCursor {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.spiral_position.cmp(&other.spiral_position)
+    }
 }
 
 impl Default for UlamSpiralCursor {

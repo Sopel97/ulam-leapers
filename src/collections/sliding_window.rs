@@ -10,6 +10,7 @@ use std::ops::{Index, IndexMut, RangeFrom};
 /// In other words, any immutable index is valid.
 /// However, trying to index mutably below the origin will cause a panic.
 /// Note that this collection is not sparse - there are no holes between valid elements.
+#[derive(Debug)]
 pub struct SlidingWindow<T> {
     origin: isize,
     elements: VecDeque<T>,

@@ -2,6 +2,7 @@
 use std::io::{Read, Write};
 use zstd::{Decoder, Encoder};
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct ZstdCompression {
     level: i32,
 }

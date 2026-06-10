@@ -21,6 +21,7 @@ use ulam_leapers::math::pow2::{floor_div, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
 
+#[derive(Debug)]
 pub enum SaveState {
     NotSaved,
     Saved,
@@ -36,7 +37,7 @@ pub struct GridExplorer {
     last_grid_render_params: GridRenderParameters,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GridRenderParameters {
     bounds: GridRect,
     zoom: Zoom,
