@@ -5,6 +5,7 @@ use ulam_leapers::grid::GridVector;
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
+use ulam_leapers::util::memory::MemSize;
 
 const GUI: bool = true;
 
@@ -40,7 +41,7 @@ fn main() {
         let _ = sim.simulate(
             SimulationLimits::new()
                 .with_turn_limit(100_000_000)
-                .with_memory_limit(32 * 1024 * 1024 * 1024),
+                .with_memory_limit(MemSize::gb(32)),
         );
         let end_memory_usage = sim.memory_usage();
         let finalized_sim = sim.finalize();
@@ -50,12 +51,12 @@ fn main() {
         let complete_shells = finalized_sim.complete_shells();
         let finalized_memory_usage = finalized_sim.memory_usage();
         println!(
-            "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {} MiB.\nFinal memory usage: {} bytes.\nChunk count: {}",
+            "Simulated {} turns in {:?}.\nComplete shells: {}.\nEstimated memory usage: {}.\nFinal memory usage: {}.\nChunk count: {}",
             simulated_turns,
             elapsed,
             complete_shells,
-            end_memory_usage / 1024 / 1024,
-            finalized_memory_usage,
+            end_memory_usage.display().si(),
+            finalized_memory_usage.display().si(),
             finalized_sim.chunk_count(),
         );
 
@@ -67,7 +68,7 @@ fn main() {
         let deserialized = FinalizedSimulation::read_from(&mut serialized.as_slice()).unwrap();
         println!(
             "{} {}",
-            deserialized.memory_usage(),
+            deserialized.memory_usage().display().si(),
             deserialized.chunk_count()
         );
     }

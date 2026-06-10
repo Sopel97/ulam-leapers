@@ -16,6 +16,7 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::grid::{FrozenGridSampler, GridPoint, GridRect, GridVector, SampleCollector};
 use ulam_leapers::piece::LeaperAttacks;
 use ulam_leapers::simulation::{PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::util::memory::MemSize;
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -27,8 +28,8 @@ const DEFAULT_TURNS_M: usize = 1_000;
 const MAX_TURNS_M: usize = 1_000_000;
 const MIN_COMPLETE_SHELLS: usize = 10;
 const MAX_COMPLETE_SHELLS: usize = 1_000_000;
-const MIN_MEMORY_USAGE_GIB: usize = 1;
-const MAX_MEMORY_USAGE_GIB: usize = 1024;
+const MIN_MEMORY_USAGE: MemSize = MemSize::gb(1);
+const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 
 const MIN_PREVIEW_SHELLS: usize = 100;
 const DEFAULT_PREVIEW_SHELLS: usize = 250;
@@ -264,7 +265,7 @@ impl EnemyConfigState {
 
 #[derive(PartialEq, Clone)]
 struct LimitsState {
-    memory_usage_gib: usize,
+    memory_usage: usize,
     turns_m: usize,
     complete_shells: usize,
 }
@@ -274,13 +275,13 @@ impl LimitsState {
         let memory_usage = json["memory_usage"].as_u64()? as usize;
         let turns = json["turns"].as_u64()? as usize;
         let slf = LimitsState {
-            memory_usage_gib: (memory_usage / 1024 / 1024 / 1024).max(1),
+            memory_usage: memory_usage.max(MIN_MEMORY_USAGE.bytes()),
             turns_m: (turns / 1000 / 1000).max(1),
             complete_shells: json["complete_shells"].as_u64()? as usize,
         };
 
-        if slf.memory_usage_gib < MIN_MEMORY_USAGE_GIB
-            || slf.memory_usage_gib > MAX_MEMORY_USAGE_GIB
+        if slf.memory_usage < MIN_MEMORY_USAGE.bytes()
+            || slf.memory_usage > MAX_MEMORY_USAGE.bytes()
             || slf.turns_m < MIN_TURNS_M
             || slf.turns_m > MAX_TURNS_M
         {
@@ -294,7 +295,7 @@ impl LimitsState {
 impl LimitsState {
     pub(crate) fn to_json(&self) -> Value {
         json!({
-            "memory_usage": self.memory_usage_gib * 1024 * 1024 * 1024,
+            "memory_usage": self.memory_usage,
             "turns": self.turns_m * 1000 * 1000,
             "complete_shells": self.complete_shells,
         })
@@ -304,7 +305,7 @@ impl LimitsState {
 impl Default for LimitsState {
     fn default() -> Self {
         Self {
-            memory_usage_gib: MAX_MEMORY_USAGE_GIB,
+            memory_usage: MAX_MEMORY_USAGE.bytes(),
             turns_m: DEFAULT_TURNS_M,
             complete_shells: MAX_COMPLETE_SHELLS,
         }
@@ -541,7 +542,7 @@ impl SimulationCreator {
         }
 
         let limits = SimulationLimits::new()
-            .with_memory_limit(self.state.limits.memory_usage_gib * 1024 * 1024 * 1024)
+            .with_memory_limit(MemSize::b(self.state.limits.memory_usage))
             .with_turn_limit(self.state.limits.turns_m * 1_000_000)
             .with_complete_shell_limit(self.state.limits.complete_shells);
 
@@ -799,12 +800,12 @@ impl SimulationCreator {
                         ui.label("Memory usage:");
                         ui.add(
                             Slider::new(
-                                &mut self.state.limits.memory_usage_gib,
-                                MIN_MEMORY_USAGE_GIB..=MAX_MEMORY_USAGE_GIB,
+                                &mut self.state.limits.memory_usage,
+                                MIN_MEMORY_USAGE.bytes()..=MAX_MEMORY_USAGE.bytes(),
                             )
                             .integer()
                             .logarithmic(true)
-                            .suffix(" GiB"),
+                            .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
                         );
                     });
 

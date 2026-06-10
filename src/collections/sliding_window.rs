@@ -1,6 +1,7 @@
 ﻿use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut, RangeFrom};
+use crate::util::memory::MemSize;
 
 /// A contiguous array where the origin can be moved forward,
 /// dropping all values below it.
@@ -16,8 +17,8 @@ pub struct SlidingWindow<T> {
 }
 
 impl<T> SlidingWindow<T> {
-    pub fn memory_usage(&self) -> usize {
-        self.elements.capacity() * size_of::<T>()
+    pub fn memory_usage(&self) -> MemSize {
+        MemSize::sizes_of::<T>(self.elements.capacity())
     }
 
     pub fn clear(&mut self) {

@@ -1,7 +1,7 @@
 ﻿use std::{mem, slice};
 use std::fmt::{Display, Formatter};
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign};
 
 /// # SAFETY
 ///
@@ -28,6 +28,12 @@ macro_rules! make_constructor {
             Self { bytes: count * ($unit) }
         }
     };
+}
+
+impl Default for MemSize {
+    fn default() -> Self {
+        MemSize::ZERO
+    }
 }
 
 impl MemSize {
@@ -116,9 +122,19 @@ impl Sum<MemSize> for MemSize {
     }
 }
 
+impl Div<MemSize> for MemSize {
+    type Output = f64;
+    fn div(self, rhs: MemSize) -> Self::Output {
+        self.bytes as f64 / rhs.bytes as f64
+    }
+}
+
 const DEFAULT_PRECISION: usize = 3;
-// U+202F NARROW NO-BREAK SPACE (NNBSP)
-const DEFAULT_SEPARATOR: &str = "\u{202F}";
+// Normally we would use U+202F NARROW NO-BREAK SPACE (NNBSP)
+// but the support for it is terrible.
+// In particular egui does not seem to support it on Windows by default.
+// We use the normal NBSP instead.
+const DEFAULT_SEPARATOR: &str = "\u{00A0}";
 const SUFFIX_SI: &str = "B";
 const SUFFIX_IEC: &str = "iB";
 
@@ -402,8 +418,8 @@ mod tests {
         assert_eq!(unit, 1 << 20);
     }
 
-    // The separator is NARROW NO-BREAK SPACE (U+202F).
-    const SEP: &str = "\u{202F}";
+    // The separator is normal NBSP because the NARROW NO-BREAK SPACE (U+202F) has low font support.
+    const SEP: &str = "\u{00A0}";
 
     #[test]
     fn test_display_si_bytes() {

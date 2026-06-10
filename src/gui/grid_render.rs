@@ -17,6 +17,7 @@ use ulam_leapers::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
+use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
 use ulam_leapers::util::sync::DeferredValue;
 
@@ -379,7 +380,7 @@ impl GridRenderer {
         &self,
         lowest_minification: Pow2,
         highest_minification: Pow2,
-    ) -> usize {
+    ) -> MemSize {
         let mut grid_bounds = self.grid.bounds();
         grid_bounds.start.x = floor_to_multiple(grid_bounds.start.x, highest_minification);
         grid_bounds.start.y = floor_to_multiple(grid_bounds.start.y, highest_minification);
@@ -394,7 +395,7 @@ impl GridRenderer {
         );
 
         // 1 + 1/4 + 1/16 + 1/64 + ... converges to 4/3
-        pixels_at_lowest_minification * 4 * size_of::<Color32>() / 3
+        MemSize::sizes_of::<Color32>(pixels_at_lowest_minification * 4 / 3)
     }
     
     pub fn can_generate_mipmaps(&self) -> bool {

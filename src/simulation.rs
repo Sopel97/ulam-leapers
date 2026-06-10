@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use crate::compression::zstd::ZstdCompression;
+use crate::util::memory::MemSize;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -180,7 +181,7 @@ pub struct FinalizedSimulation {
 }
 
 impl FinalizedSimulation {
-    pub fn memory_usage(&self) -> usize {
+    pub fn memory_usage(&self) -> MemSize {
         self.grid.memory_usage()
     }
 
@@ -213,13 +214,13 @@ impl Game for FinalizedSimulation {
 
 #[derive(Default, Clone, Copy, PartialEq)]
 pub struct SimulationProgress {
-    memory_usage: usize,
+    memory_usage: MemSize,
     turns: usize,
     complete_shells: usize,
 }
 
 impl SimulationProgress {
-    pub fn memory_usage(&self) -> usize {
+    pub fn memory_usage(&self) -> MemSize {
         self.memory_usage
     }
 
@@ -248,7 +249,7 @@ pub enum SimulationLimit {
 
 #[derive(Clone)]
 pub struct SimulationLimits {
-    memory: Option<usize>,
+    memory: Option<MemSize>,
     turns: Option<usize>,
     complete_shells: Option<usize>,
     stop_flag: Option<Arc<AtomicBool>>,
@@ -266,7 +267,7 @@ impl SimulationLimits {
         }
     }
 
-    pub fn with_memory_limit(mut self, memory: usize) -> Self {
+    pub fn with_memory_limit(mut self, memory: MemSize) -> Self {
         self.memory = Some(memory);
         self
     }
@@ -290,7 +291,7 @@ impl SimulationLimits {
         self.memory.is_some() || self.turns.is_some() || self.complete_shells.is_some()
     }
 
-    pub fn memory(&self) -> Option<usize> {
+    pub fn memory(&self) -> Option<MemSize> {
         self.memory
     }
 
@@ -341,10 +342,10 @@ impl Simulation {
         PlayerId::new(0)
     }
 
-    pub fn memory_usage(&self) -> usize {
+    pub fn memory_usage(&self) -> MemSize {
         let grid_usage = match self.grid {
             Some(ref grid) => grid.memory_usage(),
-            None => 0,
+            None => MemSize::ZERO,
         };
         grid_usage + self.forbiddances.memory_usage()
     }
@@ -553,7 +554,7 @@ impl Simulation {
             placements
         };
 
-        let grid_memory_usage = Arc::new(Mutex::new(0usize));
+        let grid_memory_usage = Arc::new(Mutex::new(MemSize::ZERO));
         let grid_memory_usage_worker = grid_memory_usage.clone();
         let grid_worker = thread::spawn(move || {
             loop {
@@ -643,7 +644,7 @@ impl Simulation {
                     // Ideally we would use the chunker here with `new_cell` but the `grid`
                     // is not available at this point.
                     let estimated_new_memory_before_next_check =
-                        maximum_cells_created_between_compressions * size_of::<PlayerId>();
+                        MemSize::sizes_of::<PlayerId>(maximum_cells_created_between_compressions);
                     total + estimated_new_memory_before_next_check >= limit
                 }) {
                     // No limit, force all eligible chunks to be frozen.

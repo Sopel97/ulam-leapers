@@ -8,7 +8,7 @@ use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::cancel::{Canceled, CancellationToken};
-use crate::util::memory::{view_as_bytes, view_as_bytes_mut};
+use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
 use crate::util::pow2;
 use crate::util::pow2::{Pow2, floor_to_multiple};
 use rayon::prelude::*;
@@ -53,8 +53,8 @@ impl<T> BoundedChunk for Chunk<T> {
 }
 
 impl<T> Chunk<T> {
-    pub fn memory_usage(&self) -> usize {
-        size_of::<T>() * self.cells.width() * self.cells.height()
+    pub fn memory_usage(&self) -> MemSize {
+        MemSize::sizes_of::<T>(self.cells.width() * self.cells.height())
     }
 }
 
@@ -268,8 +268,8 @@ impl<T> BoundedChunk for CompressedChunk<T> {
 }
 
 impl<T> CompressedChunk<T> {
-    pub fn memory_usage(&self) -> usize {
-        size_of::<CompressedChunk<T>>() + self.data.len()
+    pub fn memory_usage(&self) -> MemSize {
+        MemSize::size_of::<CompressedChunk<T>>() + MemSize::b(self.data.len())
     }
 }
 
@@ -410,7 +410,7 @@ pub struct Grid<T> {
     compression: AnyCompression,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
-    frozen_chunks_memory_usage: usize, // to reduce the amount of redundant iteration over chunks
+    frozen_chunks_memory_usage: MemSize, // to reduce the amount of redundant iteration over chunks
 }
 
 impl<T: Default + Send + Sync> Grid<T> {
@@ -464,8 +464,8 @@ impl<T: Default + Send + Sync> Grid<T> {
 }
 
 impl<T> Grid<T> {
-    pub fn memory_usage(&self) -> usize {
-        let s1: usize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
+    pub fn memory_usage(&self) -> MemSize {
+        let s1: MemSize = self.active_chunks.values().map(|c| c.memory_usage()).sum();
         s1 + self.frozen_chunks_memory_usage
     }
 
@@ -490,7 +490,7 @@ impl<T: Default + Clone + Copy> Grid<T> {
             compression,
             active_chunks: BTreeMap::new(),
             frozen_chunks: BTreeMap::new(),
-            frozen_chunks_memory_usage: 0,
+            frozen_chunks_memory_usage: MemSize::ZERO,
         }
     }
 
@@ -567,7 +567,7 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
 pub struct FrozenGrid<T> {
     chunker: Box<dyn Chunker>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
-    memory_usage: usize,
+    memory_usage: MemSize,
 }
 
 impl<T: Default + Send + Sync> From<Grid<T>> for FrozenGrid<T> {
@@ -583,7 +583,7 @@ impl<T: Default + Send + Sync> From<Grid<T>> for FrozenGrid<T> {
 }
 
 impl<T> FrozenGrid<T> {
-    pub fn memory_usage(&self) -> usize {
+    pub fn memory_usage(&self) -> MemSize {
         self.memory_usage
     }
 

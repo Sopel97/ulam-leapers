@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::grid::{GridPoint, GridRect};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::simulation::{FinalizedSimulation, Game};
+use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::pow2::{Pow2, floor_div, floor_to_multiple};
 
 pub enum SaveState {
@@ -148,7 +149,7 @@ const MIN_PNG_EXTENT: i32 = 256;
 const DEFAULT_PNG_EXTENT: i32 = 2048;
 const MAX_PNG_EXTENT: i32 = 8192;
 
-const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: usize = 128 * 1024 * 1024;
+const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
@@ -403,7 +404,7 @@ impl GridViewControls {
         ui.label(format!("Turns: {}M", turns / 1000 / 1000));
         ui.label(format!("Complete shells: {}", complete_shells));
         ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
-        ui.label(format!("Size in memory: {}MiB", memory_usage / 1024 / 1024));
+        ui.label(format!("Size in memory: {}", memory_usage.display().si()));
         ui.label(format!(
             "Pointer: {}, {}",
             self.last_pointed_coords.x, self.last_pointed_coords.y
@@ -450,13 +451,12 @@ impl GridViewControls {
             let on_hover_text = if estimated_mipmap_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
             {
-                let mip_ram_mib = estimated_mipmap_memory_requirement / 1024 / 1024;
                 format!(
                     "WARNING: While this will enable up to {}x minification \
-                it does require roughly {}MiB of RAM and may take a long time.\
+                it does require roughly {} of RAM and may take a long time.\
                 This process is asynchronous.",
                     highest_minification.as_usize(),
-                    mip_ram_mib
+                    estimated_mipmap_memory_requirement.display().si(),
                 )
             } else {
                 format!(
