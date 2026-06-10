@@ -18,7 +18,7 @@ use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::pow2::{Pow2, ceil_to_multiple, floor_div, floor_to_multiple};
-use ulam_leapers::util::sync::AsyncValue;
+use ulam_leapers::util::sync::DeferredValue;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Zoom {
@@ -53,7 +53,7 @@ pub struct GridRenderer {
     grid: Arc<FrozenGrid<PlayerId>>,
     highest_player_id: PlayerId,
     colors: Vec<Color32>,
-    mipmaps: AsyncValue<Mipmaps>,
+    mipmaps: DeferredValue<Mipmaps>,
     mipmaps_progress: Arc<Mutex<(usize, usize)>>,
     cache: Option<RefCell<CacheType>>,
 }
@@ -475,7 +475,7 @@ impl GridRenderer {
         
         self.mipmaps_progress = progress;
 
-        match self.mipmaps.try_set_with(job) {
+        match self.mipmaps.try_set_with_async(job) {
             Ok(_) => {}
             Err(err) => panic!("{:?}", err),
         }

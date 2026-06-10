@@ -7,12 +7,12 @@ pub enum AsyncValueError {
     ConstructionUnderway,
 }
 
-struct ExecutorState<T> {
+struct ConstructorState<T> {
     worker: Option<std::thread::JoinHandle<Result<T, Canceled>>>,
     cancellation_token: CancellationToken,
 }
 
-impl<T> Drop for ExecutorState<T> {
+impl<T> Drop for ConstructorState<T> {
     fn drop(&mut self) {
         if let Some(handle) = self.worker.take() {
             // Cancellation is idempotent, no need to check if it's needed.
@@ -23,21 +23,21 @@ impl<T> Drop for ExecutorState<T> {
     }
 }
 
-pub struct AsyncValue<T> {
+pub struct DeferredValue<T> {
     // We want the structure to be as small as possible.
     // The executor state is only ephemerally required,
     // so don't bloat the size with it.
-    executor_state: RwLock<Option<Box<ExecutorState<T>>>>,
+    executor_state: RwLock<Option<Box<ConstructorState<T>>>>,
     value: OnceLock<T>,
 }
 
-impl<T> Default for AsyncValue<T> {
+impl<T> Default for DeferredValue<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> AsyncValue<T> {
+impl<T> DeferredValue<T> {
     pub fn new() -> Self {
         Self {
             executor_state: RwLock::new(None),
@@ -116,7 +116,7 @@ impl<T> AsyncValue<T> {
     }
 }
 
-impl<T> AsyncValue<T>
+impl<T> DeferredValue<T>
 where
     T: Send + Sync + 'static,
 {
@@ -126,7 +126,7 @@ where
     /// the computation on cancellation is acceptable.
     ///
     /// The function returns an `Err(error)` if a value is already present or under construction.
-    pub fn try_set_with<F>(&mut self, constructor: F) -> Result<(), AsyncValueError>
+    pub fn try_set_with_async<F>(&mut self, constructor: F) -> Result<(), AsyncValueError>
     where
         F: FnOnce(CancellationToken) -> Result<T, Canceled> + Sync + Send + 'static,
     {
@@ -141,7 +141,7 @@ where
         let cancellation_token = CancellationToken::new();
         let cancellation_token_for_worker = cancellation_token.clone();
 
-        let executor = Some(Box::new(ExecutorState {
+        let executor = Some(Box::new(ConstructorState {
             cancellation_token,
             worker: Some(std::thread::spawn(move || {
                 constructor(cancellation_token_for_worker)
@@ -178,22 +178,22 @@ mod tests {
 
     #[test]
     fn new_value_is_not_ready() {
-        let av: AsyncValue<i32> = AsyncValue::new();
+        let av: DeferredValue<i32> = DeferredValue::new();
         assert!(av.get().is_none());
         assert!(!av.is_ready());
     }
 
     #[test]
     fn default_matches_new() {
-        let av: AsyncValue<i32> = AsyncValue::default();
+        let av: DeferredValue<i32> = DeferredValue::default();
         assert!(av.get().is_none());
         assert!(!av.is_ready());
     }
 
     #[test]
     fn value_becomes_ready_after_worker_finishes() {
-        let mut av: AsyncValue<u32> = AsyncValue::new();
-        av.try_set_with(|_token| Ok(42)).unwrap();
+        let mut av: DeferredValue<u32> = DeferredValue::new();
+        av.try_set_with_async(|_token| Ok(42)).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()), "timed out waiting for value");
         assert_eq!(*av.get().unwrap(), 42);
@@ -201,8 +201,8 @@ mod tests {
 
     #[test]
     fn get_returns_same_value_after_resolution() {
-        let mut av: AsyncValue<String> = AsyncValue::new();
-        av.try_set_with(|_| Ok("hello".to_string())).unwrap();
+        let mut av: DeferredValue<String> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok("hello".to_string())).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get(), av.get());
@@ -211,8 +211,8 @@ mod tests {
 
     #[test]
     fn value_survives_multiple_get_calls() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|_| Ok(99)).unwrap();
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(99)).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.get().is_some()));
         for _ in 0..10 {
@@ -225,8 +225,8 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let barrier_clone = Arc::clone(&barrier);
 
-        let mut av: AsyncValue<u32> = AsyncValue::new();
-        av.try_set_with(move |_token| {
+        let mut av: DeferredValue<u32> = DeferredValue::new();
+        av.try_set_with_async(move |_token| {
             barrier_clone.wait(); // signal: worker has started
             barrier_clone.wait(); // wait for test to release us
             Ok(7)
@@ -243,12 +243,12 @@ mod tests {
 
     #[test]
     fn try_set_with_errors_if_value_already_present() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|_| Ok(1)).unwrap();
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(1)).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
 
-        let result = av.try_set_with(|_| Ok(2));
+        let result = av.try_set_with_async(|_| Ok(2));
         assert!(
             matches!(result, Err(AsyncValueError::ValueAlreadyPresent)),
             "expected ValueAlreadyPresent, got {:?}",
@@ -264,8 +264,8 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let barrier_clone = Arc::clone(&barrier);
 
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(move |_| {
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(move |_| {
             barrier_clone.wait(); // signal: started
             barrier_clone.wait(); // hold until released
             Ok(1)
@@ -274,7 +274,7 @@ mod tests {
 
         barrier.wait(); // wait until first worker is running
 
-        let result = av.try_set_with(|_| Ok(2));
+        let result = av.try_set_with_async(|_| Ok(2));
         assert!(
             matches!(result, Err(AsyncValueError::ConstructionUnderway)),
             "expected ConstructionUnderway, got {:?}",
@@ -286,23 +286,23 @@ mod tests {
 
     #[test]
     fn try_set_with_succeeds_on_fresh_instance() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        assert!(av.try_set_with(|_| Ok(5)).is_ok());
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        assert!(av.try_set_with_async(|_| Ok(5)).is_ok());
         assert!(wait_until(TIMEOUT, || av.is_ready()));
     }
 
     #[test]
     fn try_cancel_on_empty_does_nothing() {
         // Should not panic or block.
-        let mut av: AsyncValue<i32> = AsyncValue::new();
+        let mut av: DeferredValue<i32> = DeferredValue::new();
         av.try_cancel();
         assert!(!av.is_ready());
     }
 
     #[test]
     fn try_cancel_stops_running_worker() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|ct| {
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|ct| {
             while !ct.is_canceled() {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -321,8 +321,8 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let barrier_clone = Arc::clone(&barrier);
 
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(move |_| {
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(move |_| {
             barrier_clone.wait(); // signal: work done, but poll() not yet called
             Ok(42)
         })
@@ -341,8 +341,8 @@ mod tests {
 
     #[test]
     fn try_set_with_succeeds_after_try_cancel() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|ct| {
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|ct| {
             while !ct.is_canceled() {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -354,7 +354,7 @@ mod tests {
 
         // Now try_set_with should be accepted again.
         assert!(
-            av.try_set_with(|_| Ok(99)).is_ok(),
+            av.try_set_with_async(|_| Ok(99)).is_ok(),
             "try_set_with should succeed after try_cancel"
         );
         assert!(wait_until(TIMEOUT, || av.is_ready()));
@@ -366,8 +366,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
 
         {
-            let mut av: AsyncValue<i32> = AsyncValue::new();
-            av.try_set_with(move |ct| {
+            let mut av: DeferredValue<i32> = DeferredValue::new();
+            av.try_set_with_async(move |ct| {
                 while !ct.is_canceled() {
                     std::thread::sleep(Duration::from_millis(10));
                 }
@@ -386,8 +386,8 @@ mod tests {
 
     #[test]
     fn concurrent_get_calls_are_safe() {
-        let mut av: AsyncValue<u64> = AsyncValue::new();
-        av.try_set_with(|_| Ok(123)).unwrap();
+        let mut av: DeferredValue<u64> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(123)).unwrap();
 
         let av = Arc::new(av);
         let mut handles = Vec::new();
@@ -412,8 +412,8 @@ mod tests {
 
     #[test]
     fn works_with_non_copy_type() {
-        let mut av: AsyncValue<Vec<String>> = AsyncValue::new();
-        av.try_set_with(|_| Ok(vec!["a".to_string(), "b".to_string()])).unwrap();
+        let mut av: DeferredValue<Vec<String>> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(vec!["a".to_string(), "b".to_string()])).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get().unwrap(), &vec!["a".to_string(), "b".to_string()]);
@@ -421,8 +421,8 @@ mod tests {
 
     #[test]
     fn works_with_large_value() {
-        let mut av: AsyncValue<Vec<u8>> = AsyncValue::new();
-        av.try_set_with(|_| Ok(vec![0u8; 10_000_000])).unwrap();
+        let mut av: DeferredValue<Vec<u8>> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(vec![0u8; 10_000_000])).unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get().unwrap().len(), 10_000_000);
@@ -430,22 +430,22 @@ mod tests {
 
     #[test]
     fn new_is_empty_and_idle() {
-        let av: AsyncValue<i32> = AsyncValue::new();
+        let av: DeferredValue<i32> = DeferredValue::new();
         assert!(av.is_empty_and_idle());
     }
 
     #[test]
     fn is_empty_and_idle_after_cancelation() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|_| Ok(123)).unwrap();
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(123)).unwrap();
         av.try_cancel();
         assert!(av.is_empty_and_idle());
     }
 
     #[test]
     fn is_not_empty_and_idle_after_construction() {
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(|_| Ok(123)).unwrap();
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(|_| Ok(123)).unwrap();
         av.get(); // for poll
         assert!(!av.is_empty_and_idle());
     }
@@ -455,8 +455,8 @@ mod tests {
         let barrier = Arc::new(Barrier::new(2));
         let barrier_clone = Arc::clone(&barrier);
 
-        let mut av: AsyncValue<i32> = AsyncValue::new();
-        av.try_set_with(move |_| {
+        let mut av: DeferredValue<i32> = DeferredValue::new();
+        av.try_set_with_async(move |_| {
             barrier_clone.wait(); // signal: started
             barrier_clone.wait(); // hold until released
             Ok(1)
