@@ -44,12 +44,9 @@ impl<T> DeferredValue<T> {
             value: OnceLock::new(),
         }
     }
-
-    fn poll(&self) {
-        if self.value.get().is_some() {
-            return;
-        }
-
+    
+    #[cold]
+    fn poll_cold(&self) {
         let mut worker_finished = false;
 
         // Careful not to overextend the read lock.
@@ -73,6 +70,13 @@ impl<T> DeferredValue<T> {
                     .set(result)
                     .unwrap_or_else(|_| panic!("Value already present!"))
             };
+        }
+    }
+
+    #[inline(always)]
+    fn poll(&self) {
+        if self.value.get().is_none() {
+            self.poll_cold();
         }
     }
 
