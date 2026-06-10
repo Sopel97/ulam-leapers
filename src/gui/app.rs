@@ -161,8 +161,10 @@ impl App {
                 SubwindowState::Active(ref mut subwindow) => {
                     ui.separator();
 
+                    // We want to show tab id for disambiguation.
+                    let name = format!("({}) {}", tab.id.0, subwindow.name());
                     let tab_label_widget =
-                        Button::selectable(selected_tab_id == tab.id, subwindow.name())
+                        Button::selectable(selected_tab_id == tab.id, name)
                             .sense(Sense::click() | Sense::drag());
 
                     let tab_label = ui.add(tab_label_widget);
@@ -200,7 +202,6 @@ impl App {
         for (tab_id, label) in &tab_labels {
             if label.drag_stopped_by(PointerButton::Primary) {
                 let mouse_pos = ui.ctx().input(|i| i.pointer.latest_pos());
-                println!("{:?}", mouse_pos);
                 if let Some(mouse_pos) = mouse_pos {
                     // We know there is a first tab. We need to swap with it if the
                     // user drags beyond it to the left.
