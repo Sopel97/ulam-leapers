@@ -456,7 +456,8 @@ impl GridViewControls {
                 grid_renderer_mutex_guard.cancel_mipmap_generation();
             } else {
                 let progress = grid_renderer_mutex_guard.mipmap_generation_progress();
-                ui.label(format!("{} / {} chunks processed", progress.0, progress.1));
+                let progress_pct = (progress.0 * 100).checked_div(progress.1).unwrap_or(0);
+                ui.label(format!("{} / {} chunks ({}%)", progress.0, progress.1, progress_pct));
                 // Maybe some better notification in the future, but chunks get processed fast
                 // enough that this shouldn't be doing any redundant work.
                 ui.ctx().request_repaint();
