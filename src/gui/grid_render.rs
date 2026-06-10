@@ -54,7 +54,6 @@ pub struct GridRenderer {
     highest_player_id: PlayerId,
     colors: Vec<Color32>,
     mipmaps: DeferredValue<Mipmaps>,
-    mipmaps_progress: Arc<Mutex<(usize, usize)>>,
     cache: Option<RefCell<CacheType>>,
 }
 
@@ -150,6 +149,20 @@ impl<'a> SampleCollector for LastColorCollector<'a> {
     }
 }
 
+pub struct MipmapGenerationProgress {
+    slot: Arc<Mutex<(usize, usize)>>,
+}
+
+impl MipmapGenerationProgress {
+    pub fn new(slot: Arc<Mutex<(usize, usize)>>) -> MipmapGenerationProgress {
+        MipmapGenerationProgress { slot }
+    }
+
+    pub fn get(&self) -> (usize, usize) {
+        self.slot.lock().unwrap().clone()
+    }
+}
+
 impl GridRenderer {
     pub fn new(sim: &FinalizedSimulation, colors: &[Color32]) -> Self {
         let highest_player_id = sim.highest_player_id();
@@ -163,7 +176,6 @@ impl GridRenderer {
             highest_player_id,
             colors: colors.to_vec(),
             mipmaps: Default::default(),
-            mipmaps_progress: Default::default(),
             cache: None,
         }
     }
@@ -389,15 +401,11 @@ impl GridRenderer {
         self.mipmaps.is_empty_and_idle()
     }
     
-    pub fn mipmap_generation_progress(&self) -> (usize, usize) {
-        *self.mipmaps_progress.lock().unwrap()
-    }
-    
     pub fn cancel_mipmap_generation(&mut self) {
         self.mipmaps.try_cancel();
     }
 
-    pub fn generate_mipmaps_async(&mut self, lowest_minification: Pow2, highest_minification: Pow2) {
+    pub fn generate_mipmaps_async(&mut self, lowest_minification: Pow2, highest_minification: Pow2) -> MipmapGenerationProgress {
         // We allow a single level, but not less than that.
         assert!(lowest_minification <= highest_minification);
 
@@ -473,12 +481,12 @@ impl GridRenderer {
             })
         };
         
-        self.mipmaps_progress = progress;
-
         match self.mipmaps.try_set_with_async(job) {
             Ok(_) => {}
             Err(err) => panic!("{:?}", err),
         }
+
+        MipmapGenerationProgress::new(progress)
     }
 
     fn reduce_mipmap_2x(prev_mipmap: &Array2D<Color32>) -> Array2D<Color32> {

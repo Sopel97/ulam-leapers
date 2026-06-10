@@ -1,5 +1,5 @@
 ﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors};
+use crate::gui::grid_render::{GridRenderer, Zoom, default_player_colors, MipmapGenerationProgress};
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
@@ -158,6 +158,7 @@ impl GridExplorer {
         let grid_view_controls = GridViewControls {
             finalized_simulation: finalized_simulation.clone(),
             grid_renderer: grid_renderer.clone(),
+            mipmap_generation_progress: None,
 
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
@@ -195,6 +196,7 @@ impl GridExplorer {
 pub struct GridViewControls {
     finalized_simulation: Arc<FinalizedSimulation>,
     grid_renderer: Arc<Mutex<GridRenderer>>,
+    mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
     min_zoom_pow2: i32,
     max_zoom_pow2: i32,
@@ -448,19 +450,23 @@ impl GridViewControls {
                 ))
                 .clicked()
             {
-                grid_renderer_mutex_guard
-                    .generate_mipmaps_async(lowest_minification, highest_minification);
+                self.mipmap_generation_progress = Some(grid_renderer_mutex_guard
+                    .generate_mipmaps_async(lowest_minification, highest_minification));
             }
         } else {
             if ui.button("Cancel mipmap generation.").clicked() {
                 grid_renderer_mutex_guard.cancel_mipmap_generation();
-            } else {
-                let progress = grid_renderer_mutex_guard.mipmap_generation_progress();
+            } else if let Some(progress) = &self.mipmap_generation_progress {
+                let progress = progress.get();
                 let progress_pct = (progress.0 * 100).checked_div(progress.1).unwrap_or(0);
                 ui.label(format!("{} / {} chunks ({}%)", progress.0, progress.1, progress_pct));
                 // Maybe some better notification in the future, but chunks get processed fast
                 // enough that this shouldn't be doing any redundant work.
                 ui.ctx().request_repaint();
+            } else {
+                // We should never reach this state, but the progress reporting is
+                // inherently asynchronous and imprecise, so we may still end up here
+                // in extreme cases. It's not an error.
             }
         }
 
