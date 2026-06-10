@@ -1,7 +1,7 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use eframe::egui::{Button, PointerButton, Sense, Ui, Widget};
+use eframe::egui::{Button, Color32, PointerButton, Sense, Ui, Widget};
 use eframe::{Frame, egui};
 use std::path::PathBuf;
 
@@ -163,9 +163,8 @@ impl App {
 
                     // We want to show tab id for disambiguation.
                     let name = format!("({}) {}", tab.id.0, subwindow.name());
-                    let tab_label_widget =
-                        Button::selectable(selected_tab_id == tab.id, name)
-                            .sense(Sense::click() | Sense::drag());
+                    let tab_label_widget = Button::selectable(selected_tab_id == tab.id, name)
+                        .sense(Sense::click() | Sense::drag());
 
                     let tab_label = ui.add(tab_label_widget);
                     if tab_label.clicked() {
@@ -200,24 +199,34 @@ impl App {
         // positions of all tabs to determine which ones to swap.
         let mut swap_tabs = None;
         for (tab_id, label) in &tab_labels {
-            if label.drag_stopped_by(PointerButton::Primary) {
+            let is_dragging = label.dragged_by(PointerButton::Primary);
+            let stopped_dragging = label.drag_stopped_by(PointerButton::Primary);
+
+            if is_dragging || stopped_dragging {
                 let mouse_pos = ui.ctx().input(|i| i.pointer.latest_pos());
                 if let Some(mouse_pos) = mouse_pos {
                     // We know there is a first tab. We need to swap with it if the
                     // user drags beyond it to the left.
-                    let mut swap_tab_id = tab_labels[0].0;
+                    let mut swap_candidate = &tab_labels[0];
 
-                    for (tab_id_other, label_other) in &tab_labels {
-                        if mouse_pos.x > label_other.rect.min.x && mouse_pos.y > label_other.rect.min.y {
-                            swap_tab_id = *tab_id_other;
+                    for e in &tab_labels {
+                        let (_, label_other) = e;
+                        if mouse_pos.x > label_other.rect.min.x
+                            && mouse_pos.y > label_other.rect.min.y
+                        {
+                            swap_candidate = e;
                         }
                     }
 
-                    swap_tabs = Some((*tab_id, swap_tab_id));
-                }
+                    // Highlight target tab.
+                    let mut painter = ui.painter_at(swap_candidate.1.rect);
+                    painter.set_opacity(0.5);
+                    painter.rect_filled(swap_candidate.1.rect, 3, Color32::GREEN);
 
-                // No other tab may be dragged in the same frame.
-                break;
+                    if stopped_dragging {
+                        swap_tabs = Some((*tab_id, swap_candidate.0));
+                    }
+                }
             }
         }
 
