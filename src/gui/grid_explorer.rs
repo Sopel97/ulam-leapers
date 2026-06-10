@@ -84,21 +84,7 @@ impl Subwindow for GridExplorer {
             let rect = ui.clip_rect(); // Full canvas
 
             self.maybe_update_canvas_texture(ui, rect);
-
-            let painter = ui.painter_at(rect);
-
-            // background
-            painter.rect_filled(rect, 0.0, self.grid_view_controls.player_colors[0]);
-
-            if let Some(handle) = &self.grid_render_texture {
-                // y-flip via uv
-                painter.image(
-                    handle.id(),
-                    rect,
-                    Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
-                    Color32::WHITE,
-                );
-            }
+            self.draw_canvas_texture(ui, rect);
         });
 
         Keep(self)
@@ -164,6 +150,23 @@ impl GridExplorer {
         let mut explorer = GridExplorer::new(simulation);
         explorer.save_state = SaveState::Saved;
         Ok(explorer)
+    }
+
+    fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
+        let painter = ui.painter_at(rect);
+
+        // background
+        painter.rect_filled(rect, 0.0, self.grid_view_controls.player_colors[0]);
+
+        if let Some(handle) = &self.grid_render_texture {
+            // y-flip via uv
+            painter.image(
+                handle.id(),
+                rect,
+                Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
+                Color32::WHITE,
+            );
+        }
     }
 
     fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
