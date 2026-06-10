@@ -4,10 +4,13 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use ulam_leapers::game::simulation::{FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits, SimulationProgress};
+use ulam_leapers::game::simulation::{
+    FinalizedSimulation, Simulation, SimulationError, SimulationLimit, SimulationLimits,
+    SimulationProgress,
+};
 use ulam_leapers::util::time;
 
 enum SimulationRunnerWorkerJob {
@@ -143,6 +146,72 @@ pub struct SimulationRunner {
     worker_results: mpsc::Receiver<SimulationRunnerWorkerResult>,
 }
 
+struct SimulationRunnerWorker {
+    job_receiver: mpsc::Receiver<SimulationRunnerWorkerJob>,
+    result_sender: mpsc::Sender<SimulationRunnerWorkerResult>,
+}
+
+impl SimulationRunnerWorker {
+    pub fn run(self) {
+        loop {
+            let job = self.job_receiver.recv().unwrap();
+
+            match job {
+                SimulationRunnerWorkerJob::Simulate(simulation, limits, progress, ctx) => {
+                    self.simulate(simulation, limits, progress, ctx);
+                }
+                SimulationRunnerWorkerJob::Finalize(simulation, ctx) => {
+                    self.finalize(simulation, ctx);
+                }
+                SimulationRunnerWorkerJob::Stop => break,
+            };
+        }
+    }
+
+    fn simulate(
+        &self,
+        mut simulation: Simulation,
+        limits: SimulationLimits,
+        progress: Arc<Mutex<SimulationProgress>>,
+        ctx: Context,
+    ) {
+        let progress_callback = |p| {
+            *progress.lock().unwrap() = p;
+            ctx.request_repaint();
+        };
+        let result = simulation.simulate_with_callback(limits, progress_callback);
+        match result {
+            Ok(hit_limit) => match hit_limit {
+                SimulationLimit::StopFlag => {
+                    self.result_sender
+                        .send(SimulationRunnerWorkerResult::Paused(simulation))
+                        .unwrap();
+                }
+                _ => {
+                    self.result_sender
+                        .send(SimulationRunnerWorkerResult::Finished(simulation))
+                        .unwrap();
+                }
+            },
+            Err(error) => {
+                self.result_sender
+                    .send(SimulationRunnerWorkerResult::Errored(simulation, error))
+                    .unwrap();
+            }
+        };
+        ctx.request_repaint();
+    }
+
+    fn finalize(&self, simulation: Simulation, ctx: Context) {
+        self.result_sender
+            .send(SimulationRunnerWorkerResult::Finalized(
+                simulation.finalize(),
+            ))
+            .unwrap();
+        ctx.request_repaint();
+    }
+}
+
 impl SimulationRunner {
     pub fn new(sim: Simulation, mut limits: SimulationLimits) -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
@@ -161,60 +230,11 @@ impl SimulationRunner {
             progress: Default::default(),
             last_progress: Default::default(),
             worker: Some(std::thread::spawn(move || {
-                let job_receiver = job_receiver;
-                let result_sender = result_sender;
-                loop {
-                    let job = job_receiver.recv().unwrap();
-
-                    match job {
-                        SimulationRunnerWorkerJob::Simulate(
-                            mut simulation,
-                            limits,
-                            progress,
-                            ctx,
-                        ) => {
-                            let progress_callback = |p| {
-                                *progress.lock().unwrap() = p;
-                                ctx.request_repaint();
-                            };
-                            let result =
-                                simulation.simulate_with_callback(limits, progress_callback);
-                            match result {
-                                Ok(hit_limit) => match hit_limit {
-                                    SimulationLimit::StopFlag => {
-                                        result_sender
-                                            .send(SimulationRunnerWorkerResult::Paused(simulation))
-                                            .unwrap();
-                                    }
-                                    _ => {
-                                        result_sender
-                                            .send(SimulationRunnerWorkerResult::Finished(
-                                                simulation,
-                                            ))
-                                            .unwrap();
-                                    }
-                                },
-                                Err(error) => {
-                                    result_sender
-                                        .send(SimulationRunnerWorkerResult::Errored(
-                                            simulation, error,
-                                        ))
-                                        .unwrap();
-                                }
-                            };
-                            ctx.request_repaint();
-                        }
-                        SimulationRunnerWorkerJob::Finalize(simulation, ctx) => {
-                            result_sender
-                                .send(SimulationRunnerWorkerResult::Finalized(
-                                    simulation.finalize(),
-                                ))
-                                .unwrap();
-                            ctx.request_repaint();
-                        }
-                        SimulationRunnerWorkerJob::Stop => break,
-                    };
+                SimulationRunnerWorker {
+                    job_receiver,
+                    result_sender,
                 }
+                .run()
             })),
             worker_jobs: job_sender,
             worker_results: result_receiver,
