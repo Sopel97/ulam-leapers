@@ -14,7 +14,7 @@ use std::ops::{Index, IndexMut};
 
 // Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
 pub const ULS_MINIMUM_CHUNK_ALIGNMENT: u64 = 64;
-pub const ULS_MAXIMUM_CHUNK_SIZE: u64 = 2048 * 2048;
+pub const ULS_MAXIMUM_CHUNK_SIZE: u64 = 4096 * 4096;
 pub const ULS_MAXIMUM_CHUNK_EXTENT: u64 = 8192;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
