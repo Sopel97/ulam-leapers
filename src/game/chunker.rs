@@ -585,4 +585,23 @@ mod tests {
         test_region(GridRect::with_start_end(point(5000, -10000), point(10000, 9000)));
         test_region(GridRect::with_start_end(point(-10000, 5000), point(9000, 10000)));
     }
+
+    #[test]
+    fn strip_chunker_is_superset_of_square_chunker() {
+        let square_chunker = SquareChunker { size: Pow2::from_exponent(6) };
+        let strip_chunker = StripChunker {
+            strip_length: Pow2::from_exponent(6),
+            strip_thickness: Pow2::from_exponent(6),
+        };
+
+        for x in (-10000..10000).step_by(777) {
+            for y in (-10000..10000).step_by(579) {
+                let p = point(x, y);
+                let r = GridRect::with_size(p, 2137, 1379);
+                assert_eq!(square_chunker.resolve_chunk_origin(&p), strip_chunker.resolve_chunk_origin(&p));
+                assert_eq!(square_chunker.resolve_chunk_bounds(&p), strip_chunker.resolve_chunk_bounds(&p));
+                assert_eq!(square_chunker.origins_of_intersecting_chunks(&r), strip_chunker.origins_of_intersecting_chunks(&r));
+            }
+        }
+    }
 }
