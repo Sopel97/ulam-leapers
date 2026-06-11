@@ -253,8 +253,8 @@ impl<T: Default + Clone + Copy> CompressedChunk<T> {
                 transpose_u8(
                     raw_uncompressed_transposed,
                     raw_cells,
-                    width,
                     height * size_of::<T>(),
+                    width,
                 );
             }
         }

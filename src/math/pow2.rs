@@ -1,5 +1,5 @@
 ﻿use std::fmt::Display;
-use std::ops::{Add, BitAnd, Mul, Not, Shl, Shr, Sub};
+use std::ops::{Add, BitAnd, Div, Mul, Not, Shl, Shr, Sub};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Pow2Error {
@@ -90,6 +90,17 @@ impl Mul for Pow2 {
     type Output = Pow2;
     fn mul(self, other: Pow2) -> Pow2 {
         Pow2::from_exponent(self.exponent + other.exponent)
+    }
+}
+
+impl Div for Pow2 {
+    type Output = Pow2;
+    fn div(self, other: Pow2) -> Pow2 {
+        if other.exponent >= self.exponent {
+            Pow2::from_exponent(0)
+        } else {
+            Pow2::from_exponent(self.exponent - other.exponent)
+        }
     }
 }
 

@@ -189,7 +189,7 @@ where
                                 let blocks_x =
                                     pow2::div_floor(bounds.width(), self.minification) as usize;
                                 let blocks_y =
-                                    pow2::div_floor(bounds.width(), self.minification) as usize;
+                                    pow2::div_floor(bounds.height(), self.minification) as usize;
                                 let block_size: i32 = self.minification.as_u64() as i32;
 
                                 let mut whole_chunk_result: Array2D<TCollector::OutputType> =

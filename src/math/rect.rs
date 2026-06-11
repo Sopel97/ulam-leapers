@@ -88,6 +88,10 @@ where
     pub fn height(&self) -> T {
         self.end.y - self.start.y
     }
+
+    pub fn extent(&self) -> Vector2D<T> {
+        Vector2D::new(self.width(), self.height())
+    }
 }
 
 impl<T> Rect2D<T>
@@ -122,6 +126,10 @@ where
         } else {
             None
         }
+    }
+
+    pub fn intersects(&self, other: &Rect2D<T>) -> bool {
+        self.intersection(other).is_some()
     }
 }
 
