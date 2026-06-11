@@ -1,6 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
-use crate::game::chunker::SquareChunker;
+use crate::game::chunker::StripChunker;
 use crate::game::grid::{FrozenGrid, Grid};
 use crate::game::piece::LeaperAttacks;
 use crate::io::{ReadFrom, WriteTo};
@@ -144,7 +144,8 @@ pub struct Player {
     cursor: UlamSpiralCursor,
 }
 
-const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::from_exponent(10);
+const DEFAULT_CHUNK_STRIP_LENGTH: Pow2 = Pow2::from_exponent(12);
+const DEFAULT_CHUNK_STRIP_THICKNESS: Pow2 = Pow2::from_exponent(8);
 
 pub trait Game {
     fn players(&self) -> &Vec<Player>;
@@ -333,7 +334,7 @@ impl Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(
-                Box::new(SquareChunker::new(DEFAULT_CHUNK_SIZE)),
+                Box::new(StripChunker::with_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)),
                 ZstdCompression::new_with_level(6).into(),
             )),
             forbiddances: SlidingWindow::with_origin(0),

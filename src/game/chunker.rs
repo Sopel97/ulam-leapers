@@ -72,7 +72,7 @@ impl StandardChunker {
                 Box::new(SquareChunker::new(Pow2::from_exponent(chunk_size_pow2)))
             },
             StandardChunker::StripChunker { strip_length_pow2, strip_thickness_pow2 } => {
-                Box::new(StripChunker::new(Pow2::from_exponent(strip_length_pow2), Pow2::from_exponent(strip_thickness_pow2)))
+                Box::new(StripChunker::with_strip_length_and_thickness(Pow2::from_exponent(strip_length_pow2), Pow2::from_exponent(strip_thickness_pow2)))
             }
         }
     }
@@ -296,7 +296,7 @@ enum SuperchunkOrientation {
 }
 
 impl StripChunker {
-    pub fn new(strip_length: Pow2, strip_thickness: Pow2) -> StripChunker {
+    pub fn with_strip_length_and_thickness(strip_length: Pow2, strip_thickness: Pow2) -> StripChunker {
         assert!(strip_thickness <= strip_length);
         StripChunker { strip_length, strip_thickness }
     }
