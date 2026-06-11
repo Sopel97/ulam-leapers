@@ -153,7 +153,7 @@ pub trait Game {
     fn complete_shells(&self) -> u32 {
         self.players()
             .iter()
-            .map(|p| p.cursor.grid_position().chebyshev_distance_from_origin())
+            .map(|p| p.cursor.grid_position().chebyshev_distance_to_origin())
             .min()
             .unwrap()
     }
