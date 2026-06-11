@@ -144,7 +144,7 @@ pub struct Player {
     cursor: UlamSpiralCursor,
 }
 
-const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::new(1024);
+const DEFAULT_CHUNK_SIZE: Pow2 = Pow2::from_exponent(10);
 
 pub trait Game {
     fn players(&self) -> &Vec<Player>;

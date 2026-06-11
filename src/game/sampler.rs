@@ -76,7 +76,7 @@ where
         Self {
             grid,
             region,
-            minification: Pow2::new(1),
+            minification: Pow2::try_from(1).unwrap(),
             default_value,
             collector,
         }
@@ -93,11 +93,11 @@ where
             panic!("Region is not aligned to the minification factor.");
         }
 
-        if grid.chunker().minimum_chunk_alignment() < minification.into() {
+        if grid.chunker().minimum_chunk_alignment() < minification.as_u64() as usize {
             panic!("Minification factor is larger than minimum chunk alignment.");
         }
 
-        if grid.chunker().minimum_chunk_extent() < minification.into() {
+        if grid.chunker().minimum_chunk_extent() < minification.as_u64() as usize {
             panic!("Minification factor is smaller than minimum chunk extent.");
         }
 
@@ -119,8 +119,8 @@ where
         let default_value = self.default_value;
 
         let mut result: Array2D<TCollector::OutputType> = Array2D::new(
-            pow2::floor_div(region.width(), minification) as usize,
-            pow2::floor_div(region.height(), minification) as usize,
+            pow2::div_floor(region.width(), minification) as usize,
+            pow2::div_floor(region.height(), minification) as usize,
         );
         result.as_flat_mut_slice().fill(default_value);
 
@@ -187,10 +187,10 @@ where
                                 let chunk = compressed_chunk.decompress();
 
                                 let blocks_x =
-                                    pow2::floor_div(bounds.width(), self.minification) as usize;
+                                    pow2::div_floor(bounds.width(), self.minification) as usize;
                                 let blocks_y =
-                                    pow2::floor_div(bounds.width(), self.minification) as usize;
-                                let block_size: i32 = self.minification.into();
+                                    pow2::div_floor(bounds.width(), self.minification) as usize;
+                                let block_size: i32 = self.minification.as_u64() as i32;
 
                                 let mut whole_chunk_result: Array2D<TCollector::OutputType> =
                                     Array2D::new(blocks_x, blocks_y);
@@ -232,25 +232,25 @@ where
 
                         assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                        let dst_x = pow2::floor_div(
+                        let dst_x = pow2::div_floor(
                             subregion.start.x - self.region.start.x,
                             self.minification,
                         ) as usize;
-                        let dst_y = pow2::floor_div(
+                        let dst_y = pow2::div_floor(
                             subregion.start.y - self.region.start.y,
                             self.minification,
                         ) as usize;
 
                         let src_x =
-                            pow2::floor_div(subregion.start.x - bounds.start.x, self.minification)
+                            pow2::div_floor(subregion.start.x - bounds.start.x, self.minification)
                                 as usize;
                         let src_y =
-                            pow2::floor_div(subregion.start.y - bounds.start.y, self.minification)
+                            pow2::div_floor(subregion.start.y - bounds.start.y, self.minification)
                                 as usize;
 
-                        let width = pow2::floor_div(subregion.width(), self.minification) as usize;
+                        let width = pow2::div_floor(subregion.width(), self.minification) as usize;
                         let height =
-                            pow2::floor_div(subregion.height(), self.minification) as usize;
+                            pow2::div_floor(subregion.height(), self.minification) as usize;
 
                         tx.send((
                             Arc::clone(&whole_chunk_result),
@@ -309,11 +309,11 @@ where
 
                         let chunk = compressed_chunk.decompress();
 
-                        let block_size: i32 = self.minification.into();
+                        let block_size: i32 = self.minification.as_u64() as i32;
 
                         let mut subregion_result: Array2D<TCollector::OutputType> = Array2D::new(
-                            pow2::floor_div(subregion.width(), self.minification) as usize,
-                            pow2::floor_div(subregion.height(), self.minification) as usize,
+                            pow2::div_floor(subregion.width(), self.minification) as usize,
+                            pow2::div_floor(subregion.height(), self.minification) as usize,
                         );
 
                         for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize)
@@ -332,9 +332,9 @@ where
                                 };
 
                                 // Map the block and store into the actual result.
-                                let srx = pow2::floor_div(bx - subregion.start.x, self.minification)
+                                let srx = pow2::div_floor(bx - subregion.start.x, self.minification)
                                     as usize;
-                                let sry = pow2::floor_div(by - subregion.start.y, self.minification)
+                                let sry = pow2::div_floor(by - subregion.start.y, self.minification)
                                     as usize;
                                 // SAFETY: Explicitly iterating within the subregion.
                                 unsafe {
@@ -343,11 +343,11 @@ where
                             }
                         }
 
-                        let dst_x = pow2::floor_div(
+                        let dst_x = pow2::div_floor(
                             subregion.start.x - self.region.start.x,
                             self.minification,
                         ) as usize;
-                        let dst_y = pow2::floor_div(
+                        let dst_y = pow2::div_floor(
                             subregion.start.y - self.region.start.y,
                             self.minification,
                         ) as usize;

@@ -4,7 +4,7 @@ use crate::math::pow2;
 use crate::math::pow2::Pow2;
 use std::cmp;
 use std::io::{Read, Write};
-use std::ops::{Add, BitAnd, Shl, Sub};
+use std::ops::{Add, Shl, Shr, Sub};
 
 // Effectively forms a 2-dimensional [start, end) range.
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -32,14 +32,14 @@ impl<T: Add<Output = T> + Clone + Copy> Rect2D<T> {
 }
 
 impl<
-    T: BitAnd<Output = T> + From<u8> + Shl<Output = T> + Sub<Output = T> + PartialEq<T> + Clone + Copy,
+    T: Shl<Output = T> + Shr<Output = T> + From<u8> + Eq + Clone + Copy,
 > Rect2D<T>
 {
     pub fn is_aligned_to_pow2(&self, align: Pow2) -> bool {
-        pow2::floor_mod(self.start.x, align) == T::from(0)
-            && pow2::floor_mod(self.start.y, align) == T::from(0)
-            && pow2::floor_mod(self.end.x, align) == T::from(0)
-            && pow2::floor_mod(self.end.y, align) == T::from(0)
+        pow2::is_multiple_of(self.start.x, align)
+            && pow2::is_multiple_of(self.start.y, align)
+            && pow2::is_multiple_of(self.end.x, align)
+            && pow2::is_multiple_of(self.end.y, align)
     }
 }
 

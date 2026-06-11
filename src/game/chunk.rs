@@ -13,9 +13,9 @@ use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
 // Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
-pub const ULS_MINIMUM_CHUNK_ALIGNMENT: usize = 64;
-pub const ULS_MAXIMUM_CHUNK_SIZE: usize = 2048 * 2048;
-pub const ULS_MAXIMUM_CHUNK_EXTENT: usize = 8192;
+pub const ULS_MINIMUM_CHUNK_ALIGNMENT: u64 = 64;
+pub const ULS_MAXIMUM_CHUNK_SIZE: u64 = 2048 * 2048;
+pub const ULS_MAXIMUM_CHUNK_EXTENT: u64 = 8192;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);

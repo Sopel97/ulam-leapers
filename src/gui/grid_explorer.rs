@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::GridPoint;
-use ulam_leapers::math::pow2::{floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
 
@@ -57,7 +57,7 @@ impl Default for GridRenderParameters {
     fn default() -> Self {
         GridRenderParameters {
             bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
-            zoom: Magnification(Pow2::new(1)),
+            zoom: Magnification(Pow2::try_from(1).unwrap()),
         }
     }
 }
@@ -263,8 +263,8 @@ impl GridViewControls {
         viewport_height: i32,
     ) -> GridRenderParameters {
         let zoom = match zoom_pow2 {
-            e @ 0.. => Magnification(Pow2::from_exponent(e as usize)),
-            e @ ..0 => Minification(Pow2::from_exponent((-e) as usize)),
+            e @ 0.. => Magnification(Pow2::from_exponent(e as u8)),
+            e @ ..0 => Minification(Pow2::from_exponent((-e) as u8)),
         };
 
         let bounds = match zoom {
@@ -274,18 +274,18 @@ impl GridViewControls {
 
                 GridRect::with_size(
                     GridPoint::new(
-                        origin_x - floor_div(viewport_width / 2, factor),
-                        origin_y - floor_div(viewport_height / 2, factor),
+                        origin_x - div_floor(viewport_width / 2, factor),
+                        origin_y - div_floor(viewport_height / 2, factor),
                     ),
-                    floor_div(viewport_width, factor),
-                    floor_div(viewport_height, factor),
+                    div_floor(viewport_width, factor),
+                    div_floor(viewport_height, factor),
                 )
             }
             Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
                 let origin_x = floor_to_multiple(origin_x as i32, factor);
                 let origin_y = floor_to_multiple(origin_y as i32, factor);
-                let factor_i32: i32 = factor.into();
+                let factor_i32: i32 = factor.as_u64() as i32;
 
                 GridRect::with_size(
                     GridPoint::new(
@@ -462,8 +462,8 @@ impl GridViewControls {
         if grid_renderer_mutex_guard.has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else if grid_renderer_mutex_guard.can_generate_mipmaps() {
-            let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as usize);
-            let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as usize);
+            let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
+            let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
             let estimated_mipmaps_memory_requirement = grid_renderer_mutex_guard
                 .estimate_mipmaps_memory_requirement(lowest_minification, highest_minification);
             let on_hover_text = if estimated_mipmaps_memory_requirement
@@ -473,13 +473,13 @@ impl GridViewControls {
                     "WARNING: While this will enable up to {}x minification \
                 it does require roughly {} of RAM and may take a long time.\
                 This process is asynchronous.",
-                    highest_minification.as_usize(),
+                    highest_minification,
                     estimated_mipmaps_memory_requirement.display().si(),
                 )
             } else {
                 format!(
                     "This will enable up to {}x minification.",
-                    highest_minification.as_usize()
+                    highest_minification
                 )
             };
 

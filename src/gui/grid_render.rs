@@ -13,7 +13,7 @@ use ulam_leapers::game::chunk::ChunkOrigin;
 use ulam_leapers::game::grid::FrozenGrid;
 use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
-use ulam_leapers::math::pow2::{ceil_to_multiple, floor_div, floor_to_multiple, Pow2};
+use ulam_leapers::math::pow2::{ceil_to_multiple, div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
@@ -122,11 +122,11 @@ impl SampleCollector for AvgColorCollector {
         acc: Self::AccumulatorType,
         (width, height): (usize, usize),
     ) -> Self::OutputType {
-        let count = Pow2::new(width * height);
+        let count = Pow2::try_from((width * height) as u64).unwrap();
         Color32::from_rgb(
-            floor_div(acc.r, count) as u8,
-            floor_div(acc.g, count) as u8,
-            floor_div(acc.b, count) as u8,
+            div_floor(acc.r, count) as u8,
+            div_floor(acc.g, count) as u8,
+            div_floor(acc.b, count) as u8,
         )
     }
 }
@@ -235,7 +235,7 @@ impl GridRenderer {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
         assert!(
-            factor < Pow2::new(4096),
+            factor < Pow2::from_exponent(12),
             "Minification too high, could overflow accumulator"
         );
 
@@ -284,16 +284,16 @@ impl GridRenderer {
 
         // We convert the bounds into local coordinates (after minification).
         let mut src_bounds = mipmap_bounds;
-        src_bounds.start.x = floor_div(src_bounds.start.x, factor);
-        src_bounds.start.y = floor_div(src_bounds.start.y, factor);
-        src_bounds.end.x = floor_div(src_bounds.end.x, factor);
-        src_bounds.end.y = floor_div(src_bounds.end.y, factor);
+        src_bounds.start.x = div_floor(src_bounds.start.x, factor);
+        src_bounds.start.y = div_floor(src_bounds.start.y, factor);
+        src_bounds.end.x = div_floor(src_bounds.end.x, factor);
+        src_bounds.end.y = div_floor(src_bounds.end.y, factor);
 
         let mut dst_bounds = *bounds;
-        dst_bounds.start.x = floor_div(dst_bounds.start.x, factor);
-        dst_bounds.start.y = floor_div(dst_bounds.start.y, factor);
-        dst_bounds.end.x = floor_div(dst_bounds.end.x, factor);
-        dst_bounds.end.y = floor_div(dst_bounds.end.y, factor);
+        dst_bounds.start.x = div_floor(dst_bounds.start.x, factor);
+        dst_bounds.start.y = div_floor(dst_bounds.start.y, factor);
+        dst_bounds.end.x = div_floor(dst_bounds.end.x, factor);
+        dst_bounds.end.y = div_floor(dst_bounds.end.y, factor);
 
         let intersection = src_bounds.intersection(&dst_bounds).unwrap();
 
@@ -394,8 +394,8 @@ impl GridRenderer {
 
         let pixels_at_no_minification =
             grid_bounds.width() as usize * grid_bounds.height() as usize;
-        let pixels_at_lowest_minification = floor_div(
-            floor_div(pixels_at_no_minification, lowest_minification),
+        let pixels_at_lowest_minification = div_floor(
+            div_floor(pixels_at_no_minification, lowest_minification),
             lowest_minification,
         );
 

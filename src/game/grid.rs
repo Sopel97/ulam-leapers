@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn grid_creates_chunk_on_mutation() {
-        let mut grid = make_grid(Pow2::new(64));
+        let mut grid = make_grid(Pow2::try_from(64).unwrap());
 
         grid[point(1, 1)] = 42;
 
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn grid_returns_same_chunk_for_points_in_same_region() {
-        let mut grid = make_grid(Pow2::new(64));
+        let mut grid = make_grid(Pow2::try_from(64).unwrap());
 
         grid[point(1, 1)] = 10;
         grid[point(3, 3)] = 20;
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn grid_creates_different_chunks_for_different_regions() {
-        let mut grid = make_grid(Pow2::new(64)); // chunk size = 4
+        let mut grid = make_grid(Pow2::try_from(64).unwrap()); // chunk size = 4
 
         grid[point(1, 1)] = 10;
         grid[point(64 + 5, 5)] = 20;
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn grid_index_panics_when_chunk_does_not_exist() {
-        let grid = make_grid(Pow2::new(64));
+        let grid = make_grid(Pow2::try_from(64).unwrap());
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _ = grid[point(0, 0)];
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn grid_supports_negative_coordinates() {
-        let mut grid = make_grid(Pow2::new(64));
+        let mut grid = make_grid(Pow2::try_from(64).unwrap());
 
         grid[point(-1, -1)] = 123;
 
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn correct_chunks_get_frozen() {
-        let mut grid = make_grid(Pow2::new(64));
+        let mut grid = make_grid(Pow2::try_from(64).unwrap());
 
         grid[point(0, 0)] = 123;
         grid[point(-64 + 5, 0)] = 123;
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn attempting_to_modify_frozen_chunk_panics() {
-        let mut grid = make_grid(Pow2::new(64));
+        let mut grid = make_grid(Pow2::try_from(64).unwrap());
 
         grid[point(0, 0)] = 123;
 
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn frozen_grid_sampler_reads_single_cell_correctly() {
-        let frozen = make_frozen_grid(Pow2::new(64), &[(0, 0, 42)]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[(0, 0, 42)]);
         let region = GridRect::with_size(point(0, 0), 1, 1);
         let result = sum_sampler(&frozen, region).par_sample();
         assert_eq!(result[(0, 0)], 42);
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn frozen_grid_sampler_default_value_for_missing_chunks() {
         // Region that has no data written into it — sampler should fill with default.
-        let frozen = make_frozen_grid(Pow2::new(64), &[]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[]);
         let region = GridRect::with_size(point(0, 0), 64, 64);
         let result = sum_sampler(&frozen, region).par_sample();
         // All cells in result should be the default (0u8).
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn frozen_grid_sampler_result_dimensions_match_region() {
-        let frozen = make_frozen_grid(Pow2::new(64), &[(0, 0, 1)]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[(0, 0, 1)]);
         let region = GridRect::with_size(point(0, 0), 64, 128);
         let result = sum_sampler(&frozen, region).par_sample();
         assert_eq!(result.width(), 64);
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn frozen_grid_sampler_reads_multiple_cells_in_one_chunk() {
         let frozen = make_frozen_grid(
-            Pow2::new(64),
+            Pow2::try_from(64).unwrap(),
             &[(0, 0, 10), (1, 0, 20), (0, 1, 30), (1, 1, 40)],
         );
         let region = GridRect::with_size(point(0, 0), 64, 64);
@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn frozen_grid_sampler_reads_across_multiple_chunks() {
         // chunk size 64: (0,0) and (64,0) are in different chunks.
-        let frozen = make_frozen_grid(Pow2::new(64), &[(0, 0, 7), (64, 0, 13)]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[(0, 0, 7), (64, 0, 13)]);
         let region = GridRect::with_size(point(0, 0), 128, 64);
         let result = sum_sampler(&frozen, region).par_sample();
         assert_eq!(result[(0, 0)], 7);
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn frozen_grid_sampler_works_with_negative_coordinates() {
-        let frozen = make_frozen_grid(Pow2::new(64), &[(-1, -1, 55)]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[(-1, -1, 55)]);
         let region = GridRect::with_size(point(-64, -64), 64, 64);
         let result = sum_sampler(&frozen, region).par_sample();
         // (-1,-1) maps to offset (63, 63) inside the region starting at (-64,-64).
@@ -559,7 +559,7 @@ mod tests {
                 points.push((x, y, ((x + y) % 256) as u8));
             }
         }
-        let frozen = make_frozen_grid(Pow2::new(64), &points);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &points);
         let region = GridRect::with_size(point(4, 4), 4, 4);
         let result = sum_sampler(&frozen, region).par_sample();
         assert_eq!(result.width(), 4);
@@ -574,9 +574,9 @@ mod tests {
 
     #[test]
     fn frozen_grid_sampler_2x_minification_output_dimensions() {
-        let frozen = make_frozen_grid(Pow2::new(64), &[(0, 0, 1)]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[(0, 0, 1)]);
         let region = GridRect::with_size(point(0, 0), 64, 64);
-        let result = avg_sampler(&frozen, region, Pow2::new(2)).par_sample();
+        let result = avg_sampler(&frozen, region, Pow2::try_from(2).unwrap()).par_sample();
         assert_eq!(result.width(), 32);
         assert_eq!(result.height(), 32);
     }
@@ -588,9 +588,9 @@ mod tests {
         let points: Vec<(i32, i32, u8)> = (0..64)
             .flat_map(|y| (0..64i32).map(move |x| (x, y, 100u8)))
             .collect();
-        let frozen = make_frozen_grid(Pow2::new(64), &points);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
-        let result = avg_sampler(&frozen, region, Pow2::new(2)).par_sample();
+        let result = avg_sampler(&frozen, region, Pow2::try_from(2).unwrap()).par_sample();
         assert!(result.as_flat_slice().iter().all(|&v| v == 100));
     }
 
@@ -601,14 +601,14 @@ mod tests {
         let points: Vec<(i32, i32, u8)> = (0..4)
             .flat_map(|y| (0..4i32).map(move |x| (x, y, 1u8)))
             .collect();
-        let frozen = make_frozen_grid(Pow2::new(64), &points);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
 
         // Sum sampler with 4× minification (sums all cells, does not divide).
         let sampler = FrozenGridSampler::new_with_minification(
             &frozen,
             region,
-            Pow2::new(4),
+            Pow2::try_from(4).unwrap(),
             0u8,
             SumCollector,
         );
@@ -643,12 +643,12 @@ mod tests {
         let points: Vec<(i32, i32, u8)> = (0..64)
             .flat_map(|y| (0..64i32).map(move |x| (x, y, 1u8)))
             .collect();
-        let frozen = make_frozen_grid(Pow2::new(64), &points);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
         let sampler = FrozenGridSampler::new_with_minification(
             &frozen,
             region,
-            Pow2::new(64),
+            Pow2::try_from(64).unwrap(),
             0u8,
             SaturatingSumCollector,
         );
@@ -668,14 +668,14 @@ mod tests {
         let points: Vec<(i32, i32, u8)> = (0..64)
             .flat_map(|y| (0..64i32).map(move |x| (x, y, ((x * 3 + y * 7) % 256) as u8)))
             .collect();
-        let frozen = make_frozen_grid(Pow2::new(64), &points);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &points);
         let region = GridRect::with_size(point(0, 0), 64, 64);
 
         type S<'a> = FrozenGridSampler<'a, u8, AverageCollector>;
 
         // Using function pointers so `CacheEnabled` has a concrete type.
         let sampler =
-            S::<'_>::new_with_minification(&frozen, region, Pow2::new(2), 0u8, AverageCollector);
+            S::<'_>::new_with_minification(&frozen, region, Pow2::try_from(2).unwrap(), 0u8, AverageCollector);
 
         let no_cache_result = sampler.par_sample();
 
@@ -696,12 +696,12 @@ mod tests {
 
     #[test]
     fn frozen_grid_sampler_panics_when_region_not_aligned_to_minification() {
-        let frozen = make_frozen_grid(Pow2::new(64), &[]);
+        let frozen = make_frozen_grid(Pow2::try_from(64).unwrap(), &[]);
         // Region starts at (1, 0), which is not aligned to minification factor 2.
         let region = GridRect::with_size(point(1, 0), 64, 64);
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            avg_sampler(&frozen, region, Pow2::new(2));
+            avg_sampler(&frozen, region, Pow2::try_from(2).unwrap());
         }));
 
         assert!(result.is_err());

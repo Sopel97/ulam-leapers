@@ -1,7 +1,7 @@
 ﻿use crate::game::chunk::{ChunkOrigin, ULS_MAXIMUM_CHUNK_EXTENT, ULS_MAXIMUM_CHUNK_SIZE, ULS_MINIMUM_CHUNK_ALIGNMENT};
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
-use crate::math::pow2::{floor_to_multiple, Pow2};
+use crate::math::pow2::{div_ceil, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
 use std::io::{ErrorKind, Read, Write};
 
@@ -18,9 +18,9 @@ pub enum StandardChunker {
 
 impl StandardChunker {
     pub fn try_new_square_chunker(size: Pow2) -> Option<Self> {
-        if size.as_usize() < ULS_MINIMUM_CHUNK_ALIGNMENT
-            || size.as_usize() > ULS_MAXIMUM_CHUNK_EXTENT
-            || size.as_usize().pow(2) > ULS_MAXIMUM_CHUNK_SIZE
+        if size.as_u64() < ULS_MINIMUM_CHUNK_ALIGNMENT
+            || size.as_u64() > ULS_MAXIMUM_CHUNK_EXTENT
+            || size.as_u64().pow(2) > ULS_MAXIMUM_CHUNK_SIZE
         {
             None
         } else {
@@ -43,7 +43,7 @@ impl StandardChunker {
     pub fn into_chunker(self) -> Box<dyn Chunker> {
         match self {
             StandardChunker::SquareChunker { chunk_size_pow2 } => Box::new(SquareChunker::new(
-                Pow2::from_exponent(chunk_size_pow2 as usize),
+                Pow2::from_exponent(chunk_size_pow2),
             )),
         }
     }
@@ -87,45 +87,45 @@ impl Chunker for SquareChunker {
 
     fn resolve_chunk_bounds(&self, bounds: &GridPoint) -> GridRect {
         let origin = self.resolve_chunk_origin(bounds);
-        GridRect::square_with_size(origin.point(), self.size.into())
+        GridRect::square_with_size(origin.point(), self.size.as_u64() as i32)
     }
 
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
         let min_ox = floor_to_multiple(region.start.x, self.size);
         let min_oy = floor_to_multiple(region.start.y, self.size);
         (min_oy..region.end.y)
-            .step_by(self.size.into())
+            .step_by(self.size.as_u64() as usize)
             .flat_map(|oy| {
                 (min_ox..region.end.x)
-                    .step_by(self.size.into())
+                    .step_by(self.size.as_u64() as usize)
                     .map(move |ox| ChunkOrigin::new(GridPoint::new(ox, oy)))
             })
             .collect()
     }
 
     fn minimum_chunk_alignment(&self) -> usize {
-        self.size.into()
+        self.size.as_u64() as usize
     }
 
     fn minimum_chunk_extent(&self) -> usize {
-        self.size.into()
+        self.size.as_u64() as usize
     }
 
     fn minimum_covered_shells(&self) -> usize {
-        self.size.into()
+        self.size.as_u64() as usize
     }
 
     fn average_cell_count(&self) -> usize {
-        self.size.as_usize() * self.size.as_usize()
+        self.size.as_u64().pow(2) as usize
     }
 
     fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize {
-        let chunk_size = self.size.as_usize() * self.size.as_usize();
+        let chunk_size = self.size.as_u64().pow(2) as usize;
         // Corners in extreme case
         if steps < 4 {
             steps * chunk_size
         } else {
-            (4 + (steps - 4).div_ceil(self.size.as_usize())) * chunk_size
+            (4 + div_ceil(steps - 4, self.size)) * chunk_size
         }
     }
 
@@ -150,7 +150,7 @@ impl ReadFrom for StandardChunker {
         let t = Box::<[u8]>::read_from(reader)?;
         if t.iter().eq("SquareChunker".as_bytes()) {
             let chunk_size_pow2 = u8::read_from(reader)?;
-            let size = Pow2::from_exponent(chunk_size_pow2 as usize);
+            let size = Pow2::from_exponent(chunk_size_pow2);
             StandardChunker::try_new_square_chunker(size).ok_or_else(|| {
                 std::io::Error::new(
                     ErrorKind::InvalidData,
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_positive_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(64),
+            size: Pow2::try_from(64).unwrap(),
         };
 
         let origin = chunker.resolve_chunk_origin(&point(128 + 18, 192 + 33));
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_negative_chunk_origins() {
         let chunker = SquareChunker {
-            size: Pow2::new(64),
+            size: Pow2::try_from(64).unwrap(),
         };
 
         let origin = chunker.resolve_chunk_origin(&point(-128 + 1, -192 + 17));
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn square_chunker_resolves_bounds() {
         let chunker = SquareChunker {
-            size: Pow2::new(64),
+            size: Pow2::try_from(64).unwrap(),
         };
 
         let bounds = chunker.resolve_chunk_bounds(&point(64 + 9, 128 + 17));
