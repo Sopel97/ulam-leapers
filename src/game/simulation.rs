@@ -420,18 +420,18 @@ impl Simulation {
         for player in self.players.iter_mut() {
             // In a lot of cases we can place the piece immediately where we currently are,
             // so special case it. Results in a significant speedup.
-            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().as_isize()];
+            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().as_u64() as isize];
             if !immediate_cell.is_set(player.id) {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
                 let pos = self
                     .forbiddances
-                    .position_or_first_empty(player.cursor.spiral_position().as_isize() + 1.., |x| {
+                    .position_or_first_empty(player.cursor.spiral_position().as_u64() as isize + 1.., |x| {
                         !x.is_set(player.id)
                     });
                 player.cursor.advance_to(UlamSpiralPoint::new(pos as u64));
-                self.forbiddances[player.cursor.spiral_position().as_isize()] = PlayerIdSet::full();
+                self.forbiddances[player.cursor.spiral_position().as_u64() as isize] = PlayerIdSet::full();
             }
 
             let attack_src = player.cursor.grid_position();
@@ -440,8 +440,8 @@ impl Simulation {
                 let u = UlamSpiralPoint::from(&attack_dst);
                 // We don't care about cells before the origin (last player) and
                 // we need to be careful not to modify them.
-                if u.as_isize() >= self.forbiddances.get_origin() {
-                    self.forbiddances[u.as_isize()] |= player.enemies;
+                if u.as_u64() as isize >= self.forbiddances.get_origin() {
+                    self.forbiddances[u.as_u64() as isize] |= player.enemies;
                 }
             }
 
@@ -456,9 +456,9 @@ impl Simulation {
         let last_player = self
             .players
             .iter()
-            .min_by_key(|player| player.cursor.spiral_position().as_usize())
+            .min_by_key(|player| player.cursor.spiral_position().as_u64())
             .unwrap();
-        let new_origin = last_player.cursor.spiral_position().as_isize();
+        let new_origin = last_player.cursor.spiral_position().as_u64() as isize;
         self.forbiddances.set_origin(new_origin);
     }
 

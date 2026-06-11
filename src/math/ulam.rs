@@ -12,12 +12,8 @@ impl UlamSpiralPoint {
         UlamSpiralPoint(d)
     }
 
-    pub fn as_usize(self) -> usize {
+    pub fn as_u64(self) -> usize {
         self.0 as usize
-    }
-
-    pub fn as_isize(self) -> isize {
-        self.0 as isize
     }
 }
 
