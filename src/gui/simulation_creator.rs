@@ -2,6 +2,7 @@
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::widgets::leaper_attacks::LeaperAttacksInput;
 use eframe::egui;
 use eframe::egui::{
     Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
@@ -36,145 +37,6 @@ const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 const MIN_PREVIEW_SHELLS: usize = 100;
 const DEFAULT_PREVIEW_SHELLS: usize = 250;
 const MAX_PREVIEW_SHELLS: usize = 1000;
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-struct PlayerConfigState {
-    id: usize,
-    attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
-    is_attack_map_symmetric: bool,
-}
-
-impl PlayerConfigState {
-    fn attack_map_to_json(&self) -> Value {
-        json!(
-            self.attack_offsets_ordered()
-                .iter()
-                .map(|v| {
-                    json!({
-                        "x": v.x,
-                        "y": v.y,
-                    })
-                })
-                .collect::<Vec<_>>()
-        )
-    }
-
-    pub fn to_json(&self) -> Value {
-        json!({
-            "id": self.id,
-            "attack_map": self.attack_map_to_json(),
-            "is_attack_map_symmetric": self.is_attack_map_symmetric,
-        })
-    }
-
-    fn try_from_json(json: &Value) -> Option<PlayerConfigState> {
-        let mut slf = PlayerConfigState {
-            id: json["id"].as_u64()? as usize,
-            is_attack_map_symmetric: json["is_attack_map_symmetric"].as_bool()?,
-            ..Default::default()
-        };
-
-        for attack_vector_json in json["attack_map"].as_array()? {
-            let vec = GridVector::new(
-                attack_vector_json["x"].as_i64()? as i32,
-                attack_vector_json["y"].as_i64()? as i32,
-            );
-            let (x, y) = Self::attack_offset_to_index(&vec)?;
-            slf.attack_map[(x, y)] = true;
-        }
-
-        Some(slf)
-    }
-}
-
-impl PlayerConfigState {
-    fn with_id(id: usize) -> Self {
-        Self {
-            id,
-            ..Default::default()
-        }
-    }
-
-    pub fn copy_symmetrically(&mut self, x: usize, y: usize) {
-        let v = self.attack_map[(x, y)];
-        for xs in [-1, 1] {
-            for ys in [-1, 1] {
-                // Ugly because we need to translate to fix the coordinate system.
-                let xx = (x as i32) - MAX_PIECE_RANGE as i32;
-                let yy = (y as i32) - MAX_PIECE_RANGE as i32;
-                self.attack_map[(
-                    ((xx * xs) + MAX_PIECE_RANGE as i32) as usize,
-                    ((yy * ys) + MAX_PIECE_RANGE as i32) as usize,
-                )] = v;
-                self.attack_map[(
-                    ((yy * ys) + MAX_PIECE_RANGE as i32) as usize,
-                    ((xx * xs) + MAX_PIECE_RANGE as i32) as usize,
-                )] = v;
-            }
-        }
-    }
-
-    pub fn apply_enabled_symmetrically(&mut self) {
-        // Some redundant work here but who cares.
-        for y in 0..self.attack_map.height() {
-            for x in 0..self.attack_map.width() {
-                if self.attack_map[(x, y)] {
-                    self.copy_symmetrically(x, y);
-                }
-            }
-        }
-    }
-
-    fn attack_offset_to_index(attack_offset: &GridVector) -> Option<(usize, usize)> {
-        let x = attack_offset.x + MAX_PIECE_RANGE as i32;
-        let y = (-attack_offset.y) + MAX_PIECE_RANGE as i32;
-        if x < 0 || x as usize > MAX_PIECE_RANGE * 2 || y < 0 || y as usize > MAX_PIECE_RANGE * 2 {
-            return None;
-        }
-
-        Some((x as usize, y as usize))
-    }
-
-    fn index_to_attack_offset((x, y): (usize, usize)) -> Option<GridVector> {
-        if x > MAX_PIECE_RANGE * 2 || y > MAX_PIECE_RANGE * 2 {
-            return None;
-        }
-
-        Some(GridVector::new(
-            (x as i32) - MAX_PIECE_RANGE as i32,
-            // Flip y because UI is rendered top to bottom while the grid's y points up.
-            -((y as i32) - MAX_PIECE_RANGE as i32),
-        ))
-    }
-
-    pub fn attack_offsets(&self) -> HashSet<GridVector> {
-        let mut offsets = HashSet::<GridVector>::new();
-        for y in 0..self.attack_map.height() {
-            for x in 0..self.attack_map.width() {
-                if self.attack_map[(x, y)] {
-                    offsets.insert(Self::index_to_attack_offset((x, y)).unwrap());
-                }
-            }
-        }
-        offsets
-    }
-
-    pub fn attack_offsets_ordered(&self) -> Vec<GridVector> {
-        let mut offsets: Vec<_> = self.attack_offsets().into_iter().collect();
-        offsets.sort();
-        offsets
-    }
-}
-
-impl Default for PlayerConfigState {
-    fn default() -> Self {
-        PlayerConfigState {
-            id: 0,
-            attack_map: Array2D::new(MAX_PIECE_RANGE * 2 + 1, MAX_PIECE_RANGE * 2 + 1),
-            is_attack_map_symmetric: true,
-        }
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 struct EnemyConfigState {
@@ -317,7 +179,7 @@ impl Default for LimitsState {
 #[derive(Debug, Eq, PartialEq, Clone)]
 struct CreationState {
     player_count: usize,
-    player_configs: Vec<PlayerConfigState>,
+    player_configs: Vec<LeaperAttacksInput>,
     enemy_config: EnemyConfigState,
     limits: LimitsState,
     preview_shells: usize,
@@ -326,9 +188,9 @@ struct CreationState {
 impl Default for CreationState {
     fn default() -> Self {
         let mut player_configs = Vec::with_capacity(MAX_PLAYER_COUNT);
-        for id in 0..MAX_PLAYER_COUNT {
-            player_configs.push(PlayerConfigState::with_id(id + 1));
-        }
+        player_configs.resize_with(DEFAULT_PLAYER_COUNT, || {
+            LeaperAttacksInput::new(MAX_PIECE_RANGE)
+        });
         CreationState {
             player_count: DEFAULT_PLAYER_COUNT,
             player_configs,
@@ -356,7 +218,7 @@ impl CreationState {
             player_count: json["player_count"].as_u64()? as usize,
             player_configs: player_configs_array
                 .iter()
-                .map(PlayerConfigState::try_from_json)
+                .map(LeaperAttacksInput::try_from_json)
                 .collect::<Option<Vec<_>>>()?,
             enemy_config: EnemyConfigState::try_from_json(&json["enemy_config"])?,
             limits: LimitsState::try_from_json(&json["limits"])?,
@@ -370,10 +232,6 @@ impl CreationState {
         {
             return None;
         }
-
-        // We have to make sure there are actually configs allocated.
-        slf.player_configs
-            .resize(MAX_PLAYER_COUNT, PlayerConfigState::default());
 
         Some(slf)
     }
@@ -548,9 +406,8 @@ impl SimulationCreator {
     pub fn to_simulation(&self) -> (Simulation, SimulationLimits) {
         let mut sim = Simulation::new();
 
-        for player_config in self.state.player_configs[..self.state.player_count].iter() {
-            let attacks = player_config.attack_offsets();
-            sim.add_player(LeaperAttacks::from_offsets(attacks));
+        for player_config in self.state.player_configs.iter() {
+            sim.add_player(player_config.build_leaper_attacks());
         }
 
         let enemy_map = self.state.enemy_config.pairs(self.state.player_count);
@@ -624,14 +481,23 @@ impl SimulationCreator {
     #[must_use]
     fn simulation_setup_panel(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
         ui.vertical(|ui| {
-            ui.add(
-                Slider::new(
-                    &mut self.state.player_count,
-                    MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT,
+            if ui
+                .add(
+                    Slider::new(
+                        &mut self.state.player_count,
+                        MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT,
+                    )
+                    .integer()
+                    .text("Player count"),
                 )
-                .integer()
-                .text("Player count"),
-            );
+                .changed()
+            {
+                self.state
+                    .player_configs
+                    .resize_with(self.state.player_count, || {
+                        LeaperAttacksInput::new(MAX_PIECE_RANGE)
+                    });
+            }
 
             self.show_all_configs(ui)
         })
@@ -764,10 +630,7 @@ impl SimulationCreator {
                                     Player *column* fears player *row*.",
                 );
                 if ui
-                    .checkbox(
-                        &mut enemy_config.is_enemy_map_symmetric,
-                        "Symmetric",
-                    )
+                    .checkbox(&mut enemy_config.is_enemy_map_symmetric, "Symmetric")
                     .changed()
                     && enemy_config.is_enemy_map_symmetric
                 {
@@ -829,10 +692,9 @@ impl SimulationCreator {
         egui::Frame::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 // Players
-                for player_config in self.state.player_configs[..self.state.player_count].iter_mut()
-                {
+                for (i, player_config) in self.state.player_configs.iter_mut().enumerate() {
                     ui.group(|ui| {
-                        Self::show_player_config(ui, player_config);
+                        Self::show_player_config(ui, player_config, i + 1);
                     });
                 }
             });
@@ -852,7 +714,11 @@ impl SimulationCreator {
 
             egui::Frame::default().show(ui, |ui| {
                 ui.vertical(|ui| {
-                    Self::show_enemy_config(ui, self.state.player_count, &mut self.state.enemy_config);
+                    Self::show_enemy_config(
+                        ui,
+                        self.state.player_count,
+                        &mut self.state.enemy_config,
+                    );
 
                     Self::show_limits(ui, &mut self.state.limits);
 
@@ -875,51 +741,15 @@ impl SimulationCreator {
         }
     }
 
-    fn show_player_config_attack_map(ui: &mut Ui, player_config: &mut PlayerConfigState) {
-        ui.spacing_mut().item_spacing = Vec2::ZERO;
-        for y in 0..player_config.attack_map.height() {
-            ui.horizontal(|ui| {
-                for x in 0..player_config.attack_map.width() {
-                    let enabled = x != MAX_PIECE_RANGE || y != MAX_PIECE_RANGE;
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            Checkbox::without_text(&mut player_config.attack_map[(x, y)]),
-                        )
-                        .changed()
-                        && player_config.is_attack_map_symmetric
-                    {
-                        player_config.copy_symmetrically(x, y);
-                    }
-                }
-            });
-        }
-    }
-
-    fn show_player_config(ui: &mut Ui, player_config: &mut PlayerConfigState) {
+    fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput, pid: usize) {
         ui.horizontal(|ui| {
             egui::Frame::default().show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.label(format!("P{}", player_config.id));
+                    ui.label(format!("P{}", pid));
                 });
             });
 
-            egui::Frame::default().show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Attacks");
-                        if ui
-                            .checkbox(&mut player_config.is_attack_map_symmetric, "Symmetric")
-                            .changed()
-                            && player_config.is_attack_map_symmetric
-                        {
-                            player_config.apply_enabled_symmetrically();
-                        }
-                    });
-
-                    Self::show_player_config_attack_map(ui, player_config);
-                });
-            });
+            player_config.ui(ui);
 
             // Some space.
             egui::Frame::default().show(ui, |_ui| {});
