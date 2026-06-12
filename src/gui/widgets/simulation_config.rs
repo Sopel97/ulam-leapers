@@ -38,6 +38,7 @@ impl SimulationConfigInput {
         player_configs.resize_with(player_count, || {
             LeaperAttacksInput::new(constraints.leaper_attacks_input_constraints())
         });
+        Self::assign_player_names(&mut player_configs);
 
         let player_relations =
             PlayerRelationsInput::new(constraints.player_relations_input_constraints());
@@ -52,6 +53,16 @@ impl SimulationConfigInput {
             simulation_limits,
             constraints,
         })
+    }
+
+    pub fn make_player_name(index: usize) -> String {
+        format!("P{}", index + 1)
+    }
+
+    fn assign_player_names(player_configs: &mut [LeaperAttacksInput]) {
+        for (i, config) in player_configs.iter_mut().enumerate() {
+            config.set_player_name(Self::make_player_name(i))
+        }
     }
 
     pub fn build_simulation(&self) -> (Simulation, SimulationLimits) {
@@ -105,6 +116,9 @@ impl SimulationConfigInput {
             LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints())
         });
         self.player_relations.set_player_count(player_count)?;
+
+        Self::assign_player_names(&mut self.player_configs);
+
         self.player_count = player_count;
 
         Ok(())
@@ -207,27 +221,26 @@ impl JsonWidget for SimulationConfigInput {
 }
 
 impl SimulationConfigInput {
-    fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput, pid: usize) {
+    fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput) {
         ui.horizontal(|ui| {
-            egui::Frame::default().show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.label(format!("P{}", pid));
-                });
-            });
-
             player_config.ui(ui);
         });
     }
-    
-    fn show_player_configs(ui: &mut Ui, player_configs: &mut [LeaperAttacksInput]) -> Vec<Response> {
+
+    fn show_player_configs(
+        ui: &mut Ui,
+        player_configs: &mut [LeaperAttacksInput],
+    ) -> Vec<Response> {
         let mut config_responses = Vec::new();
         egui::Frame::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 // Players
                 for (i, player_config) in player_configs.iter_mut().enumerate() {
-                    let res = ui.group(|ui| {
-                        Self::show_player_config(ui, player_config, i + 1);
-                    }).response;
+                    let res = ui
+                        .group(|ui| {
+                            Self::show_player_config(ui, player_config);
+                        })
+                        .response;
                     config_responses.push(res);
                 }
             });
@@ -237,7 +250,7 @@ impl SimulationConfigInput {
 
     fn show_simulation_config(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
-            let mut config_responses= Vec::new();
+            let mut config_responses = Vec::new();
 
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
@@ -268,7 +281,7 @@ impl SimulationConfigInput {
             }
         });
     }
-    
+
     fn show_player_count_selector(&mut self, ui: &mut Ui) {
         if ui
             .add(
@@ -276,8 +289,8 @@ impl SimulationConfigInput {
                     &mut self.player_count,
                     self.constraints.player_count.clone(),
                 )
-                    .integer()
-                    .text("Player count"),
+                .integer()
+                .text("Player count"),
             )
             .changed()
         {

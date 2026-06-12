@@ -14,14 +14,31 @@ pub struct LeaperAttacksInputConstraints {
     pub radius: RangeInclusive<usize>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Clone, Default)]
+struct InternalState {
+    name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct LeaperAttacksInput {
     attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
     is_symmetric: bool,
     radius: usize,
 
     constraints: LeaperAttacksInputConstraints,
+
+    internal_state: InternalState,
 }
+
+impl PartialEq for LeaperAttacksInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_symmetric == other.is_symmetric
+            && self.radius == other.radius
+            && self.attack_map == other.attack_map
+    }
+}
+
+impl Eq for LeaperAttacksInput {}
 
 impl LeaperAttacksInput {
     pub fn new(constraints: LeaperAttacksInputConstraints) -> Self {
@@ -33,6 +50,7 @@ impl LeaperAttacksInput {
             is_symmetric: true,
             radius,
             constraints,
+            internal_state: InternalState::default(),
         }
     }
 
@@ -47,6 +65,10 @@ impl LeaperAttacksInput {
         self.radius = radius;
 
         Ok(())
+    }
+
+    pub fn set_player_name(&mut self, name: String) {
+        self.internal_state.name = Some(name);
     }
 
     pub fn build_leaper_attacks(&self) -> LeaperAttacks {
@@ -192,7 +214,12 @@ impl StatefulWidget for LeaperAttacksInput {
             .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label("Attacks");
+                        if let Some(name) = &self.internal_state.name {
+                            ui.label(format!("{} Attacks", name));
+                        } else {
+                            ui.label("Attacks");
+                        }
+
                         if ui.checkbox(&mut self.is_symmetric, "Symmetric").changed()
                             && self.is_symmetric
                         {
@@ -255,6 +282,7 @@ impl JsonWidget for LeaperAttacksInput {
             attack_map,
             radius,
             constraints,
+            internal_state: Default::default(),
         })
     }
 }
