@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::game::chunk::ChunkOrigin;
 use ulam_leapers::game::grid::FrozenGrid;
-use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
+use ulam_leapers::game::sampler::FrozenGridSampler;
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::pow2::{ceil_to_multiple, div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
@@ -26,6 +26,7 @@ pub enum Zoom {
     Magnification(Pow2),
     Minification(Pow2),
 }
+use crate::gui::render::samplers::{AvgMapColor32Collector, MapLastCollector};
 use Zoom::*;
 
 pub fn default_player_colors() -> Vec<Color32> {
@@ -57,101 +58,6 @@ pub struct GridRenderer {
     colors: Vec<Color32>,
     mipmaps: DeferredValue<Mipmaps>,
     cache: Option<RefCell<CacheType>>,
-}
-
-#[repr(align(16))]
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-struct AccCol {
-    r: u32,
-    g: u32,
-    b: u32,
-    a: u32,
-}
-
-#[derive(Debug)]
-struct AvgColorCollector {
-    colors_u32: Vec<AccCol>,
-}
-
-impl AvgColorCollector {
-    pub fn new(colors: &[Color32]) -> Self {
-        let colors_u32 = colors
-            .iter()
-            .map(|c| AccCol {
-                r: c.r() as u32,
-                g: c.g() as u32,
-                b: c.b() as u32,
-                a: c.a() as u32,
-            })
-            .collect::<Vec<_>>();
-
-        Self { colors_u32 }
-    }
-}
-
-impl SampleCollector for AvgColorCollector {
-    type InputType = PlayerId;
-    type AccumulatorType = AccCol;
-    type OutputType = Color32;
-
-    #[inline(always)]
-    fn zero(&self) -> Self::AccumulatorType {
-        AccCol {
-            r: 0,
-            g: 0,
-            b: 0,
-            a: 0,
-        }
-    }
-
-    #[inline(always)]
-    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
-        // SAFETY: We can't guarantee the safety here,
-        //         the caller must make sure there is enough colors.
-        //         However, this is a hot loop, we need it for speed.
-        let color = unsafe { self.colors_u32.get_unchecked(input.index()) };
-        acc.r += color.r;
-        acc.g += color.g;
-        acc.b += color.b;
-        acc.a += color.a;
-    }
-
-    #[inline(always)]
-    fn finalize(
-        &self,
-        acc: Self::AccumulatorType,
-        (width, height): (usize, usize),
-    ) -> Self::OutputType {
-        let count = Pow2::try_from((width * height) as u64).unwrap();
-        Color32::from_rgb(
-            div_floor(acc.r, count) as u8,
-            div_floor(acc.g, count) as u8,
-            div_floor(acc.b, count) as u8,
-        )
-    }
-}
-
-#[derive(Debug)]
-struct LastColorCollector<'a> {
-    colors: &'a [Color32],
-}
-
-impl<'a> SampleCollector for LastColorCollector<'a> {
-    type InputType = PlayerId;
-    type AccumulatorType = Color32;
-    type OutputType = Color32;
-
-    fn zero(&self) -> Self::AccumulatorType {
-        Color32::from_rgb(0, 0, 0)
-    }
-
-    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
-        *acc = self.colors[input.index()]
-    }
-
-    fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
-        acc
-    }
 }
 
 #[derive(Debug)]
@@ -236,7 +142,7 @@ impl GridRenderer {
         &self,
         bounds: &GridRect,
         factor: Pow2,
-    ) -> FrozenGridSampler<'_, PlayerId, AvgColorCollector> {
+    ) -> FrozenGridSampler<'_, PlayerId, AvgMapColor32Collector> {
         // u32 is enough for 4096x4096 worst case
         // We do alpha too in case the compiler can vectorize it better than just rgb.
         assert!(
@@ -249,7 +155,7 @@ impl GridRenderer {
             *bounds,
             factor,
             self.colors[0],
-            AvgColorCollector::new(self.colors.as_slice()),
+            AvgMapColor32Collector::new(self.colors.as_slice()),
         )
     }
 
@@ -336,7 +242,7 @@ impl GridRenderer {
                     &self.grid,
                     *bounds,
                     colors[0],
-                    LastColorCollector { colors },
+                    MapLastCollector::new(colors),
                 );
                 // Do not use a cache for magnification because it's cheap to
                 // compute and the results take more memory than the probed chunk cells.
@@ -446,7 +352,7 @@ impl GridRenderer {
 
         let grid_ref = Arc::clone(&self.grid);
         let default_color = self.colors[0];
-        let collector = AvgColorCollector::new(self.colors.as_slice());
+        let collector = AvgMapColor32Collector::new(self.colors.as_slice());
 
         let is_finished_clone = Arc::clone(&is_finished);
         let job = move |ct: CancellationToken| {

@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_render::default_player_colors;
+﻿use crate::gui::render::grid_render::default_player_colors;
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
@@ -19,6 +19,7 @@ use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::render::samplers::MapLastCollector;
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -66,29 +67,6 @@ pub struct SimulationCreator {
 impl Default for SimulationCreator {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Debug)]
-struct LastColorCollector<'a> {
-    colors: &'a [Color32],
-}
-
-impl<'a> SampleCollector for LastColorCollector<'a> {
-    type InputType = PlayerId;
-    type AccumulatorType = Color32;
-    type OutputType = Color32;
-
-    fn zero(&self) -> Self::AccumulatorType {
-        Color32::from_rgb(0, 0, 0)
-    }
-
-    fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType) {
-        *acc = self.colors[input.index()]
-    }
-
-    fn finalize(&self, acc: Self::AccumulatorType, _size: (usize, usize)) -> Self::OutputType {
-        acc
     }
 }
 
@@ -144,9 +122,7 @@ impl SimulationCreatorWorker {
             (shells * 2 + 1) as i32,
         );
 
-        let collector = LastColorCollector {
-            colors: colors.as_slice(),
-        };
+        let collector = MapLastCollector::new(&colors);
         let sampler = FrozenGridSampler::new(&frozen_grid, bounds, colors[0], collector);
         let samples: Array2D<Color32> = sampler.par_sample();
         let image = ColorImage::new(

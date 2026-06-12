@@ -1,5 +1,5 @@
-﻿use crate::gui::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::grid_render::{
+﻿use crate::gui::render::grid_render::Zoom::{Magnification, Minification};
+use crate::gui::render::grid_render::{
     default_player_colors, GridRenderer, MipmapGenerationProgress, Zoom,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
