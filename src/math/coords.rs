@@ -1,5 +1,6 @@
 ﻿use crate::io::{ReadFrom, WriteTo};
 use std::cmp;
+use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::ops::*;
 
@@ -210,6 +211,24 @@ impl Vector2D<f64> {
     pub fn length(&self) -> f64 {
         self.squared_length().sqrt()
     }
+}
+
+pub fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
+    // We could have assembled these via different cases instead of always computing all
+    // of them and then deduplicating, but this is simpler and performance does not matter here.
+    [
+        GridVector::new(v.x, v.y),
+        GridVector::new(-v.y, v.x),
+        GridVector::new(-v.x, -v.y),
+        GridVector::new(v.y, -v.x),
+        GridVector::new(-v.x, v.y),
+        GridVector::new(v.y, v.x),
+        GridVector::new(v.x, -v.y),
+        GridVector::new(-v.y, -v.x),
+    ]
+        .into_iter()
+        .collect::<HashSet<GridVector>>()
+        .into_iter()
 }
 
 impl<T> WriteTo for Point2D<T>

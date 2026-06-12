@@ -1,29 +1,11 @@
 ﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{GridPoint, GridVector};
+use crate::math::coords::{symmetries, GridPoint, GridVector};
 use std::collections::{BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,
-}
-
-fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
-    // We could have assembled these via different cases instead of always computing all
-    // of them and then deduplicating, but this is simpler and performance does not matter here.
-    [
-        GridVector::new(v.x, v.y),
-        GridVector::new(-v.y, v.x),
-        GridVector::new(-v.x, -v.y),
-        GridVector::new(v.y, -v.x),
-        GridVector::new(-v.x, v.y),
-        GridVector::new(v.y, v.x),
-        GridVector::new(v.x, -v.y),
-        GridVector::new(-v.y, -v.x),
-    ]
-    .into_iter()
-    .collect::<HashSet<GridVector>>()
-    .into_iter()
 }
 
 impl LeaperAttacks {
