@@ -1,6 +1,6 @@
-﻿use std::error::Error;
+﻿use serde_json::{Map, Value};
+use std::error::Error;
 use std::fmt::{Display, Formatter};
-use serde_json::{Map, Value};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum JsonError {
@@ -15,8 +15,16 @@ impl Display for JsonError {
         match self {
             JsonError::MissingIndex(index) => write!(f, "Index {} is missing", index),
             JsonError::MissingKey(key) => write!(f, "missing key: {}", key),
-            JsonError::TypeMismatchAtIndex(index, expected_type) =>  write!(f, "value under index {} is not of type {}", index, expected_type),
-            JsonError::TypeMismatchAtKey(key, expected_type) =>  write!(f, "value under key {} is not of type {}", key, expected_type),
+            JsonError::TypeMismatchAtIndex(index, expected_type) => write!(
+                f,
+                "value under index {} is not of type {}",
+                index, expected_type
+            ),
+            JsonError::TypeMismatchAtKey(key, expected_type) => write!(
+                f,
+                "value under key {} is not of type {}",
+                key, expected_type
+            ),
         }
     }
 }
@@ -92,34 +100,58 @@ impl SerdeJsonValueExt for Value {
     }
 
     fn read_u64(&self, index: impl JsonIndex) -> Result<u64, JsonError> {
-        index.index_into(self)?.as_u64().ok_or_else(|| index.mismatched_type("u64"))
+        index
+            .index_into(self)?
+            .as_u64()
+            .ok_or_else(|| index.mismatched_type("u64"))
     }
 
     fn read_i64(&self, index: impl JsonIndex) -> Result<i64, JsonError> {
-        index.index_into(self)?.as_i64().ok_or_else(|| index.mismatched_type("i64"))
+        index
+            .index_into(self)?
+            .as_i64()
+            .ok_or_else(|| index.mismatched_type("i64"))
     }
 
     fn read_f64(&self, index: impl JsonIndex) -> Result<f64, JsonError> {
-        index.index_into(self)?.as_f64().ok_or_else(|| index.mismatched_type("f64"))
+        index
+            .index_into(self)?
+            .as_f64()
+            .ok_or_else(|| index.mismatched_type("f64"))
     }
 
     fn read_bool(&self, index: impl JsonIndex) -> Result<bool, JsonError> {
-        index.index_into(self)?.as_bool().ok_or_else(|| index.mismatched_type("bool"))
+        index
+            .index_into(self)?
+            .as_bool()
+            .ok_or_else(|| index.mismatched_type("bool"))
     }
 
     fn read_null(&self, index: impl JsonIndex) -> Result<(), JsonError> {
-        index.index_into(self)?.as_null().ok_or_else(|| index.mismatched_type("null"))
+        index
+            .index_into(self)?
+            .as_null()
+            .ok_or_else(|| index.mismatched_type("null"))
     }
 
     fn read_string(&self, index: impl JsonIndex) -> Result<&str, JsonError> {
-        index.index_into(self)?.as_str().ok_or_else(|| index.mismatched_type("string"))
+        index
+            .index_into(self)?
+            .as_str()
+            .ok_or_else(|| index.mismatched_type("string"))
     }
 
     fn read_array(&self, index: impl JsonIndex) -> Result<&Vec<Value>, JsonError> {
-        index.index_into(self)?.as_array().ok_or_else(|| index.mismatched_type("array"))
+        index
+            .index_into(self)?
+            .as_array()
+            .ok_or_else(|| index.mismatched_type("array"))
     }
 
     fn read_object(&self, index: impl JsonIndex) -> Result<&Map<String, Value>, JsonError> {
-        index.index_into(self)?.as_object().ok_or_else(|| index.mismatched_type("object"))
+        index
+            .index_into(self)?
+            .as_object()
+            .ok_or_else(|| index.mismatched_type("object"))
     }
 }

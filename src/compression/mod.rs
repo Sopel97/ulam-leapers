@@ -1,5 +1,5 @@
-﻿pub mod zstd;
-pub mod inspect;
+﻿pub mod inspect;
+pub mod zstd;
 
 use crate::compression::zstd::ZstdCompression;
 use std::fmt;
@@ -260,7 +260,10 @@ mod tests {
 
     #[test]
     fn none_kind() {
-        assert!(matches!(NoneCompression::new().kind(), CompressionKind::None));
+        assert!(matches!(
+            NoneCompression::new().kind(),
+            CompressionKind::None
+        ));
     }
 
     #[test]
@@ -303,10 +306,8 @@ mod tests {
         let mut compressed = Vec::new();
         c.compress(Cursor::new(HELLO), &mut compressed).unwrap();
 
-        let mut blob = CompressedBlob::from_raw_parts(
-            CompressionKind::Zstd,
-            compressed.into_boxed_slice(),
-        );
+        let mut blob =
+            CompressedBlob::from_raw_parts(CompressionKind::Zstd, compressed.into_boxed_slice());
         assert_eq!(blob.decompress_to_vec().unwrap(), HELLO);
     }
 

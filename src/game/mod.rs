@@ -1,6 +1,6 @@
-﻿pub mod grid;
-pub mod piece;
-pub mod simulation;
+﻿pub mod chunk;
 pub mod chunker;
-pub mod chunk;
+pub mod grid;
+pub mod piece;
 pub mod sampler;
+pub mod simulation;

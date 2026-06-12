@@ -63,9 +63,9 @@ impl<'a> ByteReader<'a> {
         for i in 0..n {
             res |= (self.data[self.cursor + i] as u64) << (8 * i as u64);
         }
-        
+
         self.cursor += n;
-        
+
         Ok(res)
     }
 
@@ -94,7 +94,7 @@ impl<'a> ByteReader<'a> {
     pub fn is_eof(&self) -> bool {
         self.cursor >= self.data.len()
     }
-    
+
     pub fn cursor(&self) -> usize {
         self.cursor
     }
@@ -167,13 +167,19 @@ mod tests {
     #[test]
     fn read_u16_insufficient_bytes_returns_none() {
         let mut r = ByteReader::new(&[0x01]); // only 1 byte, need 2
-        assert_eq!(r.try_read_u16(), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(
+            r.try_read_u16(),
+            Err(ByteReaderError::UnexpectedEndOfStream)
+        );
     }
 
     #[test]
     fn read_u16_does_not_advance_on_failure() {
         let mut r = ByteReader::new(&[0x42]);
-        assert_eq!(r.try_read_u16(), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(
+            r.try_read_u16(),
+            Err(ByteReaderError::UnexpectedEndOfStream)
+        );
         // cursor should be unchanged; u8 read should still work
         assert_eq!(r.try_read_u8(), Ok(0x42));
     }
@@ -193,7 +199,10 @@ mod tests {
     #[test]
     fn read_u32_insufficient_bytes_returns_none() {
         let mut r = ByteReader::new(&[0x01, 0x02, 0x03]); // need 4
-        assert_eq!(r.try_read_u32(), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(
+            r.try_read_u32(),
+            Err(ByteReaderError::UnexpectedEndOfStream)
+        );
     }
 
     #[test]
@@ -213,7 +222,10 @@ mod tests {
     #[test]
     fn read_u64_insufficient_bytes_returns_none() {
         let mut r = ByteReader::new(&[0x00; 7]); // need 8
-        assert_eq!(r.try_read_u64(), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(
+            r.try_read_u64(),
+            Err(ByteReaderError::UnexpectedEndOfStream)
+        );
     }
 
     #[test]
@@ -341,7 +353,10 @@ mod tests {
         // moving the cursor, then fall back to reading three individual bytes.
         let data: &[u8] = &[0xAA, 0xBB, 0xCC];
         let mut r = ByteReader::new(data);
-        assert_eq!(r.try_read_u32(), Err(ByteReaderError::UnexpectedEndOfStream));
+        assert_eq!(
+            r.try_read_u32(),
+            Err(ByteReaderError::UnexpectedEndOfStream)
+        );
         assert_eq!(r.try_read_u8(), Ok(0xAA));
         assert_eq!(r.try_read_u8(), Ok(0xBB));
         assert_eq!(r.try_read_u8(), Ok(0xCC));

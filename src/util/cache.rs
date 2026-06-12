@@ -7,7 +7,7 @@ pub trait CacheEnabled {
     type CacheType;
     type KeyType;
     type EntryType;
-    
+
     fn make_cache(max_memory_cost: usize) -> Self::CacheType;
 }
 
@@ -20,22 +20,22 @@ struct Entry<V> {
 }
 
 /// This cache works in two stages - queryable stage, and update stage.
-/// 
+///
 /// During the queryable stage the state of the cache is frozen. New computed values
 /// are queued for inclusion in the cache.
 /// IMPORTANT: This queue is unbounded and is not considered when calculating
 ///            the total memory usage. The user must ensure that there is enough memory
 ///            for whatever they are doing during the queryable stage.
 ///            DO NOT FORGET to call `update()` whenever you want this queue to be processed.
-/// 
+///
 /// In the update stage the queue of new cached values is consolidated to the
 /// cache entries, their memory cost tallied, and if memory cost is determined
 /// to be higher than the allowed limit the cleanup procedure is engaged.
-/// 
+///
 /// During cleanup a heuristic is used to drop the least useful entries.
 /// Entries are dropped until the total memory cost drops below the allowed limit.
 /// NOTE: There is some leeway in how many entries are dropped. In particular more
-///       entries may be dropped than necessary to reduce the frequency of cleanups. 
+///       entries may be dropped than necessary to reduce the frequency of cleanups.
 pub struct LockStepCache<K, V> {
     entries: BTreeMap<K, Entry<V>>,
     // Only accounts for the total memory cost of `entries`. The memory cost of
@@ -61,11 +61,11 @@ impl<K, V> LockStepCache<K, V> {
             max_memory_cost,
         }
     }
-    
+
     pub fn set_max_memory_cost(&mut self, max_memory_cost: usize) {
         self.max_memory_cost = max_memory_cost;
     }
-    
+
     pub fn invalidate_all(&mut self) {
         self.entries.clear();
         self.total_memory_cost = 0;
@@ -132,7 +132,7 @@ where
                 }
             }
         }
-        
+
         // We have drained the `new_entries`
         self.new_memory_cost = 0;
 

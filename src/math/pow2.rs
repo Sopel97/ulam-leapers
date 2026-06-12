@@ -121,12 +121,7 @@ where
 /// the result is defined but incorrect.
 pub fn div_ceil<T>(a: T, b: Pow2) -> T
 where
-    T: Copy
-        + Shl<Output = T>
-        + Shr<Output = T>
-        + Add<Output = T>
-        + Sub<Output = T>
-        + From<u8>,
+    T: Copy + Shl<Output = T> + Shr<Output = T> + Add<Output = T> + Sub<Output = T> + From<u8>,
 {
     let one = T::from(1u8);
     let mask = (one << T::from(b.exponent)) - one;
@@ -273,7 +268,7 @@ mod tests {
     #[test]
     fn mul_by_one_is_identity() {
         let one = Pow2::from_exponent(0);
-        let p   = Pow2::from_exponent(5);
+        let p = Pow2::from_exponent(5);
         assert_eq!((p * one).exponent(), 5);
     }
 
@@ -288,7 +283,7 @@ mod tests {
 
     #[test]
     fn display_shows_numeric_value() {
-        assert_eq!(format!("{}", Pow2::from_exponent(0)),  "1");
+        assert_eq!(format!("{}", Pow2::from_exponent(0)), "1");
         assert_eq!(format!("{}", Pow2::from_exponent(10)), "1024");
     }
 
@@ -327,7 +322,7 @@ mod tests {
 
     #[test]
     fn div_floor_by_one_is_identity() {
-        assert_eq!(div_floor(42i64,  Pow2::from_exponent(0)), 42);
+        assert_eq!(div_floor(42i64, Pow2::from_exponent(0)), 42);
         assert_eq!(div_floor(-42i64, Pow2::from_exponent(0)), -42);
     }
 
@@ -357,7 +352,7 @@ mod tests {
 
     #[test]
     fn div_ceil_by_one_is_identity() {
-        assert_eq!(div_ceil(42i64,  Pow2::from_exponent(0)), 42);
+        assert_eq!(div_ceil(42i64, Pow2::from_exponent(0)), 42);
         assert_eq!(div_ceil(-42i64, Pow2::from_exponent(0)), -42);
     }
 
@@ -368,7 +363,7 @@ mod tests {
 
     #[test]
     fn floor_to_multiple_u64_unaligned() {
-        assert_eq!(floor_to_multiple(65u64,  Pow2::from_exponent(6)), 64);
+        assert_eq!(floor_to_multiple(65u64, Pow2::from_exponent(6)), 64);
         assert_eq!(floor_to_multiple(127u64, Pow2::from_exponent(6)), 64);
     }
 
@@ -385,7 +380,7 @@ mod tests {
 
     #[test]
     fn floor_to_multiple_by_one_is_identity() {
-        assert_eq!(floor_to_multiple(37i64,  Pow2::from_exponent(0)), 37);
+        assert_eq!(floor_to_multiple(37i64, Pow2::from_exponent(0)), 37);
         assert_eq!(floor_to_multiple(-37i64, Pow2::from_exponent(0)), -37);
     }
 
@@ -396,8 +391,8 @@ mod tests {
 
     #[test]
     fn ceil_to_multiple_u64_unaligned() {
-        assert_eq!(ceil_to_multiple(65u64, Pow2::from_exponent(6)),  128);
-        assert_eq!(ceil_to_multiple(1u64,  Pow2::from_exponent(6)),  64);
+        assert_eq!(ceil_to_multiple(65u64, Pow2::from_exponent(6)), 128);
+        assert_eq!(ceil_to_multiple(1u64, Pow2::from_exponent(6)), 64);
     }
 
     #[test]
@@ -439,7 +434,7 @@ mod tests {
 
     #[test]
     fn is_multiple_of_u64_true() {
-        assert!(is_multiple_of(0u64,  Pow2::from_exponent(5)));
+        assert!(is_multiple_of(0u64, Pow2::from_exponent(5)));
         assert!(is_multiple_of(32u64, Pow2::from_exponent(5)));
         assert!(is_multiple_of(64u64, Pow2::from_exponent(5)));
     }
@@ -452,7 +447,7 @@ mod tests {
 
     #[test]
     fn is_multiple_of_i64_negative() {
-        assert!( is_multiple_of(-32i64, Pow2::from_exponent(5)));
+        assert!(is_multiple_of(-32i64, Pow2::from_exponent(5)));
         assert!(!is_multiple_of(-31i64, Pow2::from_exponent(5)));
     }
 
@@ -464,8 +459,7 @@ mod tests {
             // so recover the quotient via div_floor itself rather than `/`
             // (plain `/` truncates toward zero, not toward -∞).
             let q = div_floor(a, b);
-            assert_eq!(floor_to_multiple(a, b), q * 32,
-                       "mismatch at a={a}");
+            assert_eq!(floor_to_multiple(a, b), q * 32, "mismatch at a={a}");
         }
     }
 
@@ -477,8 +471,11 @@ mod tests {
             let hi = ceil_to_multiple(a, b);
             assert!(lo <= a, "floor {lo} > {a}");
             assert!(hi >= a, "ceil {hi} < {a}");
-            assert!(hi - lo == 0 || hi - lo == 16,
-                    "gap between floor and ceil should be 0 or 16, got {} for a={a}", hi - lo);
+            assert!(
+                hi - lo == 0 || hi - lo == 16,
+                "gap between floor and ceil should be 0 or 16, got {} for a={a}",
+                hi - lo
+            );
         }
     }
 

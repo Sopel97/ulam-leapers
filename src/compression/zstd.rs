@@ -111,11 +111,7 @@ mod tests {
     fn zstd_all_valid_levels_roundtrip() {
         for level in 1..=22 {
             let c = ZstdCompression::new_with_level(level);
-            assert_eq!(
-                roundtrip(&c, HELLO),
-                HELLO,
-                "failed at level {level}"
-            );
+            assert_eq!(roundtrip(&c, HELLO), HELLO, "failed at level {level}");
         }
     }
 
@@ -144,7 +140,10 @@ mod tests {
 
     #[test]
     fn zstd_kind() {
-        assert!(matches!(ZstdCompression::new().kind(), CompressionKind::Zstd));
+        assert!(matches!(
+            ZstdCompression::new().kind(),
+            CompressionKind::Zstd
+        ));
     }
 
     #[test]

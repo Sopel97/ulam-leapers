@@ -3,7 +3,7 @@
 };
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
-use crate::math::pow2::{Pow2, div_ceil, div_floor, floor_to_multiple, is_multiple_of};
+use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
 use std::io::{ErrorKind, Read, Write};
 
@@ -70,10 +70,14 @@ impl StandardChunker {
         match self {
             StandardChunker::SquareChunker { chunk_size_pow2 } => {
                 Box::new(SquareChunker::new(Pow2::from_exponent(chunk_size_pow2)))
-            },
-            StandardChunker::StripChunker { strip_length_pow2, strip_thickness_pow2 } => {
-                Box::new(StripChunker::with_strip_length_and_thickness(Pow2::from_exponent(strip_length_pow2), Pow2::from_exponent(strip_thickness_pow2)))
             }
+            StandardChunker::StripChunker {
+                strip_length_pow2,
+                strip_thickness_pow2,
+            } => Box::new(StripChunker::with_strip_length_and_thickness(
+                Pow2::from_exponent(strip_length_pow2),
+                Pow2::from_exponent(strip_thickness_pow2),
+            )),
         }
     }
 }
@@ -169,8 +173,11 @@ impl WriteTo for StandardChunker {
             StandardChunker::SquareChunker { chunk_size_pow2 } => {
                 "SquareChunker".as_bytes().write_to(writer)?;
                 chunk_size_pow2.write_to(writer)
-            },
-            StandardChunker::StripChunker { strip_length_pow2, strip_thickness_pow2 } => {
+            }
+            StandardChunker::StripChunker {
+                strip_length_pow2,
+                strip_thickness_pow2,
+            } => {
                 "StripChunker".as_bytes().write_to(writer)?;
                 strip_length_pow2.write_to(writer)?;
                 strip_thickness_pow2.write_to(writer)
@@ -194,7 +201,11 @@ impl ReadFrom for StandardChunker {
         } else if t.iter().eq("StripChunker".as_bytes()) {
             let strip_length_pow2 = u8::read_from(reader)?;
             let strip_thickness_pow2 = u8::read_from(reader)?;
-            StandardChunker::try_new_flat_chunker(Pow2::from_exponent(strip_length_pow2), Pow2::from_exponent(strip_thickness_pow2)).ok_or_else(|| {
+            StandardChunker::try_new_flat_chunker(
+                Pow2::from_exponent(strip_length_pow2),
+                Pow2::from_exponent(strip_thickness_pow2),
+            )
+            .ok_or_else(|| {
                 std::io::Error::new(
                     ErrorKind::InvalidData,
                     "Invalid chunk sizes for StripChunker.",
@@ -296,14 +307,20 @@ enum SuperchunkOrientation {
 }
 
 impl StripChunker {
-    pub fn with_strip_length_and_thickness(strip_length: Pow2, strip_thickness: Pow2) -> StripChunker {
+    pub fn with_strip_length_and_thickness(
+        strip_length: Pow2,
+        strip_thickness: Pow2,
+    ) -> StripChunker {
         assert!(strip_thickness <= strip_length);
-        StripChunker { strip_length, strip_thickness }
+        StripChunker {
+            strip_length,
+            strip_thickness,
+        }
     }
 
-    fn superchunk_orientation(sx: i32, sy: i32) -> SuperchunkOrientation{
+    fn superchunk_orientation(sx: i32, sy: i32) -> SuperchunkOrientation {
         let a = sx - sy;
-        let b = sx+1 + sy;
+        let b = sx + 1 + sy;
         if a * b > 0 {
             SuperchunkOrientation::Vertical
         } else {
@@ -394,16 +411,18 @@ impl Chunker for StripChunker {
                 match orientation {
                     SuperchunkOrientation::Horizontal => {
                         // Identical `ox = sox`, different `oy` for each chunk.
-                        let soy_start = floor_to_multiple(soy.max(region.start.y), self.strip_thickness);
-                        let soy_end = (soy+superchunk_size_i32).min(region.end.y);
+                        let soy_start =
+                            floor_to_multiple(soy.max(region.start.y), self.strip_thickness);
+                        let soy_end = (soy + superchunk_size_i32).min(region.end.y);
                         for oy in (soy_start..soy_end).step_by(strip_thickness_usize) {
-                           origins.push(ChunkOrigin::new(GridPoint::new(sox, oy)));
+                            origins.push(ChunkOrigin::new(GridPoint::new(sox, oy)));
                         }
-                    },
+                    }
                     SuperchunkOrientation::Vertical => {
                         // Identical `oy = soy`, different `ox` for each chunk.
-                        let sox_start = floor_to_multiple(sox.max(region.start.x), self.strip_thickness);
-                        let sox_end = (sox+superchunk_size_i32).min(region.end.x);
+                        let sox_start =
+                            floor_to_multiple(sox.max(region.start.x), self.strip_thickness);
+                        let sox_end = (sox + superchunk_size_i32).min(region.end.x);
                         for ox in (sox_start..sox_end).step_by(strip_thickness_usize) {
                             origins.push(ChunkOrigin::new(GridPoint::new(ox, soy)));
                         }
@@ -449,8 +468,8 @@ impl Chunker for StripChunker {
 
 #[cfg(test)]
 mod tests {
-    use crate::math::coords::GridVector;
     use super::*;
+    use crate::math::coords::GridVector;
 
     fn point(x: i32, y: i32) -> GridPoint {
         GridPoint::new(x, y)
@@ -503,25 +522,78 @@ mod tests {
         };
 
         // Horizontal
-        assert_eq!(chunker.resolve_chunk_origin(&point(0, 0)).point(), point(0, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(257, 0)).point(), point(0, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-1, 0)).point(), point(-4096, 0));
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(0, 0)).point(),
+            point(0, 0)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(257, 0)).point(),
+            point(0, 0)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(-1, 0)).point(),
+            point(-4096, 0)
+        );
 
         // Horizontal
-        assert_eq!(chunker.resolve_chunk_origin(&point(0, 0)).point(), point(0, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(257, 257)).point(), point(0, 256));
-        assert_eq!(chunker.resolve_chunk_origin(&point(4095, 257)).point(), point(0, 256));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-1, -1)).point(), point(-4096, -256));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-1, -257)).point(), point(-4096, -512));
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(0, 0)).point(),
+            point(0, 0)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(257, 257)).point(),
+            point(0, 256)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(4095, 257)).point(),
+            point(0, 256)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(-1, -1)).point(),
+            point(-4096, -256)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(-1, -257)).point(),
+            point(-4096, -512)
+        );
 
         // Vertical
-        assert_eq!(chunker.resolve_chunk_origin(&point(4097, 0)).point(), point(4096, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(4097, 257)).point(), point(4096, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(4097+256, 257)).point(), point(4096+256, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(4097, 257+256)).point(), point(4096, 0));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-4097, -1)).point(), point(-4096-256, -4096));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-4097-256, -1)).point(), point(-4096-512, -4096));
-        assert_eq!(chunker.resolve_chunk_origin(&point(-4097-256, -1-256)).point(), point(-4096-512, -4096));
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(4097, 0)).point(),
+            point(4096, 0)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(4097, 257)).point(),
+            point(4096, 0)
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_origin(&point(4097 + 256, 257))
+                .point(),
+            point(4096 + 256, 0)
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_origin(&point(4097, 257 + 256))
+                .point(),
+            point(4096, 0)
+        );
+        assert_eq!(
+            chunker.resolve_chunk_origin(&point(-4097, -1)).point(),
+            point(-4096 - 256, -4096)
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_origin(&point(-4097 - 256, -1))
+                .point(),
+            point(-4096 - 512, -4096)
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_origin(&point(-4097 - 256, -1 - 256))
+                .point(),
+            point(-4096 - 512, -4096)
+        );
     }
 
     #[test]
@@ -535,28 +607,90 @@ mod tests {
         let vertical_size = vector(256, 4096);
 
         // Horizontal
-        assert_eq!(chunker.resolve_chunk_bounds(&point(0, 0)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(257, 0)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-1, 0)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4097, 4097)).extent(), horizontal_size);
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(0, 0)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(257, 0)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(-1, 0)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(4097, 4097)).extent(),
+            horizontal_size
+        );
 
         // Horizontal
-        assert_eq!(chunker.resolve_chunk_bounds(&point(0, 0)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(257, 257)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4095, 257)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-1, -1)).extent(), horizontal_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-1, -257)).extent(), horizontal_size);
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(0, 0)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(257, 257)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(4095, 257)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(-1, -1)).extent(),
+            horizontal_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(-1, -257)).extent(),
+            horizontal_size
+        );
 
         // Vertical
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4097, 0)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4097, 257)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4097+256, 257)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(4097, 257+256)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-4097, -1)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-4097-256, -1)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-4097-256, -1-256)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(10000, 0)).extent(), vertical_size);
-        assert_eq!(chunker.resolve_chunk_bounds(&point(-10000, 0)).extent(), vertical_size);
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(4097, 0)).extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(4097, 257)).extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_bounds(&point(4097 + 256, 257))
+                .extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_bounds(&point(4097, 257 + 256))
+                .extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(-4097, -1)).extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_bounds(&point(-4097 - 256, -1))
+                .extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker
+                .resolve_chunk_bounds(&point(-4097 - 256, -1 - 256))
+                .extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(10000, 0)).extent(),
+            vertical_size
+        );
+        assert_eq!(
+            chunker.resolve_chunk_bounds(&point(-10000, 0)).extent(),
+            vertical_size
+        );
     }
 
     #[test]
@@ -573,22 +707,40 @@ mod tests {
                 let chunk_bounds = chunker.resolve_chunk_bounds(&chunk_origin.point());
                 let intersection = chunk_bounds.intersection(&region);
                 assert!(intersection.is_some());
-                total_intersection_area += intersection.unwrap().width() * intersection.unwrap().height();
+                total_intersection_area +=
+                    intersection.unwrap().width() * intersection.unwrap().height();
             }
             assert_eq!(total_intersection_area, region.width() * region.height());
         };
 
         test_region(GridRect::with_start_end(point(0, 0), point(100, 100)));
-        test_region(GridRect::with_start_end(point(-10000, -9000), point(10000, 9000)));
-        test_region(GridRect::with_start_end(point(-9000, -10000), point(10000, -5000)));
-        test_region(GridRect::with_start_end(point(-10000, -9000), point(-5000, 10000)));
-        test_region(GridRect::with_start_end(point(5000, -10000), point(10000, 9000)));
-        test_region(GridRect::with_start_end(point(-10000, 5000), point(9000, 10000)));
+        test_region(GridRect::with_start_end(
+            point(-10000, -9000),
+            point(10000, 9000),
+        ));
+        test_region(GridRect::with_start_end(
+            point(-9000, -10000),
+            point(10000, -5000),
+        ));
+        test_region(GridRect::with_start_end(
+            point(-10000, -9000),
+            point(-5000, 10000),
+        ));
+        test_region(GridRect::with_start_end(
+            point(5000, -10000),
+            point(10000, 9000),
+        ));
+        test_region(GridRect::with_start_end(
+            point(-10000, 5000),
+            point(9000, 10000),
+        ));
     }
 
     #[test]
     fn strip_chunker_is_superset_of_square_chunker() {
-        let square_chunker = SquareChunker { size: Pow2::from_exponent(6) };
+        let square_chunker = SquareChunker {
+            size: Pow2::from_exponent(6),
+        };
         let strip_chunker = StripChunker {
             strip_length: Pow2::from_exponent(6),
             strip_thickness: Pow2::from_exponent(6),
@@ -598,9 +750,18 @@ mod tests {
             for y in (-10000..10000).step_by(579) {
                 let p = point(x, y);
                 let r = GridRect::with_size(p, 2137, 1379);
-                assert_eq!(square_chunker.resolve_chunk_origin(&p), strip_chunker.resolve_chunk_origin(&p));
-                assert_eq!(square_chunker.resolve_chunk_bounds(&p), strip_chunker.resolve_chunk_bounds(&p));
-                assert_eq!(square_chunker.origins_of_intersecting_chunks(&r), strip_chunker.origins_of_intersecting_chunks(&r));
+                assert_eq!(
+                    square_chunker.resolve_chunk_origin(&p),
+                    strip_chunker.resolve_chunk_origin(&p)
+                );
+                assert_eq!(
+                    square_chunker.resolve_chunk_bounds(&p),
+                    strip_chunker.resolve_chunk_bounds(&p)
+                );
+                assert_eq!(
+                    square_chunker.origins_of_intersecting_chunks(&r),
+                    strip_chunker.origins_of_intersecting_chunks(&r)
+                );
             }
         }
     }

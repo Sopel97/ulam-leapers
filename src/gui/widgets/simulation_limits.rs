@@ -1,10 +1,10 @@
-﻿use eframe::egui::{Response, Slider, Ui};
-use serde_json::{Value, json};
+﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+use eframe::egui::{Response, Slider, Ui};
+use serde_json::{json, Value};
 use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::SimulationLimits;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationLimitsConstraints {
@@ -39,12 +39,13 @@ impl SimulationLimitsInput {
             .with_complete_shell_limit(self.complete_shells)
     }
 
-    pub fn set_memory_usage(
-        &mut self,
-        memory_usage: MemSize,
-    ) -> Result<(), WidgetError> {
+    pub fn set_memory_usage(&mut self, memory_usage: MemSize) -> Result<(), WidgetError> {
         if !self.constraints.memory_usage.contains(&memory_usage) {
-            return Err(WidgetError::ConstraintViolation(format!("Memory usage {} outside of allowed range {:?}", memory_usage.bytes(), self.constraints.memory_usage)));
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Memory usage {} outside of allowed range {:?}",
+                memory_usage.bytes(),
+                self.constraints.memory_usage
+            )));
         }
 
         self.memory_usage = memory_usage.bytes();
@@ -52,12 +53,12 @@ impl SimulationLimitsInput {
         Ok(())
     }
 
-    pub fn set_turns(
-        &mut self,
-        turns: usize,
-    ) -> Result<(), WidgetError> {
+    pub fn set_turns(&mut self, turns: usize) -> Result<(), WidgetError> {
         if !self.constraints.turns.contains(&turns) {
-            return Err(WidgetError::ConstraintViolation(format!("Turns {} outside of allowed range {:?}", turns, self.constraints.turns)));
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Turns {} outside of allowed range {:?}",
+                turns, self.constraints.turns
+            )));
         }
 
         self.turns = turns;
@@ -65,12 +66,12 @@ impl SimulationLimitsInput {
         Ok(())
     }
 
-    pub fn set_complete_shells(
-        &mut self,
-        complete_shells: usize,
-    ) -> Result<(), WidgetError> {
+    pub fn set_complete_shells(&mut self, complete_shells: usize) -> Result<(), WidgetError> {
         if !self.constraints.complete_shells.contains(&complete_shells) {
-            return Err(WidgetError::ConstraintViolation(format!("Complete shells {} outside of allowed range {:?}", complete_shells, self.constraints.complete_shells)));
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Complete shells {} outside of allowed range {:?}",
+                complete_shells, self.constraints.complete_shells
+            )));
         }
 
         self.complete_shells = complete_shells;
@@ -96,8 +97,8 @@ impl StatefulWidget for SimulationLimitsInput {
                     &mut self.complete_shells,
                     self.constraints.complete_shells.clone(),
                 )
-                    .integer()
-                    .logarithmic(true),
+                .integer()
+                .logarithmic(true),
             );
 
             let memory_usage_range = self.constraints.memory_usage.start().bytes()
@@ -109,7 +110,8 @@ impl StatefulWidget for SimulationLimitsInput {
                     .logarithmic(true)
                     .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
             );
-        }).response
+        })
+        .response
     }
 }
 
@@ -124,20 +126,35 @@ impl JsonWidget for SimulationLimitsInput {
         })
     }
 
-    fn try_from_json(json: &Value, constraints: SimulationLimitsConstraints) -> Result<Self, JsonWidgetError> {
+    fn try_from_json(
+        json: &Value,
+        constraints: SimulationLimitsConstraints,
+    ) -> Result<Self, JsonWidgetError> {
         let memory_usage = json.read_u64("memory_usage")? as usize;
         if !constraints.memory_usage.contains(&MemSize::b(memory_usage)) {
-            return Err(WidgetError::ConstraintViolation(format!("memory_usage {} is outside of range {:?}", memory_usage, constraints.memory_usage)).into());
+            return Err(WidgetError::ConstraintViolation(format!(
+                "memory_usage {} is outside of range {:?}",
+                memory_usage, constraints.memory_usage
+            ))
+            .into());
         }
 
         let turns = json.read_u64("turns")? as usize;
         if !constraints.turns.contains(&turns) {
-            return Err(WidgetError::ConstraintViolation(format!("turns {} is outside of range {:?}", turns, constraints.turns)).into());
+            return Err(WidgetError::ConstraintViolation(format!(
+                "turns {} is outside of range {:?}",
+                turns, constraints.turns
+            ))
+            .into());
         }
 
         let complete_shells = json.read_u64("complete_shells")? as usize;
         if !constraints.complete_shells.contains(&complete_shells) {
-            return Err(WidgetError::ConstraintViolation(format!("Complete shells {} is outside of range {:?}", complete_shells, complete_shells)).into());
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Complete shells {} is outside of range {:?}",
+                complete_shells, complete_shells
+            ))
+            .into());
         }
 
         Ok(Self {
@@ -188,10 +205,7 @@ mod tests {
 
         let result = input.set_memory_usage(MemSize::b(9999));
 
-        assert!(matches!(
-            result,
-            Err(WidgetError::ConstraintViolation(_))
-        ));
+        assert!(matches!(result, Err(WidgetError::ConstraintViolation(_))));
     }
 
     #[test]
@@ -210,10 +224,7 @@ mod tests {
 
         let result = input.set_turns(999);
 
-        assert!(matches!(
-            result,
-            Err(WidgetError::ConstraintViolation(_))
-        ));
+        assert!(matches!(result, Err(WidgetError::ConstraintViolation(_))));
     }
 
     #[test]
@@ -232,10 +243,7 @@ mod tests {
 
         let result = input.set_complete_shells(999);
 
-        assert!(matches!(
-            result,
-            Err(WidgetError::ConstraintViolation(_))
-        ));
+        assert!(matches!(result, Err(WidgetError::ConstraintViolation(_))));
     }
 
     #[test]
@@ -264,8 +272,8 @@ mod tests {
 
         let json = input.to_json();
 
-        let restored = SimulationLimitsInput::try_from_json(&json, c)
-            .expect("valid json should deserialize");
+        let restored =
+            SimulationLimitsInput::try_from_json(&json, c).expect("valid json should deserialize");
 
         assert_eq!(restored.memory_usage, 321);
         assert_eq!(restored.turns, 77);
@@ -281,7 +289,12 @@ mod tests {
         });
 
         let res = SimulationLimitsInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::ConstraintViolation(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(
+                WidgetError::ConstraintViolation(_)
+            ))
+        ));
     }
 
     #[test]
@@ -293,7 +306,12 @@ mod tests {
         });
 
         let res = SimulationLimitsInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::ConstraintViolation(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(
+                WidgetError::ConstraintViolation(_)
+            ))
+        ));
     }
 
     #[test]
@@ -305,7 +323,12 @@ mod tests {
         });
 
         let res = SimulationLimitsInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::ConstraintViolation(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(
+                WidgetError::ConstraintViolation(_)
+            ))
+        ));
     }
 
     #[test]
@@ -316,8 +339,8 @@ mod tests {
             "complete_shells": 2,
         });
 
-        let mut input = SimulationLimitsInput::try_from_json(&json, constraints())
-            .expect("valid json");
+        let mut input =
+            SimulationLimitsInput::try_from_json(&json, constraints()).expect("valid json");
 
         // Now try to violate constraints via setters
         assert!(input.set_turns(9999).is_err());

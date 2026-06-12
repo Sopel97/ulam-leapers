@@ -24,7 +24,7 @@ impl ChunkOrigin {
     pub fn new(point: GridPoint) -> Self {
         Self(point)
     }
-    
+
     pub fn point(&self) -> GridPoint {
         self.0
     }

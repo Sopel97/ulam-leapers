@@ -101,7 +101,9 @@ pub struct UlamSpiralCursor {
 }
 
 impl PartialOrd<Self> for UlamSpiralCursor {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for UlamSpiralCursor {
@@ -148,7 +150,8 @@ impl UlamSpiralCursor {
         }
 
         while (to - self.spiral_position) >= self.steps_in_current_direction_left as i64 {
-            self.grid_position += self.current_direction * self.steps_in_current_direction_left as i32;
+            self.grid_position +=
+                self.current_direction * self.steps_in_current_direction_left as i32;
             self.spiral_position += self.steps_in_current_direction_left as u64;
             self.current_line += 1;
             self.steps_in_current_direction_left = self.current_line / 2 + 1;

@@ -199,7 +199,10 @@ mod tests {
         let mut av: DeferredValue<u32> = DeferredValue::new();
         av.try_set_with_async(|_token| Ok(42)).unwrap();
 
-        assert!(wait_until(TIMEOUT, || av.is_ready()), "timed out waiting for value");
+        assert!(
+            wait_until(TIMEOUT, || av.is_ready()),
+            "timed out waiting for value"
+        );
         assert_eq!(*av.get().unwrap(), 42);
     }
 
@@ -235,10 +238,13 @@ mod tests {
             barrier_clone.wait(); // wait for test to release us
             Ok(7)
         })
-            .unwrap();
+        .unwrap();
 
         barrier.wait(); // wait until worker has started
-        assert!(!av.is_ready(), "value should not be ready while worker is blocked");
+        assert!(
+            !av.is_ready(),
+            "value should not be ready while worker is blocked"
+        );
 
         barrier.wait(); // unblock worker
         assert!(wait_until(TIMEOUT, || av.is_ready()));
@@ -274,7 +280,7 @@ mod tests {
             barrier_clone.wait(); // hold until released
             Ok(1)
         })
-            .unwrap();
+        .unwrap();
 
         barrier.wait(); // wait until first worker is running
 
@@ -312,7 +318,7 @@ mod tests {
             }
             Err(Canceled)
         })
-            .unwrap();
+        .unwrap();
 
         av.try_cancel(); // must return (worker joined)
         assert!(!av.is_ready(), "value should not be set after cancellation");
@@ -330,7 +336,7 @@ mod tests {
             barrier_clone.wait(); // signal: work done, but poll() not yet called
             Ok(42)
         })
-            .unwrap();
+        .unwrap();
 
         // We can't get the exact moment the worker finishes,
         // but we can get close with a barrier + wait.
@@ -340,7 +346,10 @@ mod tests {
         // Don't call is_ready() / get() - cancel before poll() can finalize the value.
         av.try_cancel();
 
-        assert!(!av.is_ready(), "try_cancel should prevent the value from being stored");
+        assert!(
+            !av.is_ready(),
+            "try_cancel should prevent the value from being stored"
+        );
     }
 
     #[test]
@@ -352,7 +361,7 @@ mod tests {
             }
             Err(Canceled)
         })
-            .unwrap();
+        .unwrap();
 
         av.try_cancel();
 
@@ -378,7 +387,7 @@ mod tests {
                 drop(tx); // signals that the worker actually exited
                 Err(Canceled)
             })
-                .unwrap();
+            .unwrap();
             // `av` is dropped here -> Drop must cancel + join the worker.
         }
 
@@ -417,7 +426,8 @@ mod tests {
     #[test]
     fn works_with_non_copy_type() {
         let mut av: DeferredValue<Vec<String>> = DeferredValue::new();
-        av.try_set_with_async(|_| Ok(vec!["a".to_string(), "b".to_string()])).unwrap();
+        av.try_set_with_async(|_| Ok(vec!["a".to_string(), "b".to_string()]))
+            .unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get().unwrap(), &vec!["a".to_string(), "b".to_string()]);
@@ -426,7 +436,8 @@ mod tests {
     #[test]
     fn works_with_large_value() {
         let mut av: DeferredValue<Vec<u8>> = DeferredValue::new();
-        av.try_set_with_async(|_| Ok(vec![0u8; 10_000_000])).unwrap();
+        av.try_set_with_async(|_| Ok(vec![0u8; 10_000_000]))
+            .unwrap();
 
         assert!(wait_until(TIMEOUT, || av.is_ready()));
         assert_eq!(av.get().unwrap().len(), 10_000_000);
@@ -465,7 +476,7 @@ mod tests {
             barrier_clone.wait(); // hold until released
             Ok(1)
         })
-            .unwrap();
+        .unwrap();
 
         barrier.wait(); // wait until first worker is running
 

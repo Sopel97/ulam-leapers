@@ -207,11 +207,11 @@ impl<T> FrozenGrid<T> {
         }
         GridRect::with_start_end(min, max)
     }
-    
+
     pub fn get_chunk_at(&self, origin: &ChunkOrigin) -> Option<&CompressedChunk<T>> {
         self.frozen_chunks.get(origin)
     }
-    
+
     pub fn chunker(&self) -> &dyn Chunker {
         self.chunker.as_ref()
     }
@@ -674,8 +674,13 @@ mod tests {
         type S<'a> = FrozenGridSampler<'a, u8, AverageCollector>;
 
         // Using function pointers so `CacheEnabled` has a concrete type.
-        let sampler =
-            S::<'_>::new_with_minification(&frozen, region, Pow2::try_from(2).unwrap(), 0u8, AverageCollector);
+        let sampler = S::<'_>::new_with_minification(
+            &frozen,
+            region,
+            Pow2::try_from(2).unwrap(),
+            0u8,
+            AverageCollector,
+        );
 
         let no_cache_result = sampler.par_sample();
 

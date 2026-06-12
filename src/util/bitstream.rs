@@ -69,7 +69,7 @@ impl<'a> LittleEndianBitReader<'a> {
 
         res
     }
-    
+
     pub fn is_byte_aligned(&self) -> bool {
         self.prefill_low_bits.is_multiple_of(8)
     }

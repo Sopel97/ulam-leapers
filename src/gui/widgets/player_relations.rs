@@ -1,11 +1,11 @@
-﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
+﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui::{Response, Ui, Vec2};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::cmp;
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::simulation::PlayerId;
-use ulam_leapers::util::blit::{Blit2D, blit_array2d};
+use ulam_leapers::util::blit::{blit_array2d, Blit2D};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -55,7 +55,10 @@ impl PlayerRelationsInput {
         }
 
         if !self.constraints.player_count.contains(&player_count) {
-            return Err(WidgetError::ConstraintViolation(format!("Player count {} outside of allowed range {:?}", player_count, self.constraints.player_count)));
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Player count {} outside of allowed range {:?}",
+                player_count, self.constraints.player_count
+            )));
         }
 
         let mut new_enemy_map = Self::make_default_enemy_map(player_count);
@@ -158,10 +161,17 @@ impl JsonWidget for PlayerRelationsInput {
         })
     }
 
-    fn try_from_json(json: &Value, constraints: PlayerRelationsInputConstraints) -> Result<Self, JsonWidgetError> {
+    fn try_from_json(
+        json: &Value,
+        constraints: PlayerRelationsInputConstraints,
+    ) -> Result<Self, JsonWidgetError> {
         let player_count = json.read_u64("player_count")? as usize;
         if !constraints.player_count.contains(&player_count) {
-            return Err(WidgetError::ConstraintViolation(format!("player count {} is outside of range {:?}", player_count, constraints.player_count)).into());
+            return Err(WidgetError::ConstraintViolation(format!(
+                "player count {} is outside of range {:?}",
+                player_count, constraints.player_count
+            ))
+            .into());
         }
 
         let is_symmetric = json.read_bool("is_symmetric")?;
@@ -169,13 +179,21 @@ impl JsonWidget for PlayerRelationsInput {
 
         for pair_json in json.read_array("enemy_map")? {
             let a_pid = pair_json.read_u64(0)? as usize;
-            if !(1..=player_count).contains(&a_pid)  {
-                return Err(WidgetError::InvalidState(format!("Player ID {} is out of range", a_pid)).into());
+            if !(1..=player_count).contains(&a_pid) {
+                return Err(WidgetError::InvalidState(format!(
+                    "Player ID {} is out of range",
+                    a_pid
+                ))
+                .into());
             }
 
             let b_pid = pair_json.read_u64(1)? as usize;
             if !(1..=player_count).contains(&b_pid) {
-                return Err(WidgetError::InvalidState(format!("Player ID {} is out of range", b_pid)).into());
+                return Err(WidgetError::InvalidState(format!(
+                    "Player ID {} is out of range",
+                    b_pid
+                ))
+                .into());
             }
 
             let a = a_pid - 1;
@@ -183,7 +201,7 @@ impl JsonWidget for PlayerRelationsInput {
             enemy_map[(b, a)] = true;
         }
 
-        Ok(Self{
+        Ok(Self {
             player_count,
             is_symmetric,
             enemy_map,
@@ -323,7 +341,10 @@ mod tests {
         });
 
         let res = PlayerRelationsInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))
+        ));
     }
 
     #[test]
@@ -337,7 +358,10 @@ mod tests {
         });
 
         let res = PlayerRelationsInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))
+        ));
     }
 
     #[test]

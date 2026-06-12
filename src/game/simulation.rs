@@ -334,7 +334,10 @@ impl Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(
-                Box::new(StripChunker::with_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)),
+                Box::new(StripChunker::with_strip_length_and_thickness(
+                    DEFAULT_CHUNK_STRIP_LENGTH,
+                    DEFAULT_CHUNK_STRIP_THICKNESS,
+                )),
                 ZstdCompression::new_with_level(6).into(),
             )),
             forbiddances: SlidingWindow::with_origin(0),
@@ -421,18 +424,19 @@ impl Simulation {
         for player in self.players.iter_mut() {
             // In a lot of cases we can place the piece immediately where we currently are,
             // so special case it. Results in a significant speedup.
-            let immediate_cell = &mut self.forbiddances[player.cursor.spiral_position().as_u64() as isize];
+            let immediate_cell =
+                &mut self.forbiddances[player.cursor.spiral_position().as_u64() as isize];
             if !immediate_cell.is_set(player.id) {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
-                let pos = self
-                    .forbiddances
-                    .position_or_first_empty(player.cursor.spiral_position().as_u64() as isize + 1.., |x| {
-                        !x.is_set(player.id)
-                    });
+                let pos = self.forbiddances.position_or_first_empty(
+                    player.cursor.spiral_position().as_u64() as isize + 1..,
+                    |x| !x.is_set(player.id),
+                );
                 player.cursor.advance_to(UlamSpiralPoint::new(pos as u64));
-                self.forbiddances[player.cursor.spiral_position().as_u64() as isize] = PlayerIdSet::full();
+                self.forbiddances[player.cursor.spiral_position().as_u64() as isize] =
+                    PlayerIdSet::full();
             }
 
             let attack_src = player.cursor.grid_position();
@@ -667,7 +671,8 @@ impl Simulation {
                 last_compression_farthest_cell = farthest_cell;
             }
 
-            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS as u64 {
+            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS as u64
+            {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
                 progress.memory_usage = total;

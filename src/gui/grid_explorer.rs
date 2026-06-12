@@ -493,7 +493,9 @@ impl GridViewControls {
                         .generate_mipmaps_async(lowest_minification, highest_minification),
                 );
             }
-        } else /* if mipmap generation in progress */ {
+        } else
+        /* if mipmap generation in progress */
+        {
             if ui.button("Cancel mipmap generation.").clicked() {
                 grid_renderer_mutex_guard.cancel_mipmap_generation();
             } else if let Some(progress) = &self.mipmap_generation_progress {

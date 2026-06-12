@@ -1,7 +1,7 @@
-﻿use std::error::Error;
-use std::fmt::{Display, Formatter};
-use eframe::egui::{Response, Ui};
+﻿use eframe::egui::{Response, Ui};
 use serde_json::Value;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use ulam_leapers::util::json::JsonError;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -57,7 +57,10 @@ where
     type ConstraintsType;
 
     fn to_json(&self) -> Value;
-    fn try_from_json(json: &Value, constraints: Self::ConstraintsType) -> Result<Self, JsonWidgetError>;
+    fn try_from_json(
+        json: &Value,
+        constraints: Self::ConstraintsType,
+    ) -> Result<Self, JsonWidgetError>;
 }
 
 pub trait StatefulWidget

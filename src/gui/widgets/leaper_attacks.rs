@@ -1,13 +1,13 @@
-﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
+﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Checkbox, Response, Ui, Vec2};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::piece::LeaperAttacks;
 use ulam_leapers::math::coords::GridVector;
-use ulam_leapers::util::json::{JsonError, SerdeJsonValueExt};
+use ulam_leapers::util::json::SerdeJsonValueExt;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacksInputConstraints {
@@ -27,7 +27,7 @@ impl LeaperAttacksInput {
     pub fn new(constraints: LeaperAttacksInputConstraints) -> Self {
         let radius = *constraints.radius.start();
         let wh = radius * 2 + 1;
-        
+
         Self {
             attack_map: Array2D::new(wh, wh),
             is_symmetric: true,
@@ -38,7 +38,10 @@ impl LeaperAttacksInput {
 
     pub fn set_radius(&mut self, radius: usize) -> Result<(), WidgetError> {
         if !self.constraints.radius.contains(&radius) {
-            return Err(WidgetError::ConstraintViolation(format!("Radius {} outside of allowed range {:?}", radius, self.constraints.radius)));
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Radius {} outside of allowed range {:?}",
+                radius, self.constraints.radius
+            )));
         }
 
         self.radius = radius;
@@ -188,10 +191,17 @@ impl JsonWidget for LeaperAttacksInput {
         })
     }
 
-    fn try_from_json(json: &Value, constraints: LeaperAttacksInputConstraints) -> Result<Self, JsonWidgetError> {
+    fn try_from_json(
+        json: &Value,
+        constraints: LeaperAttacksInputConstraints,
+    ) -> Result<Self, JsonWidgetError> {
         let radius = json.read_u64("radius")? as usize;
         if !constraints.radius.contains(&radius) {
-            return Err(WidgetError::ConstraintViolation(format!("radius {} is outside of range {:?}", radius, constraints.radius)).into());
+            return Err(WidgetError::ConstraintViolation(format!(
+                "radius {} is outside of range {:?}",
+                radius, constraints.radius
+            ))
+            .into());
         }
 
         let is_symmetric = json.read_bool("is_symmetric")?;
@@ -205,11 +215,15 @@ impl JsonWidget for LeaperAttacksInput {
             if let Some((x, y)) = Self::attack_offset_to_index(&vec, radius) {
                 attack_map[(x, y)] = true;
             } else {
-                return Err(WidgetError::InvalidState(format!("({}, {}) attack offset beyond allowed radius.", vec.x, vec.y)).into());
+                return Err(WidgetError::InvalidState(format!(
+                    "({}, {}) attack offset beyond allowed radius.",
+                    vec.x, vec.y
+                ))
+                .into());
             }
         }
 
-        Ok(Self{
+        Ok(Self {
             is_symmetric,
             attack_map,
             radius,
@@ -354,7 +368,10 @@ mod tests {
         });
 
         let res = LeaperAttacksInput::try_from_json(&json, constraints());
-        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
+        assert!(matches!(
+            res,
+            Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))
+        ));
     }
 
     #[test]

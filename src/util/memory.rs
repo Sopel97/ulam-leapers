@@ -25,7 +25,9 @@ pub struct MemSize {
 macro_rules! make_constructor {
     ($name: ident, $unit: expr) => {
         pub const fn $name(count: usize) -> Self {
-            Self { bytes: count * ($unit) }
+            Self {
+                bytes: count * ($unit),
+            }
         }
     };
 }
@@ -55,11 +57,15 @@ impl MemSize {
     make_constructor!(eib, 1 << 60);
 
     pub const fn size_of<T>() -> Self {
-        Self { bytes: size_of::<T>() }
+        Self {
+            bytes: size_of::<T>(),
+        }
     }
 
     pub const fn sizes_of<T>(count: usize) -> Self {
-        Self { bytes: count * size_of::<T>() }
+        Self {
+            bytes: count * size_of::<T>(),
+        }
     }
 }
 
@@ -76,7 +82,9 @@ impl MemSize {
 impl Add<MemSize> for MemSize {
     type Output = MemSize;
     fn add(self, rhs: MemSize) -> MemSize {
-        MemSize { bytes: self.bytes + rhs.bytes }
+        MemSize {
+            bytes: self.bytes + rhs.bytes,
+        }
     }
 }
 
@@ -89,7 +97,9 @@ impl AddAssign<MemSize> for MemSize {
 impl Sub<MemSize> for MemSize {
     type Output = MemSize;
     fn sub(self, rhs: MemSize) -> MemSize {
-        MemSize { bytes: self.bytes - rhs.bytes }
+        MemSize {
+            bytes: self.bytes - rhs.bytes,
+        }
     }
 }
 
@@ -102,7 +112,9 @@ impl SubAssign<MemSize> for MemSize {
 impl Mul<usize> for MemSize {
     type Output = MemSize;
     fn mul(self, rhs: usize) -> Self::Output {
-        MemSize { bytes: self.bytes * rhs }
+        MemSize {
+            bytes: self.bytes * rhs,
+        }
     }
 }
 
@@ -152,50 +164,63 @@ pub struct MemSizeDisplay {
 
 impl MemSizeDisplay {
     pub const fn new(bytes: usize) -> Self {
-        Self { bytes, separator: DEFAULT_SEPARATOR, precision: DEFAULT_PRECISION, suffix_format: MemSizeDisplaySuffixFormat::Si }
+        Self {
+            bytes,
+            separator: DEFAULT_SEPARATOR,
+            precision: DEFAULT_PRECISION,
+            suffix_format: MemSizeDisplaySuffixFormat::Si,
+        }
     }
 
     pub const fn si(self) -> Self {
-        Self { suffix_format: MemSizeDisplaySuffixFormat::Si, ..self }
+        Self {
+            suffix_format: MemSizeDisplaySuffixFormat::Si,
+            ..self
+        }
     }
 
     pub const fn iec(self) -> Self {
-        Self { suffix_format: MemSizeDisplaySuffixFormat::Iec, ..self }
+        Self {
+            suffix_format: MemSizeDisplaySuffixFormat::Iec,
+            ..self
+        }
     }
 
     pub const fn precision(self, new_precision: usize) -> Self {
-        Self { precision: new_precision, ..self }
+        Self {
+            precision: new_precision,
+            ..self
+        }
     }
 
     pub const fn separator(self, new_separator: &'static str) -> Self {
-        Self { separator: new_separator, ..self }
+        Self {
+            separator: new_separator,
+            ..self
+        }
     }
 }
 
 impl MemSizeDisplay {
     pub const fn best_prefix(&self) -> (&'static str, usize) {
         match self.suffix_format {
-            MemSizeDisplaySuffixFormat::Si => {
-                match self.bytes {
-                    b if b < 1_000 => ("", 1),
-                    b if b < 1_000_000 => ("K", 1_000),
-                    b if b < 1_000_000_000 => ("M", 1_000_000),
-                    b if b < 1_000_000_000_000 => ("G", 1_000_000_000),
-                    b if b < 1_000_000_000_000_000 => ("T", 1_000_000_000_000),
-                    b if b < 1_000_000_000_000_000_000 => ("P", 1_000_000_000_000_000),
-                    _ => ("E", 1_000_000_000_000_000_000),
-                }
+            MemSizeDisplaySuffixFormat::Si => match self.bytes {
+                b if b < 1_000 => ("", 1),
+                b if b < 1_000_000 => ("K", 1_000),
+                b if b < 1_000_000_000 => ("M", 1_000_000),
+                b if b < 1_000_000_000_000 => ("G", 1_000_000_000),
+                b if b < 1_000_000_000_000_000 => ("T", 1_000_000_000_000),
+                b if b < 1_000_000_000_000_000_000 => ("P", 1_000_000_000_000_000),
+                _ => ("E", 1_000_000_000_000_000_000),
             },
-            MemSizeDisplaySuffixFormat::Iec => {
-                match self.bytes {
-                    b if b < (1 << 10) => ("", 1),
-                    b if b < (1 << 20) => ("K", 1 << 10),
-                    b if b < (1 << 30) => ("M", 1 << 20),
-                    b if b < (1 << 40) => ("G", 1 << 30),
-                    b if b < (1 << 50) => ("T", 1 << 40),
-                    b if b < (1 << 60) => ("P", 1 << 50),
-                    _ => ("E", 1 << 60),
-                }
+            MemSizeDisplaySuffixFormat::Iec => match self.bytes {
+                b if b < (1 << 10) => ("", 1),
+                b if b < (1 << 20) => ("K", 1 << 10),
+                b if b < (1 << 30) => ("M", 1 << 20),
+                b if b < (1 << 40) => ("G", 1 << 30),
+                b if b < (1 << 50) => ("T", 1 << 40),
+                b if b < (1 << 60) => ("P", 1 << 50),
+                _ => ("E", 1 << 60),
             },
         }
     }
@@ -214,9 +239,7 @@ fn format_sig(x: f64, sig: usize) -> String {
 
     // remove trailing zeros after decimal point
     if s.contains('.') {
-        s.trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string()
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
     } else {
         s
     }
@@ -235,10 +258,7 @@ impl Display for MemSizeDisplay {
 
         let separator = self.separator;
 
-        write!(
-            f,
-            "{value}{separator}{prefix}{suffix}",
-        )?;
+        write!(f, "{value}{separator}{prefix}{suffix}",)?;
 
         Ok(())
     }
@@ -349,7 +369,12 @@ mod tests {
 
     #[test]
     fn test_sum_several() {
-        let sizes = vec![MemSize::kb(1), MemSize::kb(2), MemSize::kb(3), MemSize::b(4)];
+        let sizes = vec![
+            MemSize::kb(1),
+            MemSize::kb(2),
+            MemSize::kb(3),
+            MemSize::b(4),
+        ];
         let total: MemSize = sizes.into_iter().sum();
         assert_eq!(total.bytes(), 6_004);
     }
@@ -426,32 +451,47 @@ mod tests {
         let s = MemSize::b(512).display().si().to_string();
         // 512 B - no prefix, precision 3 means one decimal digit for values < 1000
         assert!(s.contains("512"), "expected 512 in '{s}'");
-        assert!(s.ends_with(&format!("{SEP}B")), "expected SI suffix in '{s}'");
+        assert!(
+            s.ends_with(&format!("{SEP}B")),
+            "expected SI suffix in '{s}'"
+        );
     }
 
     #[test]
     fn test_display_si_kilobytes() {
         let s = MemSize::kb(1).display().si().to_string();
         assert!(s.contains('1'), "expected value in '{s}'");
-        assert!(s.ends_with(&format!("{SEP}KB")), "expected KB suffix in '{s}'");
+        assert!(
+            s.ends_with(&format!("{SEP}KB")),
+            "expected KB suffix in '{s}'"
+        );
     }
 
     #[test]
     fn test_display_si_megabytes() {
         let s = MemSize::mb(1).display().si().to_string();
-        assert!(s.ends_with(&format!("{SEP}MB")), "expected MB suffix in '{s}'");
+        assert!(
+            s.ends_with(&format!("{SEP}MB")),
+            "expected MB suffix in '{s}'"
+        );
     }
 
     #[test]
     fn test_display_iec_kibibytes() {
         let s = MemSize::kib(1).display().iec().to_string();
-        assert!(s.ends_with(&format!("{SEP}KiB")), "expected KiB suffix in '{s}'");
+        assert!(
+            s.ends_with(&format!("{SEP}KiB")),
+            "expected KiB suffix in '{s}'"
+        );
     }
 
     #[test]
     fn test_display_iec_mebibytes() {
         let s = MemSize::mib(4).display().iec().to_string();
-        assert!(s.ends_with(&format!("{SEP}MiB")), "expected MiB suffix in '{s}'");
+        assert!(
+            s.ends_with(&format!("{SEP}MiB")),
+            "expected MiB suffix in '{s}'"
+        );
         assert!(s.contains('4'), "expected value 4 in '{s}'");
     }
 
@@ -459,8 +499,10 @@ mod tests {
     fn test_display_precision_three_significant_digits() {
         // 1.50 KB: value = 1.5, precision 3 → 1 decimal digit
         let s = MemSize::b(1_500).display().si().to_string();
-        assert!(s.starts_with("1.50") || s.starts_with("1.5"),
-                "expected ~1.5 KB, got '{s}'");
+        assert!(
+            s.starts_with("1.50") || s.starts_with("1.5"),
+            "expected ~1.5 KB, got '{s}'"
+        );
     }
 
     #[test]
@@ -474,15 +516,42 @@ mod tests {
     #[test]
     fn test_specific_display_cases() {
         assert_eq!(MemSize::b(0).display().si().to_string(), format!("0{SEP}B"));
-        assert_eq!(MemSize::gb(3).display().si().to_string(), format!("3{SEP}GB"));
-        assert_eq!(MemSize::gib(3).display().iec().to_string(), format!("3{SEP}GiB"));
-        assert_eq!(MemSize::kb(1559).display().si().precision(2).to_string(), format!("1.6{SEP}MB"));
-        assert_eq!(MemSize::kb(1559).display().si().precision(3).to_string(), format!("1.56{SEP}MB"));
-        assert_eq!(MemSize::kb(1559).display().si().precision(4).to_string(), format!("1.559{SEP}MB"));
-        assert_eq!(MemSize::kb(1559).display().si().precision(10).to_string(), format!("1.559{SEP}MB"));
-        assert_eq!(MemSize::gb(59).display().si().precision(0).to_string(), format!("59{SEP}GB"));
-        assert_eq!(MemSize::gb(59).display().si().precision(2).to_string(), format!("59{SEP}GB"));
-        assert_eq!(MemSize::gb(59).display().si().precision(4).to_string(), format!("59{SEP}GB"));
+        assert_eq!(
+            MemSize::gb(3).display().si().to_string(),
+            format!("3{SEP}GB")
+        );
+        assert_eq!(
+            MemSize::gib(3).display().iec().to_string(),
+            format!("3{SEP}GiB")
+        );
+        assert_eq!(
+            MemSize::kb(1559).display().si().precision(2).to_string(),
+            format!("1.6{SEP}MB")
+        );
+        assert_eq!(
+            MemSize::kb(1559).display().si().precision(3).to_string(),
+            format!("1.56{SEP}MB")
+        );
+        assert_eq!(
+            MemSize::kb(1559).display().si().precision(4).to_string(),
+            format!("1.559{SEP}MB")
+        );
+        assert_eq!(
+            MemSize::kb(1559).display().si().precision(10).to_string(),
+            format!("1.559{SEP}MB")
+        );
+        assert_eq!(
+            MemSize::gb(59).display().si().precision(0).to_string(),
+            format!("59{SEP}GB")
+        );
+        assert_eq!(
+            MemSize::gb(59).display().si().precision(2).to_string(),
+            format!("59{SEP}GB")
+        );
+        assert_eq!(
+            MemSize::gb(59).display().si().precision(4).to_string(),
+            format!("59{SEP}GB")
+        );
     }
 
     #[test]

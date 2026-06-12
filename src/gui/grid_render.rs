@@ -224,7 +224,12 @@ impl GridRenderer {
     }
 
     pub fn highest_mipmap_minification_factor(&self) -> Option<Pow2> {
-        self.mipmaps.get()?.by_minification_factor.keys().max().copied()
+        self.mipmaps
+            .get()?
+            .by_minification_factor
+            .keys()
+            .max()
+            .copied()
     }
 
     fn make_sampler_for_minification(
@@ -402,16 +407,20 @@ impl GridRenderer {
         // 1 + 1/4 + 1/16 + 1/64 + ... converges to 4/3
         MemSize::sizes_of::<Color32>(pixels_at_lowest_minification * 4 / 3)
     }
-    
+
     pub fn can_generate_mipmaps(&self) -> bool {
         self.mipmaps.is_empty_and_idle()
     }
-    
+
     pub fn cancel_mipmap_generation(&mut self) {
         self.mipmaps.try_cancel();
     }
 
-    pub fn generate_mipmaps_async(&mut self, lowest_minification: Pow2, highest_minification: Pow2) -> MipmapGenerationProgress {
+    pub fn generate_mipmaps_async(
+        &mut self,
+        lowest_minification: Pow2,
+        highest_minification: Pow2,
+    ) -> MipmapGenerationProgress {
         // We allow a single level, but not less than that.
         assert!(lowest_minification <= highest_minification);
 
@@ -443,50 +452,43 @@ impl GridRenderer {
         let job = move |ct: CancellationToken| {
             let mut mipmaps = MipmapStorageType::new();
 
-            let sampler =
-                FrozenGridSampler::new_with_minification(
-                    grid_ref.as_ref(),
-                    grid_bounds,
-                    lowest_minification,
-                    default_color,
-                    collector,
-                );
+            let sampler = FrozenGridSampler::new_with_minification(
+                grid_ref.as_ref(),
+                grid_bounds,
+                lowest_minification,
+                default_color,
+                collector,
+            );
             let master_mipmap = sampler.par_sample_cancellable(ct.clone(), progress_callback);
             if master_mipmap.is_none() {
                 return Err(Canceled);
             }
 
-            mipmaps.insert(
-                lowest_minification,
-                master_mipmap.unwrap(),
-            );
+            mipmaps.insert(lowest_minification, master_mipmap.unwrap());
             let mut prev_minification = lowest_minification;
             let mut curr_minification = lowest_minification.next();
             while curr_minification <= highest_minification {
                 if ct.is_canceled() {
                     return Err(Canceled);
                 }
-                
-                // We know it exists because we put it either during the init or during the previous iteration.
-                let prev_mipmap = mipmaps
-                    .get(&prev_minification)
-                    .unwrap();
 
-                mipmaps
-                    .insert(curr_minification, Self::reduce_mipmap_2x(prev_mipmap));
+                // We know it exists because we put it either during the init or during the previous iteration.
+                let prev_mipmap = mipmaps.get(&prev_minification).unwrap();
+
+                mipmaps.insert(curr_minification, Self::reduce_mipmap_2x(prev_mipmap));
 
                 prev_minification = curr_minification;
                 curr_minification = curr_minification.next();
             }
-            
+
             is_finished_clone.store(true, Ordering::Release);
-            
+
             Ok(Mipmaps {
                 by_minification_factor: mipmaps,
                 grid_bounds,
             })
         };
-        
+
         match self.mipmaps.try_set_with_async(job) {
             Ok(_) => {}
             Err(err) => panic!("{:?}", err),

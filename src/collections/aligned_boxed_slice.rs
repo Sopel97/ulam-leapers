@@ -207,11 +207,7 @@ mod tests {
     fn new_produces_correct_length() {
         for align in all_alignments() {
             let slice: AlignedBoxedSlice<u8> = AlignedBoxedSlice::new(64, align);
-            assert_eq!(
-                slice.len(),
-                64,
-                "Expected len 64 with alignment {align:?}"
-            );
+            assert_eq!(slice.len(), 64, "Expected len 64 with alignment {align:?}");
         }
     }
 
@@ -248,7 +244,11 @@ mod tests {
         for align in all_alignments() {
             let slice: AlignedBoxedSlice<NonzeroDefault> = AlignedBoxedSlice::new(32, align);
             for (i, &v) in slice.as_slice().iter().enumerate() {
-                assert_eq!(v, NonzeroDefault::default(), "Element {i} not zero-initialised (alignment {align:?})");
+                assert_eq!(
+                    v,
+                    NonzeroDefault::default(),
+                    "Element {i} not zero-initialised (alignment {align:?})"
+                );
             }
         }
     }

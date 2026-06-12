@@ -32,7 +32,7 @@ where
         if self.width != other.width || self.height != other.height {
             return false;
         }
-        
+
         self.data == other.data
     }
 }
@@ -430,7 +430,11 @@ mod tests {
         let a = Array2D::<NonzeroDefault>::new(4, 4);
         for y in 0..4 {
             for x in 0..4 {
-                assert_eq!(a[(x, y)], NonzeroDefault::default(), "expected default at ({x},{y})");
+                assert_eq!(
+                    a[(x, y)],
+                    NonzeroDefault::default(),
+                    "expected default at ({x},{y})"
+                );
             }
         }
     }
@@ -747,11 +751,7 @@ mod tests {
         // Every cell must have been written exactly once
         for y in 0..h {
             for x in 0..w {
-                assert_eq!(
-                    a[(x, y)],
-                    1,
-                    "cell ({x},{y}) was not written exactly once"
-                );
+                assert_eq!(a[(x, y)], 1, "cell ({x},{y}) was not written exactly once");
             }
         }
     }
@@ -777,10 +777,7 @@ mod tests {
         let mut a = Array2D::<u32>::new(6, 4);
         let chunks = a.as_positioned_chunks_mut(3, 2);
         let origins: Vec<(usize, usize)> = chunks.iter().map(|(x, y, _)| (*x, *y)).collect();
-        assert_eq!(
-            origins,
-            vec![(0, 0), (3, 0), (0, 2), (3, 2)]
-        );
+        assert_eq!(origins, vec![(0, 0), (3, 0), (0, 2), (3, 2)]);
     }
 
     #[test]
