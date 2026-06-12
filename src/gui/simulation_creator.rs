@@ -50,7 +50,6 @@ pub struct CreationStateConstraints {
     pub memory_usage: RangeInclusive<MemSize>,
     pub turns: RangeInclusive<usize>,
     pub complete_shells: RangeInclusive<usize>,
-    pub preview_shells: RangeInclusive<usize>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -59,7 +58,6 @@ struct CreationState {
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
     simulation_limits: SimulationLimitsInput,
-    preview_shells: usize,
 
     constraints: CreationStateConstraints,
 }
@@ -78,33 +76,17 @@ impl CreationState {
         let simulation_limits =
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
-        let preview_shells = *constraints.preview_shells.end();
-
         Ok(CreationState {
             player_count,
             player_configs,
             player_relations,
             simulation_limits,
-            preview_shells,
             constraints,
         })
     }
 
     pub fn set_turns_limit(&mut self, turns: usize) -> Result<(), WidgetError> {
         self.simulation_limits.set_turns(turns)
-    }
-
-    pub fn set_preview_shells(&mut self, preview_shells: usize) -> Result<(), WidgetError> {
-        if !self.constraints.preview_shells.contains(&preview_shells) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Preview shells {} outside of allowed range {:?}",
-                preview_shells, self.constraints.preview_shells
-            )));
-        }
-
-        self.preview_shells = preview_shells;
-
-        Ok(())
     }
 
     pub fn set_player_count(&mut self, player_count: usize) -> Result<(), WidgetError> {
@@ -165,7 +147,6 @@ impl JsonWidget for CreationState {
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
             "player_relations": self.player_relations.to_json(),
             "simulation_limits": self.simulation_limits.to_json(),
-            "preview_shells": self.preview_shells,
         })
     }
 
@@ -182,15 +163,6 @@ impl JsonWidget for CreationState {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Player count {} is outside of allowed range {:?}",
                 player_count, constraints.player_count
-            ))
-            .into());
-        }
-
-        let preview_shells = json.read_u64("preview_shells")? as usize;
-        if !constraints.preview_shells.contains(&preview_shells) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Preview shell count {} is outside of allowed range {:?}",
-                preview_shells, constraints.preview_shells
             ))
             .into());
         }
@@ -231,7 +203,6 @@ impl JsonWidget for CreationState {
 
         Ok(Self {
             player_count,
-            preview_shells,
             player_configs,
             player_relations,
             simulation_limits,
@@ -260,6 +231,9 @@ pub struct SimulationCreator {
     last_rendered_state: Option<CreationState>,
     state_json_actual: String,
     state_json_ui: String,
+
+    preview_shells: usize,
+    last_rendered_preview_shells: usize,
 
     // TODO: maybe integrate with GridRender, though the fact that we are splitting
     //       the work into a worker thread complicates this. May not be worth it unless
@@ -392,7 +366,6 @@ impl SimulationCreator {
     pub fn make_creation_state_constraints() -> CreationStateConstraints {
         CreationStateConstraints {
             attack_radius: MAX_PIECE_RANGE..=MAX_PIECE_RANGE,
-            preview_shells: Self::get_preview_shells_range(),
             memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
             complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
             player_count: Self::get_player_count_range(),
@@ -406,7 +379,6 @@ impl SimulationCreator {
 
         let mut state = CreationState::new(Self::make_creation_state_constraints()).unwrap();
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
-        state.set_preview_shells(DEFAULT_PREVIEW_SHELLS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
 
         Self {
@@ -414,6 +386,9 @@ impl SimulationCreator {
             last_rendered_state: None,
             state_json_actual: String::new(),
             state_json_ui: String::new(),
+
+            preview_shells: DEFAULT_PREVIEW_SHELLS,
+            last_rendered_preview_shells: 0,
 
             preview_texture_handle: None,
 
@@ -526,7 +501,7 @@ impl SimulationCreator {
         egui::Frame::default().show(ui, |ui| {
             ui.add(
                 Slider::new(
-                    &mut self.state.preview_shells,
+                    &mut self.preview_shells,
                     Self::get_preview_shells_range(),
                 )
                 .integer()
@@ -604,7 +579,7 @@ impl SimulationCreator {
                 last_state.player_count != self.state.player_count
                     || last_state.player_configs != self.state.player_configs
                     || last_state.player_relations != self.state.player_relations
-                    || last_state.preview_shells != self.state.preview_shells
+                    || self.last_rendered_preview_shells != self.preview_shells
             }
         };
 
@@ -614,7 +589,7 @@ impl SimulationCreator {
                 .send(SimulationCreatorWorkerJob::GeneratePreview(
                     simulation,
                     ctx.clone(),
-                    self.state.preview_shells,
+                    self.preview_shells,
                 ))
                 .unwrap();
             self.last_rendered_state = Some(self.state.clone());
