@@ -15,6 +15,7 @@ use eframe::egui::{
 use eframe::epaint::TextureHandle;
 use serde_json::{Value, json};
 use std::collections::HashSet;
+use std::ops::RangeInclusive;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
@@ -23,8 +24,9 @@ use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
+use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
+use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -44,45 +46,109 @@ const DEFAULT_PREVIEW_SHELLS: usize = 250;
 const MAX_PREVIEW_SHELLS: usize = 1000;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
+pub struct CreationStateConstraints {
+    pub attack_radius: RangeInclusive<usize>,
+    pub player_count: RangeInclusive<usize>,
+    pub memory_usage: RangeInclusive<MemSize>,
+    pub turns: RangeInclusive<usize>,
+    pub complete_shells: RangeInclusive<usize>,
+    pub preview_shells: RangeInclusive<usize>,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 struct CreationState {
     player_count: usize,
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
     simulation_limits: SimulationLimitsInput,
     preview_shells: usize,
-}
-
-impl Default for CreationState {
-    fn default() -> Self {
-        let mut player_configs = Vec::with_capacity(MAX_PLAYER_COUNT);
-        player_configs.resize_with(DEFAULT_PLAYER_COUNT, || {
-            LeaperAttacksInput::new(MAX_PIECE_RANGE)
-        });
-
-        let player_relations = PlayerRelationsInput::new(DEFAULT_PLAYER_COUNT);
-
-        let mut simulation_limits =
-            SimulationLimitsInput::new(Self::make_simulation_limits_constraints());
-        simulation_limits.try_set_turns(DEFAULT_TURNS).unwrap();
-
-        CreationState {
-            player_count: DEFAULT_PLAYER_COUNT,
-            player_configs,
-            player_relations,
-            simulation_limits,
-            preview_shells: DEFAULT_PREVIEW_SHELLS,
-        }
-    }
+    
+    constraints: CreationStateConstraints,
 }
 
 impl CreationState {
-    fn make_simulation_limits_constraints() -> SimulationLimitsConstraints {
-        SimulationLimitsConstraints {
-            memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
-            turns: MIN_TURNS..=MAX_TURNS,
-            complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
+    fn new(constraints: CreationStateConstraints) -> Result<Self, WidgetError> {
+        let player_count = *constraints.player_count.start();
+        let mut player_configs = vec![];
+        player_configs.resize_with(player_count, || LeaperAttacksInput::new(constraints.leaper_attacks_input_constraints()));
+
+        let player_relations = PlayerRelationsInput::new(constraints.player_relations_input_constraints());
+
+        let simulation_limits =
+            SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
+
+        let preview_shells = *constraints.preview_shells.end();
+        
+        Ok(CreationState {
+            player_count,
+            player_configs,
+            player_relations,
+            simulation_limits,
+            preview_shells,
+            constraints,
+        })
+    }
+    
+    pub fn set_turns_limit(&mut self, turns: usize) -> Result<(), WidgetError> {
+        self.simulation_limits.set_turns(turns)
+    }
+    
+    pub fn set_preview_shells(&mut self, preview_shells: usize) -> Result<(), WidgetError> {
+        if !self.constraints.preview_shells.contains(&preview_shells) {
+            return Err(WidgetError::ConstraintViolation(format!("Preview shells {} outside of allowed range {:?}", preview_shells, self.constraints.preview_shells)));
+        }
+        
+        self.preview_shells = preview_shells;
+        
+        Ok(())
+    }
+    
+    pub fn set_player_count(&mut self, player_count: usize) -> Result<(), WidgetError> {
+        self.set_player_count_ignore_current(player_count)
+    }
+    
+    fn on_player_count_changed(&mut self) -> Result<(), WidgetError> {
+        self.set_player_count_ignore_current(self.player_count)
+    }
+    
+    /// Ignores the current value of `self.player_count`.
+    fn set_player_count_ignore_current(&mut self, player_count: usize) -> Result<(), WidgetError> {
+        if !self.constraints.player_count.contains(&player_count) {
+            return Err(WidgetError::ConstraintViolation(format!("Player count {} outside of allowed range {:?}", player_count, self.constraints.player_count)));
+        }
+
+        self.player_configs.resize_with(player_count, || LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints()));
+        self.player_relations.set_player_count(player_count)?;
+        self.player_count = player_count;
+
+        Ok(())
+    }
+}
+
+impl CreationStateConstraints {
+    pub fn leaper_attacks_input_constraints(&self) -> LeaperAttacksInputConstraints {
+        LeaperAttacksInputConstraints {
+            radius: self.attack_radius.clone(),
         }
     }
+
+    pub fn player_relations_input_constraints(&self) -> PlayerRelationsInputConstraints {
+        PlayerRelationsInputConstraints {
+            player_count: self.player_count.clone(),
+        }
+    }
+
+    pub fn simulation_limits_input_constraints(&self) -> SimulationLimitsConstraints {
+        SimulationLimitsConstraints {
+            memory_usage: self.memory_usage.clone(),
+            turns: self.turns.clone(),
+            complete_shells: self.complete_shells.clone(),
+        }
+    }
+}
+
+impl JsonWidget for CreationState {
+    type ConstraintsType = CreationStateConstraints;
 
     fn to_json(&self) -> Value {
         json!({
@@ -94,44 +160,52 @@ impl CreationState {
         })
     }
 
-    fn try_from_json(json: &Value) -> Option<CreationState> {
-        let leaper_attacks_constraints = LeaperAttacksInputConstraints {
-            radius: 0..=MAX_PIECE_RANGE,
-        };
+    fn try_from_json(json: &Value, constraints: Self::ConstraintsType) -> Result<Self, JsonWidgetError> {
+        let leaper_attacks_constraints = constraints.leaper_attacks_input_constraints();
+        let player_relations_constraints = constraints.player_relations_input_constraints();
+        let simulation_limits_constraints = constraints.simulation_limits_input_constraints();
 
-        let player_relations_constraints = PlayerRelationsInputConstraints {
-            player_count: 0..=MAX_PLAYER_COUNT,
-        };
-
-        let simulation_limits_constraints = Self::make_simulation_limits_constraints();
-
-        let slf = CreationState {
-            player_count: json["player_count"].as_u64()? as usize,
-            player_configs: json["player_configs"]
-                .as_array()?
-                .iter()
-                .map(|v| LeaperAttacksInput::try_from_json(v, &leaper_attacks_constraints))
-                .collect::<Option<Vec<_>>>()?,
-            player_relations: PlayerRelationsInput::try_from_json(
-                &json["player_relations"],
-                &player_relations_constraints,
-            )?,
-            simulation_limits: SimulationLimitsInput::try_from_json(
-                &json["simulation_limits"],
-                &simulation_limits_constraints,
-            )?,
-            preview_shells: json["preview_shells"].as_u64()? as usize,
-        };
-
-        if slf.player_count > MAX_PLAYER_COUNT
-            || slf.player_configs.len() != slf.player_count
-            || slf.preview_shells > MAX_PREVIEW_SHELLS
-            || slf.preview_shells < MIN_PREVIEW_SHELLS
-        {
-            return None;
+        let player_count = json.read_u64("player_count")? as usize;
+        if player_count > MAX_PLAYER_COUNT {
+            return Err(WidgetError::ConstraintViolation(format!("Player count {} is outside of allowed range {:?}", player_count, constraints.player_count)).into());
         }
 
-        Some(slf)
+        let preview_shells = json.read_u64("preview_shells")? as usize;
+        if !constraints.preview_shells.contains(&preview_shells) {
+            return Err(WidgetError::ConstraintViolation(format!("Preview shell count {} is outside of allowed range {:?}", preview_shells, constraints.preview_shells)).into());
+        }
+
+        let player_configs = json.read_array("player_configs")?
+            .iter()
+            .map(|v| LeaperAttacksInput::try_from_json(v, leaper_attacks_constraints.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if player_configs.len() != player_count {
+            return Err(WidgetError::InvalidState(format!("Number of player configs {} does not match the number of players {}", player_configs.len(), player_count)).into());
+        }
+
+        let player_relations = PlayerRelationsInput::try_from_json(
+            json.read_value("player_relations")?,
+            player_relations_constraints,
+        )?;
+
+        if player_relations.player_count() != player_count {
+            return Err(WidgetError::InvalidState(format!("Player relations map player count {} does not match the number of players {}", player_relations.player_count(), player_count)).into());
+        }
+
+        let simulation_limits = SimulationLimitsInput::try_from_json(
+            json.read_value("simulation_limits")?,
+            simulation_limits_constraints,
+        )?;
+
+        Ok(Self {
+            player_count,
+            preview_shells,
+            player_configs,
+            player_relations,
+            simulation_limits,
+            constraints,
+        })
     }
 }
 
@@ -195,6 +269,7 @@ impl<'a> SampleCollector for LastColorCollector<'a> {
     }
 }
 
+// IMPORTANT: The worker skips jobs and only focuses on the most recent one
 struct SimulationCreatorWorker {
     job_receiver: mpsc::Receiver<SimulationCreatorWorkerJob>,
     result_sender: mpsc::Sender<SimulationCreatorWorkerResult>,
@@ -275,20 +350,42 @@ impl SimulationCreatorWorker {
 }
 
 impl SimulationCreator {
+    pub fn get_preview_shells_range() -> RangeInclusive<usize> {
+        MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS
+    }
+    
+    pub fn get_player_count_range() -> RangeInclusive<usize> {
+        MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT
+    }
+    
+    pub fn make_creation_state_constraints() -> CreationStateConstraints {
+        CreationStateConstraints {
+            attack_radius: MAX_PIECE_RANGE..=MAX_PIECE_RANGE,
+            preview_shells: Self::get_preview_shells_range(),
+            memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
+            complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
+            player_count: Self::get_player_count_range(),
+            turns: MIN_TURNS..=MAX_TURNS,
+        }
+    }
+    
     pub fn new() -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
 
+        let mut state = CreationState::new(Self::make_creation_state_constraints()).unwrap();
+        state.set_turns_limit(DEFAULT_TURNS).unwrap();
+        state.set_preview_shells(DEFAULT_PREVIEW_SHELLS).unwrap();
+        state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
+        
         Self {
-            state: CreationState::default(),
+            state,
             last_rendered_state: None,
             state_json_actual: String::new(),
             state_json_ui: String::new(),
 
             preview_texture_handle: None,
 
-            // IMPORTANT: The worker skips jobs and only focuses on the most recent one
-            // TODO: clearer abstraction for this.
             worker: Some(std::thread::spawn(move || {
                 SimulationCreatorWorker {
                     job_receiver,
@@ -380,22 +477,14 @@ impl SimulationCreator {
                 .add(
                     Slider::new(
                         &mut self.state.player_count,
-                        MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT,
+                        Self::get_player_count_range(),
                     )
                     .integer()
                     .text("Player count"),
                 )
                 .changed()
             {
-                self.state
-                    .player_configs
-                    .resize_with(self.state.player_count, || {
-                        LeaperAttacksInput::new(MAX_PIECE_RANGE)
-                    });
-
-                self.state
-                    .player_relations
-                    .set_player_count(self.state.player_count);
+                self.state.on_player_count_changed().expect("The slider should be within the allowed range");
             }
 
             self.show_all_configs(ui)
@@ -408,7 +497,7 @@ impl SimulationCreator {
             ui.add(
                 Slider::new(
                     &mut self.state.preview_shells,
-                    MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS,
+                    Self::get_preview_shells_range(),
                 )
                 .integer()
                 .text("Preview shells"),
@@ -449,14 +538,14 @@ impl SimulationCreator {
     fn update_state_json(&mut self) {
         self.state_json_actual = self.state.to_json().to_string();
         let json = &serde_json::from_str(self.state_json_actual.as_str()).unwrap();
-        CreationState::try_from_json(json).unwrap();
+        CreationState::try_from_json(json, Self::make_creation_state_constraints()).unwrap();
         self.state_json_ui = self.state_json_actual.clone();
     }
 
     fn on_user_changed_state_json(&mut self) {
         let json = &serde_json::from_str(self.state_json_ui.as_str());
         if let Ok(json) = json
-            && let Some(state) = CreationState::try_from_json(json)
+            && let Ok(state) = CreationState::try_from_json(json, Self::make_creation_state_constraints())
         {
             self.state_json_actual = state.to_json().to_string();
             self.state_json_ui = self.state_json_actual.clone();

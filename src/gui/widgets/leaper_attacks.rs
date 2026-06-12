@@ -1,5 +1,4 @@
-﻿use crate::gui::widgets::player_relations::PlayerRelationsInput;
-use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
+﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
 use eframe::egui;
 use eframe::egui::{Checkbox, Response, Ui, Vec2};
 use serde_json::{Value, json};
@@ -8,6 +7,7 @@ use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::piece::LeaperAttacks;
 use ulam_leapers::math::coords::GridVector;
+use ulam_leapers::util::json::{JsonError, SerdeJsonValueExt};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacksInputConstraints {
@@ -19,16 +19,31 @@ pub struct LeaperAttacksInput {
     attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
     is_symmetric: bool,
     radius: usize,
+
+    constraints: LeaperAttacksInputConstraints,
 }
 
 impl LeaperAttacksInput {
-    pub fn new(radius: usize) -> Self {
+    pub fn new(constraints: LeaperAttacksInputConstraints) -> Self {
+        let radius = *constraints.radius.start();
         let wh = radius * 2 + 1;
+        
         Self {
             attack_map: Array2D::new(wh, wh),
             is_symmetric: true,
             radius,
+            constraints,
         }
+    }
+
+    pub fn set_radius(&mut self, radius: usize) -> Result<(), WidgetError> {
+        if !self.constraints.radius.contains(&radius) {
+            return Err(WidgetError::ConstraintViolation(format!("Radius {} outside of allowed range {:?}", radius, self.constraints.radius)));
+        }
+
+        self.radius = radius;
+
+        Ok(())
     }
 
     pub fn build_leaper_attacks(&self) -> LeaperAttacks {
@@ -173,28 +188,33 @@ impl JsonWidget for LeaperAttacksInput {
         })
     }
 
-    fn try_from_json(json: &Value, constraints: &LeaperAttacksInputConstraints) -> Option<Self> {
-        let radius = json["radius"].as_u64()? as usize;
+    fn try_from_json(json: &Value, constraints: LeaperAttacksInputConstraints) -> Result<Self, JsonWidgetError> {
+        let radius = json.read_u64("radius")? as usize;
         if !constraints.radius.contains(&radius) {
-            return None;
+            return Err(WidgetError::ConstraintViolation(format!("radius {} is outside of range {:?}", radius, constraints.radius)).into());
         }
 
-        let mut slf = Self {
-            is_symmetric: json["is_symmetric"].as_bool()?,
-            radius,
-            attack_map: Array2D::new(radius * 2 + 1, radius * 2 + 1),
-        };
+        let is_symmetric = json.read_bool("is_symmetric")?;
 
-        for attack_vector_json in json["attack_map"].as_array()? {
+        let mut attack_map = Array2D::new(radius * 2 + 1, radius * 2 + 1);
+        for attack_vector_json in json.read_array("attack_map")? {
             let vec = GridVector::new(
-                attack_vector_json["x"].as_i64()? as i32,
-                attack_vector_json["y"].as_i64()? as i32,
+                attack_vector_json.read_i64("x")? as i32,
+                attack_vector_json.read_i64("y")? as i32,
             );
-            let (x, y) = Self::attack_offset_to_index(&vec, slf.radius)?;
-            slf.attack_map[(x, y)] = true;
+            if let Some((x, y)) = Self::attack_offset_to_index(&vec, radius) {
+                attack_map[(x, y)] = true;
+            } else {
+                return Err(WidgetError::InvalidState(format!("({}, {}) attack offset beyond allowed radius.", vec.x, vec.y)).into());
+            }
         }
 
-        Some(slf)
+        Ok(Self{
+            is_symmetric,
+            attack_map,
+            radius,
+            constraints,
+        })
     }
 }
 
@@ -242,7 +262,8 @@ mod tests {
 
     #[test]
     fn test_attack_map_basic_enable() {
-        let mut input = LeaperAttacksInput::new(2);
+        let mut input = LeaperAttacksInput::new(constraints());
+        input.set_radius(2).unwrap();
 
         // Enable a single offset
         let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -1), 2).unwrap();
@@ -256,7 +277,8 @@ mod tests {
 
     #[test]
     fn test_symmetry_copies_all_quadrants() {
-        let mut input = LeaperAttacksInput::new(2);
+        let mut input = LeaperAttacksInput::new(constraints());
+        input.set_radius(2).unwrap();
 
         // Enable one quadrant position
         let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -2), 2).unwrap();
@@ -280,7 +302,8 @@ mod tests {
 
     #[test]
     fn test_apply_enabled_symmetrically() {
-        let mut input = LeaperAttacksInput::new(2);
+        let mut input = LeaperAttacksInput::new(constraints());
+        input.set_radius(2).unwrap();
 
         let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(2, -1), 2).unwrap();
 
@@ -304,14 +327,15 @@ mod tests {
 
     #[test]
     fn test_json_roundtrip() {
-        let mut input = LeaperAttacksInput::new(2);
+        let mut input = LeaperAttacksInput::new(constraints());
+        input.set_radius(2).unwrap();
 
         let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -2), 2).unwrap();
         input.attack_map[(x, y)] = true;
         input.is_symmetric = false;
 
         let json = input.to_json();
-        let restored = LeaperAttacksInput::try_from_json(&json, &constraints())
+        let restored = LeaperAttacksInput::try_from_json(&json, constraints())
             .expect("valid json should deserialize");
 
         assert_eq!(restored.radius, input.radius);
@@ -329,7 +353,8 @@ mod tests {
             ]
         });
 
-        assert!(LeaperAttacksInput::try_from_json(&json, &constraints()).is_none());
+        let res = LeaperAttacksInput::try_from_json(&json, constraints());
+        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
     }
 
     #[test]
@@ -343,7 +368,8 @@ mod tests {
 
     #[test]
     fn test_attack_offsets_are_ordered_deterministically() {
-        let mut input = LeaperAttacksInput::new(2);
+        let mut input = LeaperAttacksInput::new(constraints());
+        input.set_radius(2).unwrap();
 
         let points = [vec(1, -1), vec(-1, -1), vec(0, 1)];
 

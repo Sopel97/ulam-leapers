@@ -7,3 +7,4 @@ pub mod blit;
 pub mod bytestream;
 pub mod cancel;
 pub mod sync;
+pub mod json;

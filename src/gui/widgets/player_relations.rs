@@ -1,4 +1,4 @@
-﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
+﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError, JsonWidgetError};
 use eframe::egui::{Response, Ui, Vec2};
 use serde_json::{Value, json};
 use std::cmp;
@@ -6,6 +6,7 @@ use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::simulation::PlayerId;
 use ulam_leapers::util::blit::{Blit2D, blit_array2d};
+use ulam_leapers::util::json::SerdeJsonValueExt;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct PlayerRelationsInputConstraints {
@@ -17,9 +18,23 @@ pub struct PlayerRelationsInput {
     enemy_map: Array2D<bool>,
     is_symmetric: bool,
     player_count: usize,
+
+    constraints: PlayerRelationsInputConstraints,
 }
 
 impl PlayerRelationsInput {
+    pub fn new(constraints: PlayerRelationsInputConstraints) -> Self {
+        let player_count = *constraints.player_count.start();
+        let enemy_map = Self::make_default_enemy_map(player_count);
+
+        Self {
+            enemy_map,
+            is_symmetric: true,
+            player_count,
+            constraints,
+        }
+    }
+
     fn make_default_enemy_map(player_count: usize) -> Array2D<bool> {
         let mut enemy_map = Array2D::new(player_count, player_count);
         for y in 0..player_count {
@@ -30,19 +45,17 @@ impl PlayerRelationsInput {
         enemy_map
     }
 
-    pub fn new(player_count: usize) -> Self {
-        let enemy_map = Self::make_default_enemy_map(player_count);
-
-        Self {
-            enemy_map,
-            is_symmetric: true,
-            player_count,
-        }
+    pub fn player_count(&self) -> usize {
+        self.player_count
     }
 
-    pub fn set_player_count(&mut self, player_count: usize) {
+    pub fn set_player_count(&mut self, player_count: usize) -> Result<(), WidgetError> {
         if self.player_count == player_count {
-            return;
+            return Ok(());
+        }
+
+        if !self.constraints.player_count.contains(&player_count) {
+            return Err(WidgetError::ConstraintViolation(format!("Player count {} outside of allowed range {:?}", player_count, self.constraints.player_count)));
         }
 
         let mut new_enemy_map = Self::make_default_enemy_map(player_count);
@@ -61,6 +74,8 @@ impl PlayerRelationsInput {
         );
         self.player_count = player_count;
         self.enemy_map = new_enemy_map;
+
+        Ok(())
     }
 
     fn show_enemy_map(&mut self, ui: &mut Ui) {
@@ -138,36 +153,42 @@ impl JsonWidget for PlayerRelationsInput {
             "enemy_map": self.build_attacker_attacked_pairs().iter().map(|(a, b)| {
                 json!([a.index(), b.index()])
             }).collect::<Vec<_>>(),
-            "is_enemy_map_symmetric": self.is_symmetric,
+            "is_symmetric": self.is_symmetric,
             "player_count": self.player_count,
         })
     }
 
-    fn try_from_json(json: &Value, constraints: &PlayerRelationsInputConstraints) -> Option<Self> {
-        let player_count = json["player_count"].as_u64()? as usize;
+    fn try_from_json(json: &Value, constraints: PlayerRelationsInputConstraints) -> Result<Self, JsonWidgetError> {
+        let player_count = json.read_u64("player_count")? as usize;
         if !constraints.player_count.contains(&player_count) {
-            return None;
+            return Err(WidgetError::ConstraintViolation(format!("player count {} is outside of range {:?}", player_count, constraints.player_count)).into());
         }
 
-        let mut slf = Self {
-            is_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
-            enemy_map: Array2D::new(player_count, player_count),
-            player_count,
-        };
+        let is_symmetric = json.read_bool("is_symmetric")?;
+        let mut enemy_map = Array2D::new(player_count, player_count);
 
-        for pair_json in json["enemy_map"].as_array()? {
-            let a_pid = pair_json.get(0)?.as_u64()? as usize;
-            let b_pid = pair_json.get(1)?.as_u64()? as usize;
-            if !(1..=player_count).contains(&a_pid) || !(1..=player_count).contains(&b_pid) {
-                return None;
+        for pair_json in json.read_array("enemy_map")? {
+            let a_pid = pair_json.read_u64(0)? as usize;
+            if !(1..=player_count).contains(&a_pid)  {
+                return Err(WidgetError::InvalidState(format!("Player ID {} is out of range", a_pid)).into());
+            }
+
+            let b_pid = pair_json.read_u64(1)? as usize;
+            if !(1..=player_count).contains(&b_pid) {
+                return Err(WidgetError::InvalidState(format!("Player ID {} is out of range", b_pid)).into());
             }
 
             let a = a_pid - 1;
             let b = b_pid - 1;
-            slf.enemy_map[(b, a)] = true;
+            enemy_map[(b, a)] = true;
         }
 
-        Some(slf)
+        Ok(Self{
+            player_count,
+            is_symmetric,
+            enemy_map,
+            constraints,
+        })
     }
 }
 
@@ -188,7 +209,8 @@ mod tests {
 
     #[test]
     fn test_default_enemy_map_is_full_minus_diagonal() {
-        let input = PlayerRelationsInput::new(4);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(4).unwrap();
 
         for y in 0..4 {
             for x in 0..4 {
@@ -204,7 +226,8 @@ mod tests {
 
     #[test]
     fn test_attacker_attacked_pairs_match_matrix() {
-        let mut input = PlayerRelationsInput::new(3);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(3).unwrap();
 
         input.enemy_map[(1, 0)] = true; // 0 (row) attacks 1 (col) (1-based: 1 -> 2)
         input.enemy_map[(2, 0)] = true;
@@ -217,7 +240,8 @@ mod tests {
 
     #[test]
     fn test_copy_symmetrically() {
-        let mut input = PlayerRelationsInput::new(3);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(3).unwrap();
 
         input.enemy_map[(0, 1)] = true;
         input.copy_symmetrically(0, 1);
@@ -227,7 +251,8 @@ mod tests {
 
     #[test]
     fn test_apply_enabled_symmetrically() {
-        let mut input = PlayerRelationsInput::new(3);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(3).unwrap();
 
         input.enemy_map[(0, 1)] = true;
         input.enemy_map[(2, 0)] = true;
@@ -240,7 +265,8 @@ mod tests {
 
     #[test]
     fn test_set_player_count_expands_correctly() {
-        let mut input = PlayerRelationsInput::new(2);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(2).unwrap();
 
         input.enemy_map[(1, 0)] = true;
 
@@ -254,7 +280,8 @@ mod tests {
 
     #[test]
     fn test_set_player_count_contracts_correctly() {
-        let mut input = PlayerRelationsInput::new(4);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(4).unwrap();
 
         input.enemy_map[(3, 2)] = true;
 
@@ -269,14 +296,15 @@ mod tests {
 
     #[test]
     fn test_json_roundtrip() {
-        let mut input = PlayerRelationsInput::new(3);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(3).unwrap();
 
         input.enemy_map[(1, 0)] = true;
         input.enemy_map[(2, 1)] = true;
         input.is_symmetric = true;
 
         let json = input.to_json();
-        let restored = PlayerRelationsInput::try_from_json(&json, &constraints())
+        let restored = PlayerRelationsInput::try_from_json(&json, constraints())
             .expect("valid json should deserialize");
 
         assert_eq!(restored.player_count, input.player_count);
@@ -294,7 +322,8 @@ mod tests {
             ]
         });
 
-        assert!(PlayerRelationsInput::try_from_json(&json, &constraints()).is_none());
+        let res = PlayerRelationsInput::try_from_json(&json, constraints());
+        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
     }
 
     #[test]
@@ -307,7 +336,8 @@ mod tests {
             ]
         });
 
-        assert!(PlayerRelationsInput::try_from_json(&json, &constraints()).is_none());
+        let res = PlayerRelationsInput::try_from_json(&json, constraints());
+        assert!(matches!(res, Err(JsonWidgetError::WidgetError(WidgetError::InvalidState(_)))));
     }
 
     #[test]
@@ -320,7 +350,7 @@ mod tests {
             ]
         });
 
-        let input = PlayerRelationsInput::try_from_json(&json, &constraints()).unwrap();
+        let input = PlayerRelationsInput::try_from_json(&json, constraints()).unwrap();
 
         // stored at (1,0) internally (b, a)
         assert!(input.enemy_map[(1, 0)]);
@@ -328,7 +358,8 @@ mod tests {
 
     #[test]
     fn test_no_self_enemy_by_default() {
-        let input = PlayerRelationsInput::new(5);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(5).unwrap();
 
         for i in 0..5 {
             assert!(!input.enemy_map[(i, i)]);
@@ -337,7 +368,8 @@ mod tests {
 
     #[test]
     fn test_symmetry_does_not_duplicate_logic() {
-        let mut input = PlayerRelationsInput::new(3);
+        let mut input = PlayerRelationsInput::new(constraints());
+        input.set_player_count(3).unwrap();
 
         input.enemy_map[(1, 0)] = true;
         input.enemy_map[(0, 1)] = true;
