@@ -137,3 +137,194 @@ impl SimulationLimitsInput {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ulam_leapers::util::memory::MemSize;
+
+    fn constraints() -> SimulationLimitsConstraints {
+        SimulationLimitsConstraints {
+            memory_usage: MemSize::b(100)..=MemSize::b(1000),
+            turns: 10..=100,
+            complete_shells: 1..=5,
+        }
+    }
+
+    #[test]
+    fn test_new_initializes_to_max_bounds() {
+        let c = constraints();
+        let input = SimulationLimitsInput::new(c.clone());
+
+        assert_eq!(input.memory_usage, 1000);
+        assert_eq!(input.turns, 100);
+        assert_eq!(input.complete_shells, 5);
+    }
+
+    #[test]
+    fn test_try_set_memory_usage_valid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_memory_usage(MemSize::b(500));
+
+        assert!(result.is_ok());
+        assert_eq!(input.memory_usage, 500);
+    }
+
+    #[test]
+    fn test_try_set_memory_usage_invalid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_memory_usage(MemSize::b(9999));
+
+        assert!(matches!(
+            result,
+            Err(SimulationLimitsInputError::ConstraintViolation)
+        ));
+    }
+
+    #[test]
+    fn test_try_set_turns_valid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_turns(50);
+
+        assert!(result.is_ok());
+        assert_eq!(input.turns, 50);
+    }
+
+    #[test]
+    fn test_try_set_turns_invalid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_turns(999);
+
+        assert!(matches!(
+            result,
+            Err(SimulationLimitsInputError::ConstraintViolation)
+        ));
+    }
+
+    #[test]
+    fn test_try_set_complete_shells_valid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_complete_shells(3);
+
+        assert!(result.is_ok());
+        assert_eq!(input.complete_shells, 3);
+    }
+
+    #[test]
+    fn test_try_set_complete_shells_invalid() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        let result = input.try_set_complete_shells(999);
+
+        assert!(matches!(
+            result,
+            Err(SimulationLimitsInputError::ConstraintViolation)
+        ));
+    }
+
+    #[test]
+    fn test_build_limits_matches_input() {
+        let mut input = SimulationLimitsInput::new(constraints());
+
+        input.try_set_memory_usage(MemSize::b(250)).unwrap();
+        input.try_set_turns(42).unwrap();
+        input.try_set_complete_shells(2).unwrap();
+
+        let limits = input.build_limits();
+
+        assert_eq!(limits.memory(), Some(MemSize::b(250)));
+        assert_eq!(limits.turns(), Some(42));
+        assert_eq!(limits.complete_shells(), Some(2));
+    }
+
+    #[test]
+    fn test_json_roundtrip_valid() {
+        let c = constraints();
+        let mut input = SimulationLimitsInput::new(c.clone());
+
+        input.try_set_memory_usage(MemSize::b(321)).unwrap();
+        input.try_set_turns(77).unwrap();
+        input.try_set_complete_shells(4).unwrap();
+
+        let json = input.to_json();
+
+        let restored = SimulationLimitsInput::try_from_json(&json, c)
+            .expect("valid json should deserialize");
+
+        assert_eq!(restored.memory_usage, 321);
+        assert_eq!(restored.turns, 77);
+        assert_eq!(restored.complete_shells, 4);
+    }
+
+    #[test]
+    fn test_json_rejects_invalid_memory() {
+        let c = constraints();
+
+        let json = json!({
+            "memory_usage": 99999, // out of range
+            "turns": 50,
+            "complete_shells": 2,
+        });
+
+        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+    }
+
+    #[test]
+    fn test_json_rejects_invalid_turns() {
+        let c = constraints();
+
+        let json = json!({
+            "memory_usage": 200,
+            "turns": 9999,
+            "complete_shells": 2,
+        });
+
+        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+    }
+
+    #[test]
+    fn test_json_rejects_invalid_shells() {
+        let c = constraints();
+
+        let json = json!({
+            "memory_usage": 200,
+            "turns": 50,
+            "complete_shells": 9999,
+        });
+
+        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+    }
+
+    #[test]
+    fn test_constraints_are_enforced_after_deserialization() {
+        let c = constraints();
+
+        let json = json!({
+            "memory_usage": 500,
+            "turns": 50,
+            "complete_shells": 2,
+        });
+
+        let mut input = SimulationLimitsInput::try_from_json(&json, c.clone())
+            .expect("valid json");
+
+        // Now try to violate constraints via setters
+        assert!(input.try_set_turns(9999).is_err());
+        assert!(input.try_set_memory_usage(MemSize::b(9999)).is_err());
+        assert!(input.try_set_complete_shells(9999).is_err());
+    }
+
+    #[test]
+    fn test_memory_bounds_are_respected_in_new() {
+        let c = constraints();
+        let input = SimulationLimitsInput::new(c);
+
+        assert!(input.memory_usage >= 100);
+        assert!(input.memory_usage <= 1000);
+    }
+}
