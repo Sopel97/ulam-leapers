@@ -453,12 +453,21 @@ impl Subwindow for SimulationCreator {
         egui::Panel::left("simulation_setup_panel")
             .resizable(false)
             .show_inside(ui, |ui| {
-                if let Some(SimulationCreatorAction::Submit) = self.simulation_setup_panel(ui) {
-                    submit = true
-                };
+                self.simulation_setup_panel(ui);
             });
 
         egui::CentralPanel::no_frame().show_inside(ui, |ui| {
+            // Actions
+            ui.horizontal(|ui| {
+                ui.group(|ui| {
+                    if ui.button("Start").clicked() {
+                        submit = true;
+                    }
+    
+                    Self::show_import_export(ui, &mut self.state_json_ui);
+                });
+            });
+
             self.preview_panel(ui);
         });
 
@@ -476,8 +485,7 @@ impl Subwindow for SimulationCreator {
 }
 
 impl SimulationCreator {
-    #[must_use]
-    fn simulation_setup_panel(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
+    fn simulation_setup_panel(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
             if ui
                 .add(
@@ -492,9 +500,8 @@ impl SimulationCreator {
                     .expect("The slider should be within the allowed range");
             }
 
-            self.show_all_configs(ui)
-        })
-        .inner
+            self.show_all_configs(ui);
+        });
     }
 
     fn preview_panel(&mut self, ui: &mut Ui) {
@@ -597,11 +604,9 @@ impl SimulationCreator {
     }
 
     fn show_import_export(ui: &mut Ui, state_json_ui: &mut String) {
-        ScrollArea::both().show(ui, |ui| {
-            let line_count = state_json_ui.lines().count();
-            let json_code_block = egui::TextEdit::multiline(state_json_ui)
+        ScrollArea::horizontal().show(ui, |ui| {
+            let json_code_block = egui::TextEdit::singleline(state_json_ui)
                 .font(egui::TextStyle::Monospace)
-                .desired_rows(line_count + 1)
                 .lock_focus(true)
                 .desired_width(f32::INFINITY);
             ui.add(json_code_block);
@@ -621,10 +626,7 @@ impl SimulationCreator {
         });
     }
 
-    #[must_use]
-    fn show_all_configs(&mut self, ui: &mut Ui) -> Option<SimulationCreatorAction> {
-        let mut submit = false;
-
+    fn show_all_configs(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
@@ -637,24 +639,9 @@ impl SimulationCreator {
                     self.state.player_relations.ui(ui);
 
                     self.state.simulation_limits.ui(ui);
-
-                    // Actions
-                    ui.group(|ui| {
-                        if ui.button("Start").clicked() {
-                            submit = true;
-                        }
-                    });
-
-                    Self::show_import_export(ui, &mut self.state_json_ui);
                 });
             });
         });
-
-        if submit {
-            Some(SimulationCreatorAction::Submit)
-        } else {
-            None
-        }
     }
 
     fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput, pid: usize) {
