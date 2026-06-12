@@ -1,4 +1,5 @@
-﻿use eframe::egui::{Response, Ui, Vec2};
+﻿use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
+use eframe::egui::{Response, Ui, Vec2};
 use serde_json::{Value, json};
 use std::cmp;
 use std::ops::RangeInclusive;
@@ -62,24 +63,6 @@ impl PlayerRelationsInput {
         self.enemy_map = new_enemy_map;
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) -> Response {
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("Enemies ❓").on_hover_text(
-                    "Specifies which player can and cannot be placed\n\
-                                    on a square attacked by a different player.\n\
-                                    Player *column* fears player *row*.",
-                );
-                if ui.checkbox(&mut self.is_symmetric, "Symmetric").changed() && self.is_symmetric {
-                    self.apply_enabled_symmetrically();
-                }
-            });
-
-            self.show_enemy_map(ui);
-        })
-        .response
-    }
-
     fn show_enemy_map(&mut self, ui: &mut Ui) {
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         ui.vertical(|ui| {
@@ -95,46 +78,6 @@ impl PlayerRelationsInput {
                 });
             }
         });
-    }
-
-    pub fn to_json(&self, player_count: usize) -> Value {
-        json!({
-            "enemy_map": self.build_attacker_attacked_pairs().iter().map(|(a, b)| {
-                json!([a.index(), b.index()])
-            }).collect::<Vec<_>>(),
-            "is_enemy_map_symmetric": self.is_symmetric,
-            "player_count": self.player_count,
-        })
-    }
-
-    pub fn try_from_json(
-        json: &Value,
-        constraints: &PlayerRelationsInputConstraints,
-    ) -> Option<Self> {
-        let player_count = json["player_count"].as_u64()? as usize;
-        if !constraints.player_count.contains(&player_count) {
-            return None;
-        }
-
-        let mut slf = Self {
-            is_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
-            enemy_map: Array2D::new(player_count, player_count),
-            player_count,
-        };
-
-        for pair_json in json["enemy_map"].as_array()? {
-            let a_pid = pair_json.get(0)?.as_u64()? as usize;
-            let b_pid = pair_json.get(1)?.as_u64()? as usize;
-            if !(1..=player_count).contains(&a_pid) || !(1..=player_count).contains(&b_pid) {
-                return None;
-            }
-
-            let a = a_pid - 1;
-            let b = b_pid - 1;
-            slf.enemy_map[(b, a)] = true;
-        }
-
-        Some(slf)
     }
 
     // Vec<(attacker, attacked)>
@@ -164,6 +107,67 @@ impl PlayerRelationsInput {
 
     fn copy_symmetrically(&mut self, x: usize, y: usize) {
         self.enemy_map[(y, x)] = self.enemy_map[(x, y)];
+    }
+}
+
+impl StatefulWidget for PlayerRelationsInput {
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label("Enemies ❓").on_hover_text(
+                    "Specifies which player can and cannot be placed\n\
+                                    on a square attacked by a different player.\n\
+                                    Player *column* fears player *row*.",
+                );
+                if ui.checkbox(&mut self.is_symmetric, "Symmetric").changed() && self.is_symmetric {
+                    self.apply_enabled_symmetrically();
+                }
+            });
+
+            self.show_enemy_map(ui);
+        })
+        .response
+    }
+}
+
+impl JsonWidget for PlayerRelationsInput {
+    type ConstraintsType = PlayerRelationsInputConstraints;
+
+    fn to_json(&self) -> Value {
+        json!({
+            "enemy_map": self.build_attacker_attacked_pairs().iter().map(|(a, b)| {
+                json!([a.index(), b.index()])
+            }).collect::<Vec<_>>(),
+            "is_enemy_map_symmetric": self.is_symmetric,
+            "player_count": self.player_count,
+        })
+    }
+
+    fn try_from_json(json: &Value, constraints: &PlayerRelationsInputConstraints) -> Option<Self> {
+        let player_count = json["player_count"].as_u64()? as usize;
+        if !constraints.player_count.contains(&player_count) {
+            return None;
+        }
+
+        let mut slf = Self {
+            is_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
+            enemy_map: Array2D::new(player_count, player_count),
+            player_count,
+        };
+
+        for pair_json in json["enemy_map"].as_array()? {
+            let a_pid = pair_json.get(0)?.as_u64()? as usize;
+            let b_pid = pair_json.get(1)?.as_u64()? as usize;
+            if !(1..=player_count).contains(&a_pid) || !(1..=player_count).contains(&b_pid) {
+                return None;
+            }
+
+            let a = a_pid - 1;
+            let b = b_pid - 1;
+            slf.enemy_map[(b, a)] = true;
+        }
+
+        Some(slf)
     }
 }
 
@@ -271,7 +275,7 @@ mod tests {
         input.enemy_map[(2, 1)] = true;
         input.is_symmetric = true;
 
-        let json = input.to_json(3);
+        let json = input.to_json();
         let restored = PlayerRelationsInput::try_from_json(&json, &constraints())
             .expect("valid json should deserialize");
 

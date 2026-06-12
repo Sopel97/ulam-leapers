@@ -1,8 +1,9 @@
-﻿use eframe::egui::{Slider, Ui};
+﻿use eframe::egui::{Response, Slider, Ui};
 use serde_json::{Value, json};
 use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::SimulationLimits;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationLimitsConstraints {
@@ -35,38 +36,6 @@ impl SimulationLimitsInput {
             complete_shells: *constraints.complete_shells.end(),
             constraints,
         }
-    }
-
-    pub fn ui(&mut self, ui: &mut Ui) {
-        ui.group(|ui| {
-            ui.label("Limits:");
-            ui.label("Turns:");
-            ui.add(
-                Slider::new(&mut self.turns, self.constraints.turns.clone())
-                    .integer()
-                    .logarithmic(true),
-            );
-
-            ui.label("Complete shells:");
-            ui.add(
-                Slider::new(
-                    &mut self.complete_shells,
-                    self.constraints.complete_shells.clone(),
-                )
-                .integer()
-                .logarithmic(true),
-            );
-
-            let memory_usage_range = self.constraints.memory_usage.start().bytes()
-                ..=self.constraints.memory_usage.end().bytes();
-            ui.label("Memory usage:");
-            ui.add(
-                Slider::new(&mut self.memory_usage, memory_usage_range)
-                    .integer()
-                    .logarithmic(true)
-                    .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
-            );
-        });
     }
 
     pub fn build_limits(&self) -> SimulationLimits {
@@ -108,8 +77,54 @@ impl SimulationLimitsInput {
             Err(SimulationLimitsInputError::ConstraintViolation)
         }
     }
+}
 
-    pub fn try_from_json(json: &Value, constraints: SimulationLimitsConstraints) -> Option<Self> {
+impl StatefulWidget for SimulationLimitsInput {
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        ui.group(|ui| {
+            ui.label("Limits:");
+            ui.label("Turns:");
+            ui.add(
+                Slider::new(&mut self.turns, self.constraints.turns.clone())
+                    .integer()
+                    .logarithmic(true),
+            );
+
+            ui.label("Complete shells:");
+            ui.add(
+                Slider::new(
+                    &mut self.complete_shells,
+                    self.constraints.complete_shells.clone(),
+                )
+                    .integer()
+                    .logarithmic(true),
+            );
+
+            let memory_usage_range = self.constraints.memory_usage.start().bytes()
+                ..=self.constraints.memory_usage.end().bytes();
+            ui.label("Memory usage:");
+            ui.add(
+                Slider::new(&mut self.memory_usage, memory_usage_range)
+                    .integer()
+                    .logarithmic(true)
+                    .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
+            );
+        }).response
+    }
+}
+
+impl JsonWidget for SimulationLimitsInput {
+    type ConstraintsType = SimulationLimitsConstraints;
+
+    fn to_json(&self) -> Value {
+        json!({
+            "memory_usage": self.memory_usage,
+            "turns": self.turns,
+            "complete_shells": self.complete_shells,
+        })
+    }
+
+    fn try_from_json(json: &Value, constraints: &SimulationLimitsConstraints) -> Option<Self> {
         let memory_usage = json["memory_usage"].as_u64()? as usize;
         let turns = json["turns"].as_u64()? as usize;
         let complete_shells = json["complete_shells"].as_u64()? as usize;
@@ -125,15 +140,7 @@ impl SimulationLimitsInput {
             memory_usage,
             turns,
             complete_shells,
-            constraints,
-        })
-    }
-
-    pub fn to_json(&self) -> Value {
-        json!({
-            "memory_usage": self.memory_usage,
-            "turns": self.turns,
-            "complete_shells": self.complete_shells,
+            constraints: constraints.clone(),
         })
     }
 }
@@ -253,7 +260,7 @@ mod tests {
 
         let json = input.to_json();
 
-        let restored = SimulationLimitsInput::try_from_json(&json, c)
+        let restored = SimulationLimitsInput::try_from_json(&json, &c)
             .expect("valid json should deserialize");
 
         assert_eq!(restored.memory_usage, 321);
@@ -271,7 +278,7 @@ mod tests {
             "complete_shells": 2,
         });
 
-        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+        assert!(SimulationLimitsInput::try_from_json(&json, &c).is_none());
     }
 
     #[test]
@@ -284,7 +291,7 @@ mod tests {
             "complete_shells": 2,
         });
 
-        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+        assert!(SimulationLimitsInput::try_from_json(&json, &c).is_none());
     }
 
     #[test]
@@ -297,7 +304,7 @@ mod tests {
             "complete_shells": 9999,
         });
 
-        assert!(SimulationLimitsInput::try_from_json(&json, c).is_none());
+        assert!(SimulationLimitsInput::try_from_json(&json, &c).is_none());
     }
 
     #[test]
@@ -310,7 +317,7 @@ mod tests {
             "complete_shells": 2,
         });
 
-        let mut input = SimulationLimitsInput::try_from_json(&json, c.clone())
+        let mut input = SimulationLimitsInput::try_from_json(&json, &c)
             .expect("valid json");
 
         // Now try to violate constraints via setters

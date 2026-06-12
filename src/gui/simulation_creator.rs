@@ -24,6 +24,7 @@ use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -87,7 +88,7 @@ impl CreationState {
         json!({
             "player_count": self.player_count,
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
-            "player_relations": self.player_relations.to_json(self.player_count),
+            "player_relations": self.player_relations.to_json(),
             "simulation_limits": self.simulation_limits.to_json(),
             "preview_shells": self.preview_shells,
         })
@@ -102,6 +103,8 @@ impl CreationState {
             player_count: 0..=MAX_PLAYER_COUNT,
         };
 
+        let simulation_limits_constraints = Self::make_simulation_limits_constraints();
+
         let slf = CreationState {
             player_count: json["player_count"].as_u64()? as usize,
             player_configs: json["player_configs"]
@@ -115,7 +118,7 @@ impl CreationState {
             )?,
             simulation_limits: SimulationLimitsInput::try_from_json(
                 &json["simulation_limits"],
-                Self::make_simulation_limits_constraints(),
+                &simulation_limits_constraints,
             )?,
             preview_shells: json["preview_shells"].as_u64()? as usize,
         };
