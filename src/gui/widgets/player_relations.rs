@@ -1,7 +1,8 @@
 ﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
-use eframe::egui::{Checkbox, Response, Sense, Ui, Vec2};
+use eframe::egui::{Checkbox, Color32, Response, Sense, Ui, Vec2};
 use serde_json::{json, Value};
 use std::cmp;
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::simulation::PlayerId;
@@ -32,8 +33,8 @@ pub struct PlayerRelationsInput {
 impl PartialEq for PlayerRelationsInput {
     fn eq(&self, other: &Self) -> bool {
         self.player_count == other.player_count
-        && self.is_symmetric == other.is_symmetric
-        && self.enemy_map == other.enemy_map
+            && self.is_symmetric == other.is_symmetric
+            && self.enemy_map == other.enemy_map
     }
 }
 
@@ -106,6 +107,8 @@ impl PlayerRelationsInput {
     fn show_enemy_map(&mut self, ui: &mut Ui) {
         self.internal_state.hovered_attacker_attacked = None;
 
+        let mut checkboxes = HashMap::new();
+
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         ui.vertical(|ui| {
             for y in 0..self.enemy_map.height() {
@@ -113,20 +116,34 @@ impl PlayerRelationsInput {
                     for x in 0..self.enemy_map.width() {
                         let checkbox_widget = Checkbox::new(&mut self.enemy_map[(x, y)], "");
                         let checkbox = ui.add(checkbox_widget);
-                        if checkbox.changed()
-                            && self.is_symmetric
-                        {
+                        if checkbox.changed() && self.is_symmetric {
                             self.copy_symmetrically(x, y);
                         }
 
                         let checkbox_hover_sense = ui.allocate_rect(checkbox.rect, Sense::hover());
                         if checkbox_hover_sense.hovered() {
-                            self.internal_state.hovered_attacker_attacked = Some(Self::index_to_attacker_attacked(x, y));
+                            self.internal_state.hovered_attacker_attacked =
+                                Some(Self::index_to_attacker_attacked(x, y));
                         }
+
+                        checkboxes.insert((x, y), checkbox);
                     }
                 });
             }
         });
+
+        if self.is_symmetric
+            && let Some(hovered) = self.internal_state.hovered_attacker_attacked
+            && hovered.0 != hovered.1
+        {
+            let xy = Self::attacker_attacked_to_index(hovered);
+            let other_checkbox = checkboxes
+                .get(&(xy.1, xy.0))
+                .expect("There must be a symmetric checkbox.");
+            let mut painter = ui.painter_at(other_checkbox.rect);
+            painter.set_opacity(0.3);
+            painter.rect_filled(other_checkbox.rect, 5, Color32::YELLOW);
+        }
     }
 
     // Vec<(attacker, attacked)>
@@ -146,6 +163,12 @@ impl PlayerRelationsInput {
 
     fn index_to_attacker_attacked(x: usize, y: usize) -> (PlayerId, PlayerId) {
         (PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8))
+    }
+
+    fn attacker_attacked_to_index((attacker, attacked): (PlayerId, PlayerId)) -> (usize, usize) {
+        let a = attacker.index() - 1;
+        let b = attacked.index() - 1;
+        (b, a)
     }
 
     fn apply_enabled_symmetrically(&mut self) {
@@ -231,9 +254,11 @@ impl JsonWidget for PlayerRelationsInput {
                 .into());
             }
 
-            let a = a_pid - 1;
-            let b = b_pid - 1;
-            enemy_map[(b, a)] = true;
+            let xy = Self::attacker_attacked_to_index((
+                PlayerId::new(a_pid as u8),
+                PlayerId::new(b_pid as u8),
+            ));
+            enemy_map[xy] = true;
         }
 
         Ok(Self {
