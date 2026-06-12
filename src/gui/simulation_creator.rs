@@ -21,15 +21,16 @@ use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
 use crate::gui::widgets::player_relations::PlayerRelationsInput;
+use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
 const MAX_PLAYER_COUNT: usize = 8;
 const MAX_PIECE_RANGE: usize = 5;
 
-const MIN_TURNS_M: usize = 1;
-const DEFAULT_TURNS_M: usize = 1_000;
-const MAX_TURNS_M: usize = 1_000_000;
+const MIN_TURNS: usize = 1_000_000;
+const DEFAULT_TURNS: usize = 1_000 * 1_000_000;
+const MAX_TURNS: usize = 1_000_000 * 1_000_000;
 const MIN_COMPLETE_SHELLS: usize = 10;
 const MAX_COMPLETE_SHELLS: usize = 1_000_000;
 const MIN_MEMORY_USAGE: MemSize = MemSize::gb(1);
@@ -40,60 +41,11 @@ const DEFAULT_PREVIEW_SHELLS: usize = 250;
 const MAX_PREVIEW_SHELLS: usize = 1000;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-struct LimitsState {
-    memory_usage: usize,
-    turns_m: usize,
-    complete_shells: usize,
-}
-
-impl LimitsState {
-    fn try_from_json(json: &Value) -> Option<LimitsState> {
-        let memory_usage = json["memory_usage"].as_u64()? as usize;
-        let turns = json["turns"].as_u64()? as usize;
-        let slf = LimitsState {
-            memory_usage: memory_usage.max(MIN_MEMORY_USAGE.bytes()),
-            turns_m: (turns / 1000 / 1000).max(1),
-            complete_shells: json["complete_shells"].as_u64()? as usize,
-        };
-
-        if slf.memory_usage < MIN_MEMORY_USAGE.bytes()
-            || slf.memory_usage > MAX_MEMORY_USAGE.bytes()
-            || slf.turns_m < MIN_TURNS_M
-            || slf.turns_m > MAX_TURNS_M
-        {
-            return None;
-        }
-
-        Some(slf)
-    }
-}
-
-impl LimitsState {
-    pub(crate) fn to_json(&self) -> Value {
-        json!({
-            "memory_usage": self.memory_usage,
-            "turns": self.turns_m * 1000 * 1000,
-            "complete_shells": self.complete_shells,
-        })
-    }
-}
-
-impl Default for LimitsState {
-    fn default() -> Self {
-        Self {
-            memory_usage: MAX_MEMORY_USAGE.bytes(),
-            turns_m: DEFAULT_TURNS_M,
-            complete_shells: MAX_COMPLETE_SHELLS,
-        }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, Clone)]
 struct CreationState {
     player_count: usize,
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
-    limits: LimitsState,
+    simulation_limits: SimulationLimitsInput,
     preview_shells: usize,
 }
 
@@ -105,24 +57,35 @@ impl Default for CreationState {
         });
         
         let player_relations = PlayerRelationsInput::new(DEFAULT_PLAYER_COUNT);
-        
+
+        let mut simulation_limits = SimulationLimitsInput::new(Self::make_simulation_limits_constraints());
+        simulation_limits.try_set_turns(DEFAULT_TURNS).unwrap();
+
         CreationState {
             player_count: DEFAULT_PLAYER_COUNT,
             player_configs,
             player_relations,
-            limits: Default::default(),
+            simulation_limits,
             preview_shells: DEFAULT_PREVIEW_SHELLS,
         }
     }
 }
 
 impl CreationState {
+    fn make_simulation_limits_constraints() -> SimulationLimitsConstraints {
+        SimulationLimitsConstraints {
+            memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
+            turns: MIN_TURNS..=MAX_TURNS,
+            complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
+        }
+    }
+
     fn to_json(&self) -> Value {
         json!({
             "player_count": self.player_count,
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
             "player_relations": self.player_relations.to_json(self.player_count),
-            "limits": self.limits.to_json(),
+            "simulation_limits": self.simulation_limits.to_json(),
             "preview_shells": self.preview_shells,
         })
     }
@@ -136,7 +99,7 @@ impl CreationState {
                 .map(LeaperAttacksInput::try_from_json)
                 .collect::<Option<Vec<_>>>()?,
             player_relations: PlayerRelationsInput::try_from_json(&json["player_relations"])?,
-            limits: LimitsState::try_from_json(&json["limits"])?,
+            simulation_limits: SimulationLimitsInput::try_from_json(&json["simulation_limits"], Self::make_simulation_limits_constraints())?,
             preview_shells: json["preview_shells"].as_u64()? as usize,
         };
 
@@ -330,10 +293,7 @@ impl SimulationCreator {
             sim.add_player_enemy(attacker, attacked);
         }
 
-        let limits = SimulationLimits::new()
-            .with_memory_limit(MemSize::b(self.state.limits.memory_usage))
-            .with_turn_limit(self.state.limits.turns_m * 1_000_000)
-            .with_complete_shell_limit(self.state.limits.complete_shells);
+        let limits = self.state.simulation_limits.build_limits();
 
         (sim, limits)
     }
@@ -519,40 +479,6 @@ impl SimulationCreator {
         }
     }
 
-    fn show_limits(ui: &mut Ui, limits: &mut LimitsState) {
-        ui.group(|ui| {
-            ui.label("Limits:");
-            ui.label("Turns:");
-            ui.add(
-                Slider::new(&mut limits.turns_m, MIN_TURNS_M..=MAX_TURNS_M)
-                    .integer()
-                    .logarithmic(true)
-                    .suffix(" mil"),
-            );
-
-            ui.label("Complete shells:");
-            ui.add(
-                Slider::new(
-                    &mut limits.complete_shells,
-                    MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
-                )
-                .integer()
-                .logarithmic(true),
-            );
-
-            ui.label("Memory usage:");
-            ui.add(
-                Slider::new(
-                    &mut limits.memory_usage,
-                    MIN_MEMORY_USAGE.bytes()..=MAX_MEMORY_USAGE.bytes(),
-                )
-                .integer()
-                .logarithmic(true)
-                .custom_formatter(|s, _| MemSize::b(s as usize).display().si().to_string()),
-            );
-        });
-    }
-
     fn show_import_export(ui: &mut Ui, state_json_ui: &mut String) {
         ScrollArea::both().show(ui, |ui| {
             let line_count = state_json_ui.lines().count();
@@ -593,7 +519,7 @@ impl SimulationCreator {
                 ui.vertical(|ui| {
                     self.state.player_relations.ui(ui);
 
-                    Self::show_limits(ui, &mut self.state.limits);
+                    self.state.simulation_limits.ui(ui);
 
                     // Actions
                     ui.group(|ui| {
