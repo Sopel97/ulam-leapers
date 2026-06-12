@@ -20,6 +20,7 @@ use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::player_relations::PlayerRelationsInput;
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -37,95 +38,6 @@ const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 const MIN_PREVIEW_SHELLS: usize = 100;
 const DEFAULT_PREVIEW_SHELLS: usize = 250;
 const MAX_PREVIEW_SHELLS: usize = 1000;
-
-#[derive(Debug, Eq, PartialEq, Clone)]
-struct EnemyConfigState {
-    enemy_map: Array2D<bool>,
-    is_enemy_map_symmetric: bool,
-}
-
-impl EnemyConfigState {
-    fn try_from_json(json: &Value) -> Option<EnemyConfigState> {
-        let mut slf = EnemyConfigState {
-            is_enemy_map_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
-            enemy_map: Array2D::new(MAX_PLAYER_COUNT, MAX_PLAYER_COUNT),
-        };
-
-        for pair_json in json["enemy_map"].as_array()? {
-            let a_pid = pair_json.get(0)?.as_u64()? as usize;
-            let b_pid = pair_json.get(1)?.as_u64()? as usize;
-            if !(1..=MAX_PLAYER_COUNT).contains(&a_pid) || !(1..=MAX_PLAYER_COUNT).contains(&b_pid)
-            {
-                return None;
-            }
-
-            let a = a_pid - 1;
-            let b = b_pid - 1;
-            slf.enemy_map[(b, a)] = true;
-        }
-
-        Some(slf)
-    }
-}
-
-impl EnemyConfigState {
-    pub fn to_json(&self, player_count: usize) -> Value {
-        json!({
-            "enemy_map": self.pairs(player_count).iter().map(|(a, b)| json!([a.index(), b.index()])).collect::<Vec<_>>(),
-            "is_enemy_map_symmetric": self.is_enemy_map_symmetric,
-        })
-    }
-}
-
-impl Default for EnemyConfigState {
-    fn default() -> Self {
-        let mut enemy_map = Array2D::new(MAX_PLAYER_COUNT, MAX_PLAYER_COUNT);
-        for y in 0..MAX_PLAYER_COUNT {
-            for x in 0..MAX_PLAYER_COUNT {
-                enemy_map[(x, y)] = x != y;
-            }
-        }
-
-        Self {
-            enemy_map,
-            is_enemy_map_symmetric: true,
-        }
-    }
-}
-
-impl EnemyConfigState {
-    // Vec<(attacker, attacked)>
-    pub fn pairs(&self, player_count: usize) -> Vec<(PlayerId, PlayerId)> {
-        let mut res = vec![];
-
-        assert!(player_count <= self.enemy_map.width());
-        assert!(player_count <= self.enemy_map.height());
-
-        for y in 0..player_count {
-            for x in 0..player_count {
-                if self.enemy_map[(x, y)] {
-                    res.push((PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8)));
-                }
-            }
-        }
-
-        res
-    }
-
-    pub fn apply_enabled_symmetrically(&mut self) {
-        for y in 0..self.enemy_map.height() {
-            for x in 0..self.enemy_map.width() {
-                if self.enemy_map[(x, y)] {
-                    self.enemy_map[(y, x)] = true;
-                }
-            }
-        }
-    }
-
-    pub fn copy_symmetrically(&mut self, x: usize, y: usize) {
-        self.enemy_map[(y, x)] = self.enemy_map[(x, y)];
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 struct LimitsState {
@@ -180,7 +92,7 @@ impl Default for LimitsState {
 struct CreationState {
     player_count: usize,
     player_configs: Vec<LeaperAttacksInput>,
-    enemy_config: EnemyConfigState,
+    player_relations: PlayerRelationsInput,
     limits: LimitsState,
     preview_shells: usize,
 }
@@ -191,10 +103,13 @@ impl Default for CreationState {
         player_configs.resize_with(DEFAULT_PLAYER_COUNT, || {
             LeaperAttacksInput::new(MAX_PIECE_RANGE)
         });
+        
+        let player_relations = PlayerRelationsInput::new(DEFAULT_PLAYER_COUNT);
+        
         CreationState {
             player_count: DEFAULT_PLAYER_COUNT,
             player_configs,
-            enemy_config: Default::default(),
+            player_relations,
             limits: Default::default(),
             preview_shells: DEFAULT_PREVIEW_SHELLS,
         }
@@ -206,7 +121,7 @@ impl CreationState {
         json!({
             "player_count": self.player_count,
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
-            "enemy_config": self.enemy_config.to_json(self.player_count),
+            "player_relations": self.player_relations.to_json(self.player_count),
             "limits": self.limits.to_json(),
             "preview_shells": self.preview_shells,
         })
@@ -220,7 +135,7 @@ impl CreationState {
                 .iter()
                 .map(LeaperAttacksInput::try_from_json)
                 .collect::<Option<Vec<_>>>()?,
-            enemy_config: EnemyConfigState::try_from_json(&json["enemy_config"])?,
+            player_relations: PlayerRelationsInput::try_from_json(&json["player_relations"])?,
             limits: LimitsState::try_from_json(&json["limits"])?,
             preview_shells: json["preview_shells"].as_u64()? as usize,
         };
@@ -410,7 +325,7 @@ impl SimulationCreator {
             sim.add_player(player_config.build_leaper_attacks());
         }
 
-        let enemy_map = self.state.enemy_config.pairs(self.state.player_count);
+        let enemy_map = self.state.player_relations.build_attacker_attacked_pairs();
         for (attacker, attacked) in enemy_map {
             sim.add_player_enemy(attacker, attacked);
         }
@@ -497,6 +412,8 @@ impl SimulationCreator {
                     .resize_with(self.state.player_count, || {
                         LeaperAttacksInput::new(MAX_PIECE_RANGE)
                     });
+                
+                self.state.player_relations.set_player_count(self.state.player_count);
             }
 
             self.show_all_configs(ui)
@@ -584,7 +501,7 @@ impl SimulationCreator {
                 // Ignore limit config because it doesn't affect the preview.
                 last_state.player_count != self.state.player_count
                     || last_state.player_configs != self.state.player_configs
-                    || last_state.enemy_config != self.state.enemy_config
+                    || last_state.player_relations != self.state.player_relations
                     || last_state.preview_shells != self.state.preview_shells
             }
         };
@@ -600,46 +517,6 @@ impl SimulationCreator {
                 .unwrap();
             self.last_rendered_state = Some(self.state.clone());
         }
-    }
-
-    fn show_enemy_map(ui: &mut Ui, player_count: usize, enemy_config: &mut EnemyConfigState) {
-        ui.spacing_mut().item_spacing = Vec2::ZERO;
-        ui.vertical(|ui| {
-            for y in 0..player_count {
-                ui.horizontal(|ui| {
-                    for x in 0..player_count {
-                        if ui
-                            .checkbox(&mut enemy_config.enemy_map[(x, y)], "")
-                            .changed()
-                            && enemy_config.is_enemy_map_symmetric
-                        {
-                            enemy_config.copy_symmetrically(x, y);
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    fn show_enemy_config(ui: &mut Ui, player_count: usize, enemy_config: &mut EnemyConfigState) {
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("Enemies ❓").on_hover_text(
-                    "Specifies which player can and cannot be placed\n\
-                                    on a square attacked by a different player.\n\
-                                    Player *column* fears player *row*.",
-                );
-                if ui
-                    .checkbox(&mut enemy_config.is_enemy_map_symmetric, "Symmetric")
-                    .changed()
-                    && enemy_config.is_enemy_map_symmetric
-                {
-                    enemy_config.apply_enabled_symmetrically();
-                }
-            });
-
-            Self::show_enemy_map(ui, player_count, enemy_config);
-        });
     }
 
     fn show_limits(ui: &mut Ui, limits: &mut LimitsState) {
@@ -714,11 +591,7 @@ impl SimulationCreator {
 
             egui::Frame::default().show(ui, |ui| {
                 ui.vertical(|ui| {
-                    Self::show_enemy_config(
-                        ui,
-                        self.state.player_count,
-                        &mut self.state.enemy_config,
-                    );
+                    self.state.player_relations.ui(ui);
 
                     Self::show_limits(ui, &mut self.state.limits);
 
