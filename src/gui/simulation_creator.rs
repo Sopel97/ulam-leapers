@@ -3,7 +3,9 @@ use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
-use crate::gui::widgets::player_relations::PlayerRelationsInput;
+use crate::gui::widgets::player_relations::{
+    PlayerRelationsInput, PlayerRelationsInputConstraints,
+};
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 use eframe::egui;
 use eframe::egui::{
@@ -95,14 +97,22 @@ impl CreationState {
         let leaper_attacks_constraints = LeaperAttacksInputConstraints {
             radius: 0..=MAX_PIECE_RANGE,
         };
-        let player_configs_array = json["player_configs"].as_array()?;
+
+        let player_relations_constraints = PlayerRelationsInputConstraints {
+            player_count: 0..=MAX_PLAYER_COUNT,
+        };
+
         let slf = CreationState {
             player_count: json["player_count"].as_u64()? as usize,
-            player_configs: player_configs_array
+            player_configs: json["player_configs"]
+                .as_array()?
                 .iter()
                 .map(|v| LeaperAttacksInput::try_from_json(v, &leaper_attacks_constraints))
                 .collect::<Option<Vec<_>>>()?,
-            player_relations: PlayerRelationsInput::try_from_json(&json["player_relations"])?,
+            player_relations: PlayerRelationsInput::try_from_json(
+                &json["player_relations"],
+                &player_relations_constraints,
+            )?,
             simulation_limits: SimulationLimitsInput::try_from_json(
                 &json["simulation_limits"],
                 Self::make_simulation_limits_constraints(),

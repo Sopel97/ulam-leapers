@@ -1,9 +1,15 @@
 ﻿use eframe::egui::{Response, Ui, Vec2};
 use serde_json::{Value, json};
 use std::cmp;
+use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::simulation::PlayerId;
 use ulam_leapers::util::blit::{Blit2D, blit_array2d};
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct PlayerRelationsInputConstraints {
+    pub player_count: RangeInclusive<usize>,
+}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct PlayerRelationsInput {
@@ -101,8 +107,15 @@ impl PlayerRelationsInput {
         })
     }
 
-    pub fn try_from_json(json: &Value) -> Option<Self> {
+    pub fn try_from_json(
+        json: &Value,
+        constraints: &PlayerRelationsInputConstraints,
+    ) -> Option<Self> {
         let player_count = json["player_count"].as_u64()? as usize;
+        if !constraints.player_count.contains(&player_count) {
+            return None;
+        }
+
         let mut slf = Self {
             is_symmetric: json["is_enemy_map_symmetric"].as_bool()?,
             enemy_map: Array2D::new(player_count, player_count),
@@ -161,6 +174,12 @@ mod tests {
 
     fn pid(i: usize) -> PlayerId {
         PlayerId::new(i as u8)
+    }
+
+    fn constraints() -> PlayerRelationsInputConstraints {
+        PlayerRelationsInputConstraints {
+            player_count: 0..=1000,
+        }
     }
 
     #[test]
@@ -253,8 +272,8 @@ mod tests {
         input.is_symmetric = true;
 
         let json = input.to_json(3);
-        let restored =
-            PlayerRelationsInput::try_from_json(&json).expect("valid json should deserialize");
+        let restored = PlayerRelationsInput::try_from_json(&json, &constraints())
+            .expect("valid json should deserialize");
 
         assert_eq!(restored.player_count, input.player_count);
         assert_eq!(restored.is_symmetric, input.is_symmetric);
@@ -271,7 +290,7 @@ mod tests {
             ]
         });
 
-        assert!(PlayerRelationsInput::try_from_json(&json).is_none());
+        assert!(PlayerRelationsInput::try_from_json(&json, &constraints()).is_none());
     }
 
     #[test]
@@ -284,7 +303,7 @@ mod tests {
             ]
         });
 
-        assert!(PlayerRelationsInput::try_from_json(&json).is_none());
+        assert!(PlayerRelationsInput::try_from_json(&json, &constraints()).is_none());
     }
 
     #[test]
@@ -297,7 +316,7 @@ mod tests {
             ]
         });
 
-        let input = PlayerRelationsInput::try_from_json(&json).unwrap();
+        let input = PlayerRelationsInput::try_from_json(&json, &constraints()).unwrap();
 
         // stored at (1,0) internally (b, a)
         assert!(input.enemy_map[(1, 0)]);
