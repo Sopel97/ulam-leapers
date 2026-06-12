@@ -2,9 +2,15 @@
 use eframe::egui::{Checkbox, Response, Ui, Vec2};
 use serde_json::{Value, json};
 use std::collections::HashSet;
+use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::piece::LeaperAttacks;
 use ulam_leapers::math::coords::GridVector;
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct LeaperAttacksInputConstraints {
+    pub radius: RangeInclusive<usize>,
+}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacksInput {
@@ -75,8 +81,15 @@ impl LeaperAttacksInput {
         })
     }
 
-    pub fn try_from_json(json: &Value) -> Option<Self> {
+    pub fn try_from_json(
+        json: &Value,
+        constraints: &LeaperAttacksInputConstraints,
+    ) -> Option<Self> {
         let radius = json["radius"].as_u64()? as usize;
+        if !constraints.radius.contains(&radius) {
+            return None;
+        }
+
         let mut slf = Self {
             is_symmetric: json["is_symmetric"].as_bool()?,
             radius,
@@ -189,6 +202,10 @@ mod tests {
         GridVector::new(x, y)
     }
 
+    fn constraints() -> LeaperAttacksInputConstraints {
+        LeaperAttacksInputConstraints { radius: 0..=1000 }
+    }
+
     #[test]
     fn test_roundtrip_index_conversion() {
         let radius = 2;
@@ -289,8 +306,8 @@ mod tests {
         input.is_symmetric = false;
 
         let json = input.to_json();
-        let restored =
-            LeaperAttacksInput::try_from_json(&json).expect("valid json should deserialize");
+        let restored = LeaperAttacksInput::try_from_json(&json, &constraints())
+            .expect("valid json should deserialize");
 
         assert_eq!(restored.radius, input.radius);
         assert_eq!(restored.is_symmetric, input.is_symmetric);
@@ -307,7 +324,7 @@ mod tests {
             ]
         });
 
-        assert!(LeaperAttacksInput::try_from_json(&json).is_none());
+        assert!(LeaperAttacksInput::try_from_json(&json, &constraints()).is_none());
     }
 
     #[test]

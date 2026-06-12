@@ -2,7 +2,9 @@
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::widgets::leaper_attacks::LeaperAttacksInput;
+use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
+use crate::gui::widgets::player_relations::PlayerRelationsInput;
+use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 use eframe::egui;
 use eframe::egui::{
     Checkbox, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
@@ -20,8 +22,6 @@ use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::player_relations::PlayerRelationsInput;
-use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -55,10 +55,11 @@ impl Default for CreationState {
         player_configs.resize_with(DEFAULT_PLAYER_COUNT, || {
             LeaperAttacksInput::new(MAX_PIECE_RANGE)
         });
-        
+
         let player_relations = PlayerRelationsInput::new(DEFAULT_PLAYER_COUNT);
 
-        let mut simulation_limits = SimulationLimitsInput::new(Self::make_simulation_limits_constraints());
+        let mut simulation_limits =
+            SimulationLimitsInput::new(Self::make_simulation_limits_constraints());
         simulation_limits.try_set_turns(DEFAULT_TURNS).unwrap();
 
         CreationState {
@@ -91,15 +92,21 @@ impl CreationState {
     }
 
     fn try_from_json(json: &Value) -> Option<CreationState> {
+        let leaper_attacks_constraints = LeaperAttacksInputConstraints {
+            radius: 0..=MAX_PIECE_RANGE,
+        };
         let player_configs_array = json["player_configs"].as_array()?;
-        let mut slf = CreationState {
+        let slf = CreationState {
             player_count: json["player_count"].as_u64()? as usize,
             player_configs: player_configs_array
                 .iter()
-                .map(LeaperAttacksInput::try_from_json)
+                .map(|v| LeaperAttacksInput::try_from_json(v, &leaper_attacks_constraints))
                 .collect::<Option<Vec<_>>>()?,
             player_relations: PlayerRelationsInput::try_from_json(&json["player_relations"])?,
-            simulation_limits: SimulationLimitsInput::try_from_json(&json["simulation_limits"], Self::make_simulation_limits_constraints())?,
+            simulation_limits: SimulationLimitsInput::try_from_json(
+                &json["simulation_limits"],
+                Self::make_simulation_limits_constraints(),
+            )?,
             preview_shells: json["preview_shells"].as_u64()? as usize,
         };
 
@@ -372,8 +379,10 @@ impl SimulationCreator {
                     .resize_with(self.state.player_count, || {
                         LeaperAttacksInput::new(MAX_PIECE_RANGE)
                     });
-                
-                self.state.player_relations.set_player_count(self.state.player_count);
+
+                self.state
+                    .player_relations
+                    .set_player_count(self.state.player_count);
             }
 
             self.show_all_configs(ui)
