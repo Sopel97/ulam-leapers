@@ -68,6 +68,15 @@ impl CreationState {
 
         (sim, limits)
     }
+    
+    /// Returns whether `self` requires a preview update, assuming the last
+    /// preview was generated from `old`.
+    /// Simulation limits are ignored.
+    pub fn requires_preview_update(&self, old: &Self) -> bool {
+        self.player_count != old.player_count
+        || self.player_configs != old.player_configs
+        || self.player_relations != old.player_relations
+    }
 
     pub fn set_turns_limit(&mut self, turns: usize) -> Result<(), WidgetError> {
         self.simulation_limits.set_turns(turns)

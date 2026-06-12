@@ -375,17 +375,18 @@ impl SimulationCreator {
         }
     }
 
-    fn maybe_update_preview(&mut self, ctx: &Context) {
-        let needs_update = match &self.last_rendered_state {
+    fn needs_preview_update(&self) -> bool {
+        match &self.last_rendered_state {
             None => true,
             Some(last_state) => {
-                // Ignore limit config because it doesn't affect the preview.
-                *last_state != self.state
-                    || self.last_rendered_preview_shells != self.preview_shells
+                self.last_rendered_preview_shells != self.preview_shells
+                    || self.state.requires_preview_update(last_state)
             }
-        };
+        }
+    }
 
-        if needs_update {
+    fn maybe_update_preview(&mut self, ctx: &Context) {
+        if self.needs_preview_update() {
             let (simulation, _) = self.state.build_simulation();
             self.worker_jobs
                 .send(SimulationCreatorWorkerJob::GeneratePreview(
@@ -394,7 +395,11 @@ impl SimulationCreator {
                     self.preview_shells,
                 ))
                 .unwrap();
+
+            // Do not forget to set the last rendered state.
             self.last_rendered_state = Some(self.state.clone());
+            self.last_rendered_preview_shells = self.preview_shells;
+            debug_assert!(!self.needs_preview_update());
         }
     }
 
