@@ -5,7 +5,7 @@ use crate::gui::widgets::player_relations::{
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
-use eframe::egui::{Response, ScrollArea, Slider, Ui, Vec2b};
+use eframe::egui::{Color32, Response, ScrollArea, Slider, Ui, Vec2b};
 use serde_json::{json, Value};
 use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
@@ -219,25 +219,30 @@ impl SimulationConfigInput {
         });
     }
     
-    fn show_player_configs(ui: &mut Ui, player_configs: &mut [LeaperAttacksInput]) {
+    fn show_player_configs(ui: &mut Ui, player_configs: &mut [LeaperAttacksInput]) -> Vec<Response> {
+        let mut config_responses = Vec::new();
         egui::Frame::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 // Players
                 for (i, player_config) in player_configs.iter_mut().enumerate() {
-                    ui.group(|ui| {
+                    let res = ui.group(|ui| {
                         Self::show_player_config(ui, player_config, i + 1);
-                    });
+                    }).response;
+                    config_responses.push(res);
                 }
             });
         });
+        config_responses
     }
 
     fn show_simulation_config(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
+            let mut config_responses= Vec::new();
+
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
                 .show(ui, |ui| {
-                    Self::show_player_configs(ui, &mut self.player_configs);
+                    config_responses = Self::show_player_configs(ui, &mut self.player_configs);
                 });
 
             egui::Frame::default().show(ui, |ui| {
@@ -247,6 +252,20 @@ impl SimulationConfigInput {
                     self.simulation_limits.ui(ui);
                 });
             });
+
+            // Highlight the attacking player in green and the attacked player in red.
+            if let Some((attacker, attacked)) = self.player_relations.hovered_attacker_attacked() {
+                let attacker_rect = config_responses[attacker.index() - 1].rect;
+                let attacked_rect = config_responses[attacked.index() - 1].rect;
+
+                let mut attacker_painter = ui.painter_at(attacker_rect);
+                attacker_painter.set_opacity(0.1);
+                attacker_painter.rect_filled(attacker_rect, 5, Color32::GREEN);
+
+                let mut attacked_painter = ui.painter_at(attacked_rect);
+                attacked_painter.set_opacity(0.1);
+                attacked_painter.rect_filled(attacked_rect, 5, Color32::RED);
+            }
         });
     }
     

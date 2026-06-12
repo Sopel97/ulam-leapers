@@ -1,5 +1,5 @@
 ﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
-use eframe::egui::{Response, Ui, Vec2};
+use eframe::egui::{Checkbox, Response, Sense, Ui, Vec2};
 use serde_json::{json, Value};
 use std::cmp;
 use std::ops::RangeInclusive;
@@ -13,14 +13,31 @@ pub struct PlayerRelationsInputConstraints {
     pub player_count: RangeInclusive<usize>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Clone, Default)]
+struct InternalState {
+    hovered_attacker_attacked: Option<(PlayerId, PlayerId)>,
+}
+
+#[derive(Debug, Clone)]
 pub struct PlayerRelationsInput {
     enemy_map: Array2D<bool>,
     is_symmetric: bool,
     player_count: usize,
 
     constraints: PlayerRelationsInputConstraints,
+
+    internal_state: InternalState,
 }
+
+impl PartialEq for PlayerRelationsInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.player_count == other.player_count
+        && self.is_symmetric == other.is_symmetric
+        && self.enemy_map == other.enemy_map
+    }
+}
+
+impl Eq for PlayerRelationsInput {}
 
 impl PlayerRelationsInput {
     pub fn new(constraints: PlayerRelationsInputConstraints) -> Self {
@@ -31,6 +48,7 @@ impl PlayerRelationsInput {
             enemy_map,
             is_symmetric: true,
             player_count,
+            internal_state: Default::default(),
             constraints,
         }
     }
@@ -47,6 +65,10 @@ impl PlayerRelationsInput {
 
     pub fn player_count(&self) -> usize {
         self.player_count
+    }
+
+    pub fn hovered_attacker_attacked(&self) -> Option<(PlayerId, PlayerId)> {
+        self.internal_state.hovered_attacker_attacked
     }
 
     pub fn set_player_count(&mut self, player_count: usize) -> Result<(), WidgetError> {
@@ -82,15 +104,24 @@ impl PlayerRelationsInput {
     }
 
     fn show_enemy_map(&mut self, ui: &mut Ui) {
+        self.internal_state.hovered_attacker_attacked = None;
+
         ui.spacing_mut().item_spacing = Vec2::ZERO;
         ui.vertical(|ui| {
             for y in 0..self.enemy_map.height() {
                 ui.horizontal(|ui| {
                     for x in 0..self.enemy_map.width() {
-                        if ui.checkbox(&mut self.enemy_map[(x, y)], "").changed()
+                        let checkbox_widget = Checkbox::new(&mut self.enemy_map[(x, y)], "");
+                        let checkbox = ui.add(checkbox_widget);
+                        if checkbox.changed()
                             && self.is_symmetric
                         {
                             self.copy_symmetrically(x, y);
+                        }
+
+                        let checkbox_hover_sense = ui.allocate_rect(checkbox.rect, Sense::hover());
+                        if checkbox_hover_sense.hovered() {
+                            self.internal_state.hovered_attacker_attacked = Some(Self::index_to_attacker_attacked(x, y));
                         }
                     }
                 });
@@ -105,12 +136,16 @@ impl PlayerRelationsInput {
         for y in 0..self.enemy_map.height() {
             for x in 0..self.enemy_map.width() {
                 if self.enemy_map[(x, y)] {
-                    res.push((PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8)));
+                    res.push(Self::index_to_attacker_attacked(x, y));
                 }
             }
         }
 
         res
+    }
+
+    fn index_to_attacker_attacked(x: usize, y: usize) -> (PlayerId, PlayerId) {
+        (PlayerId::new((y + 1) as u8), PlayerId::new((x + 1) as u8))
     }
 
     fn apply_enabled_symmetrically(&mut self) {
@@ -205,6 +240,7 @@ impl JsonWidget for PlayerRelationsInput {
             player_count,
             is_symmetric,
             enemy_map,
+            internal_state: Default::default(),
             constraints,
         })
     }
@@ -288,7 +324,7 @@ mod tests {
 
         input.enemy_map[(1, 0)] = true;
 
-        input.set_player_count(4);
+        input.set_player_count(4).unwrap();
 
         assert_eq!(input.player_count, 4);
 
@@ -303,7 +339,7 @@ mod tests {
 
         input.enemy_map[(3, 2)] = true;
 
-        input.set_player_count(2);
+        input.set_player_count(2).unwrap();
 
         assert_eq!(input.player_count, 2);
 
