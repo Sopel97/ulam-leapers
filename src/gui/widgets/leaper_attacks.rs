@@ -179,3 +179,161 @@ impl LeaperAttacksInput {
         offsets
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ulam_leapers::math::coords::GridVector;
+
+    fn vec(x: i32, y: i32) -> GridVector {
+        GridVector::new(x, y)
+    }
+
+    #[test]
+    fn test_roundtrip_index_conversion() {
+        let radius = 2;
+
+        for y in 0..=radius * 2 {
+            for x in 0..=radius * 2 {
+                let v = LeaperAttacksInput::index_to_attack_offset((x, y), radius)
+                    .expect("valid index should convert");
+
+                let (x2, y2) = LeaperAttacksInput::attack_offset_to_index(&v, radius)
+                    .expect("valid offset should convert back");
+
+                assert_eq!((x, y), (x2, y2));
+            }
+        }
+    }
+
+    #[test]
+    fn test_center_is_identity() {
+        let radius = 3;
+        let center = (radius, radius);
+
+        let v = LeaperAttacksInput::index_to_attack_offset(center, radius).unwrap();
+        assert_eq!(v, vec(0, 0));
+
+        let idx = LeaperAttacksInput::attack_offset_to_index(&vec(0, 0), radius).unwrap();
+        assert_eq!(idx, center);
+    }
+
+    #[test]
+    fn test_attack_map_basic_enable() {
+        let mut input = LeaperAttacksInput::new(2);
+
+        // Enable a single offset
+        let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -1), 2).unwrap();
+
+        input.attack_map[(x, y)] = true;
+
+        let offsets = input.attack_offsets();
+
+        assert!(offsets.contains(&vec(1, -1)));
+    }
+
+    #[test]
+    fn test_symmetry_copies_all_quadrants() {
+        let mut input = LeaperAttacksInput::new(2);
+
+        // Enable one quadrant position
+        let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -2), 2).unwrap();
+
+        input.attack_map[(x, y)] = true;
+        input.copy_symmetrically(x, y);
+
+        let offsets = input.attack_offsets();
+
+        assert_eq!(offsets.len(), 8);
+
+        assert!(offsets.contains(&vec(1, -2)));
+        assert!(offsets.contains(&vec(-1, -2)));
+        assert!(offsets.contains(&vec(1, 2)));
+        assert!(offsets.contains(&vec(-1, 2)));
+        assert!(offsets.contains(&vec(-2, 1)));
+        assert!(offsets.contains(&vec(-2, -1)));
+        assert!(offsets.contains(&vec(2, 1)));
+        assert!(offsets.contains(&vec(2, -1)));
+    }
+
+    #[test]
+    fn test_apply_enabled_symmetrically() {
+        let mut input = LeaperAttacksInput::new(2);
+
+        let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(2, -1), 2).unwrap();
+
+        input.attack_map[(x, y)] = true;
+
+        input.apply_enabled_symmetrically();
+
+        let offsets = input.attack_offsets();
+
+        assert_eq!(offsets.len(), 8);
+
+        assert!(offsets.contains(&vec(2, -1)));
+        assert!(offsets.contains(&vec(-2, -1)));
+        assert!(offsets.contains(&vec(2, 1)));
+        assert!(offsets.contains(&vec(-2, 1)));
+        assert!(offsets.contains(&vec(-1, 2)));
+        assert!(offsets.contains(&vec(-1, -2)));
+        assert!(offsets.contains(&vec(1, 2)));
+        assert!(offsets.contains(&vec(1, -2)));
+    }
+
+    #[test]
+    fn test_json_roundtrip() {
+        let mut input = LeaperAttacksInput::new(2);
+
+        let (x, y) = LeaperAttacksInput::attack_offset_to_index(&vec(1, -2), 2).unwrap();
+        input.attack_map[(x, y)] = true;
+        input.is_symmetric = false;
+
+        let json = input.to_json();
+        let restored =
+            LeaperAttacksInput::try_from_json(&json).expect("valid json should deserialize");
+
+        assert_eq!(restored.radius, input.radius);
+        assert_eq!(restored.is_symmetric, input.is_symmetric);
+        assert_eq!(restored.attack_map, input.attack_map);
+    }
+
+    #[test]
+    fn test_invalid_json_fails() {
+        let json = json!({
+            "radius": 2,
+            "is_symmetric": true,
+            "attack_map": [
+                {"x": 999, "y": 999}
+            ]
+        });
+
+        assert!(LeaperAttacksInput::try_from_json(&json).is_none());
+    }
+
+    #[test]
+    fn test_index_bounds_rejection() {
+        let radius = 2;
+
+        assert!(LeaperAttacksInput::attack_offset_to_index(&vec(10, 0), radius).is_none());
+        assert!(LeaperAttacksInput::attack_offset_to_index(&vec(0, 10), radius).is_none());
+        assert!(LeaperAttacksInput::attack_offset_to_index(&vec(-10, 0), radius).is_none());
+    }
+
+    #[test]
+    fn test_attack_offsets_are_ordered_deterministically() {
+        let mut input = LeaperAttacksInput::new(2);
+
+        let points = [vec(1, -1), vec(-1, -1), vec(0, 1)];
+
+        for p in points {
+            let (x, y) = LeaperAttacksInput::attack_offset_to_index(&p, 2).unwrap();
+            input.attack_map[(x, y)] = true;
+        }
+
+        let ordered = input.attack_offsets_ordered();
+        let mut sorted = ordered.clone();
+        sorted.sort();
+
+        assert_eq!(ordered, sorted);
+    }
+}
