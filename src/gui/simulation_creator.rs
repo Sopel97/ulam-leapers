@@ -2,19 +2,14 @@
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
-use crate::gui::widgets::player_relations::{
-    PlayerRelationsInput, PlayerRelationsInputConstraints,
-};
-use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
-use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+use crate::gui::widgets::simulation_config::{SimulationConfigInput, SimulationConfigInputConstraints};
+use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
 use eframe::egui;
 use eframe::egui::{
-    pos2, Color32, ColorImage, Context, Rect, ScrollArea, Slider,
-    TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, Vec2b,
+    pos2, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
+    TextureOptions, TextureWrapMode, Ui, Vec2,
 };
 use eframe::epaint::TextureHandle;
-use serde_json::{json, Value};
 use std::ops::RangeInclusive;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -23,9 +18,7 @@ use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
 use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
-use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::simulation_config::{CreationState, CreationStateConstraints};
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -54,23 +47,15 @@ enum SimulationCreatorWorkerResult {
     PreviewImage(TextureHandle),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-enum SimulationCreatorAction {
-    Submit,
-}
-
 pub struct SimulationCreator {
-    state: CreationState,
-    last_rendered_state: Option<CreationState>,
+    state: SimulationConfigInput,
+    last_rendered_state: Option<SimulationConfigInput>,
     state_json_actual: String,
     state_json_ui: String,
 
     preview_shells: usize,
     last_rendered_preview_shells: usize,
 
-    // TODO: maybe integrate with GridRender, though the fact that we are splitting
-    //       the work into a worker thread complicates this. May not be worth it unless
-    //       GridRender gains more functionality.
     preview_texture_handle: Option<TextureHandle>,
 
     worker: Option<JoinHandle<()>>,
@@ -196,8 +181,8 @@ impl SimulationCreator {
         MIN_PLAYER_COUNT..=MAX_PLAYER_COUNT
     }
 
-    pub fn make_creation_state_constraints() -> CreationStateConstraints {
-        CreationStateConstraints {
+    pub fn make_creation_state_constraints() -> SimulationConfigInputConstraints {
+        SimulationConfigInputConstraints {
             attack_radius: MAX_PIECE_RANGE..=MAX_PIECE_RANGE,
             memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
             complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
@@ -210,7 +195,7 @@ impl SimulationCreator {
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
 
-        let mut state = CreationState::new(Self::make_creation_state_constraints()).unwrap();
+        let mut state = SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
 
@@ -304,12 +289,9 @@ impl SimulationCreator {
     fn preview_panel(&mut self, ui: &mut Ui) {
         egui::Frame::default().show(ui, |ui| {
             ui.add(
-                Slider::new(
-                    &mut self.preview_shells,
-                    Self::get_preview_shells_range(),
-                )
-                .integer()
-                .text("Preview shells"),
+                Slider::new(&mut self.preview_shells, Self::get_preview_shells_range())
+                    .integer()
+                    .text("Preview shells"),
             );
         });
 
@@ -347,7 +329,7 @@ impl SimulationCreator {
     fn update_state_json(&mut self) {
         self.state_json_actual = self.state.to_json().to_string();
         let json = &serde_json::from_str(self.state_json_actual.as_str()).unwrap();
-        CreationState::try_from_json(json, Self::make_creation_state_constraints()).unwrap();
+        SimulationConfigInput::try_from_json(json, Self::make_creation_state_constraints()).unwrap();
         self.state_json_ui = self.state_json_actual.clone();
     }
 
@@ -355,7 +337,7 @@ impl SimulationCreator {
         let json = &serde_json::from_str(self.state_json_ui.as_str());
         if let Ok(json) = json
             && let Ok(state) =
-                CreationState::try_from_json(json, Self::make_creation_state_constraints())
+                SimulationConfigInput::try_from_json(json, Self::make_creation_state_constraints())
         {
             self.state_json_actual = state.to_json().to_string();
             self.state_json_ui = self.state_json_actual.clone();

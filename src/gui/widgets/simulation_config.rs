@@ -1,17 +1,19 @@
-﻿use std::ops::RangeInclusive;
+﻿use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
+use crate::gui::widgets::player_relations::{
+    PlayerRelationsInput, PlayerRelationsInputConstraints,
+};
+use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
+use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Response, ScrollArea, Slider, Ui, Vec2b};
 use serde_json::{json, Value};
+use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
-use crate::gui::widgets::player_relations::{PlayerRelationsInput, PlayerRelationsInputConstraints};
-use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
-use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct CreationStateConstraints {
+pub struct SimulationConfigInputConstraints {
     pub attack_radius: RangeInclusive<usize>,
     pub player_count: RangeInclusive<usize>,
     pub memory_usage: RangeInclusive<MemSize>,
@@ -20,17 +22,17 @@ pub struct CreationStateConstraints {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct CreationState {
+pub struct SimulationConfigInput {
     player_count: usize,
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
     simulation_limits: SimulationLimitsInput,
 
-    constraints: CreationStateConstraints,
+    constraints: SimulationConfigInputConstraints,
 }
 
-impl CreationState {
-    pub fn new(constraints: CreationStateConstraints) -> Result<Self, WidgetError> {
+impl SimulationConfigInput {
+    pub fn new(constraints: SimulationConfigInputConstraints) -> Result<Self, WidgetError> {
         let player_count = *constraints.player_count.start();
         let mut player_configs = vec![];
         player_configs.resize_with(player_count, || {
@@ -43,7 +45,7 @@ impl CreationState {
         let simulation_limits =
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
-        Ok(CreationState {
+        Ok(SimulationConfigInput {
             player_count,
             player_configs,
             player_relations,
@@ -68,14 +70,14 @@ impl CreationState {
 
         (sim, limits)
     }
-    
+
     /// Returns whether `self` requires a preview update, assuming the last
     /// preview was generated from `old`.
     /// Simulation limits are ignored.
     pub fn requires_preview_update(&self, old: &Self) -> bool {
         self.player_count != old.player_count
-        || self.player_configs != old.player_configs
-        || self.player_relations != old.player_relations
+            || self.player_configs != old.player_configs
+            || self.player_relations != old.player_relations
     }
 
     pub fn set_turns_limit(&mut self, turns: usize) -> Result<(), WidgetError> {
@@ -109,7 +111,7 @@ impl CreationState {
     }
 }
 
-impl CreationStateConstraints {
+impl SimulationConfigInputConstraints {
     pub fn leaper_attacks_input_constraints(&self) -> LeaperAttacksInputConstraints {
         LeaperAttacksInputConstraints {
             radius: self.attack_radius.clone(),
@@ -131,8 +133,8 @@ impl CreationStateConstraints {
     }
 }
 
-impl JsonWidget for CreationState {
-    type ConstraintsType = CreationStateConstraints;
+impl JsonWidget for SimulationConfigInput {
+    type ConstraintsType = SimulationConfigInputConstraints;
 
     fn to_json(&self) -> Value {
         json!({
@@ -157,7 +159,7 @@ impl JsonWidget for CreationState {
                 "Player count {} is outside of allowed range {:?}",
                 player_count, constraints.player_count
             ))
-                .into());
+            .into());
         }
 
         let player_configs = json
@@ -172,7 +174,7 @@ impl JsonWidget for CreationState {
                 player_configs.len(),
                 player_count
             ))
-                .into());
+            .into());
         }
 
         let player_relations = PlayerRelationsInput::try_from_json(
@@ -186,7 +188,7 @@ impl JsonWidget for CreationState {
                 player_relations.player_count(),
                 player_count
             ))
-                .into());
+            .into());
         }
 
         let simulation_limits = SimulationLimitsInput::try_from_json(
@@ -204,12 +206,24 @@ impl JsonWidget for CreationState {
     }
 }
 
-impl CreationState {
-    fn show_player_configs(&mut self, ui: &mut Ui) {
+impl SimulationConfigInput {
+    fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput, pid: usize) {
+        ui.horizontal(|ui| {
+            egui::Frame::default().show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.label(format!("P{}", pid));
+                });
+            });
+
+            player_config.ui(ui);
+        });
+    }
+    
+    fn show_player_configs(ui: &mut Ui, player_configs: &mut [LeaperAttacksInput]) {
         egui::Frame::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 // Players
-                for (i, player_config) in self.player_configs.iter_mut().enumerate() {
+                for (i, player_config) in player_configs.iter_mut().enumerate() {
                     ui.group(|ui| {
                         Self::show_player_config(ui, player_config, i + 1);
                     });
@@ -218,12 +232,12 @@ impl CreationState {
         });
     }
 
-    fn show_all_configs(&mut self, ui: &mut Ui) {
+    fn show_simulation_config(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
             ScrollArea::new(Vec2b::new(false, true))
                 .max_width(300.0)
                 .show(ui, |ui| {
-                    self.show_player_configs(ui);
+                    Self::show_player_configs(ui, &mut self.player_configs);
                 });
 
             egui::Frame::default().show(ui, |ui| {
@@ -235,40 +249,35 @@ impl CreationState {
             });
         });
     }
-
-    fn show_player_config(ui: &mut Ui, player_config: &mut LeaperAttacksInput, pid: usize) {
-        ui.horizontal(|ui| {
-            egui::Frame::default().show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.label(format!("P{}", pid));
-                });
-            });
-
-            player_config.ui(ui);
-
-            // Some space.
-            egui::Frame::default().show(ui, |_ui| {});
-        });
+    
+    fn show_player_count_selector(&mut self, ui: &mut Ui) {
+        if ui
+            .add(
+                Slider::new(
+                    &mut self.player_count,
+                    self.constraints.player_count.clone(),
+                )
+                    .integer()
+                    .text("Player count"),
+            )
+            .changed()
+        {
+            self.on_player_count_changed()
+                .expect("The slider should be within the allowed range");
+        }
     }
 }
 
-impl StatefulWidget for CreationState {
+impl StatefulWidget for SimulationConfigInput {
     fn ui(&mut self, ui: &mut Ui) -> Response {
-        ui.vertical(|ui| {
-            if ui
-                .add(
-                    Slider::new(&mut self.player_count, self.constraints.player_count.clone())
-                        .integer()
-                        .text("Player count"),
-                )
-                .changed()
-            {
-                self
-                    .on_player_count_changed()
-                    .expect("The slider should be within the allowed range");
-            }
+        egui::Frame::default()
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    self.show_player_count_selector(ui);
 
-            self.show_all_configs(ui);
-        }).response
+                    self.show_simulation_config(ui);
+                });
+            })
+            .response
     }
 }
