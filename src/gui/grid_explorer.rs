@@ -6,7 +6,7 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Context, Rect, Response, Sense, TextureHandle, Ui};
+use eframe::egui::{color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, TextureHandle, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -32,7 +32,6 @@ pub struct GridExplorer {
     grid_view_controls: GridViewControls,
     finalized_simulation: Arc<FinalizedSimulation>,
     grid_renderer: Arc<Mutex<GridRenderer>>,
-    save_state: SaveState,
     grid_render_texture: Option<TextureHandle>,
     last_grid_render_params: GridRenderParameters,
 }
@@ -64,7 +63,7 @@ impl Default for GridRenderParameters {
 
 impl Subwindow for GridExplorer {
     fn name(&self) -> String {
-        if matches!(self.save_state, SaveState::Saved) {
+        if self.grid_view_controls.is_saved() {
             "Explorer".to_owned()
         } else {
             "*Explorer".to_owned()
@@ -78,7 +77,7 @@ impl Subwindow for GridExplorer {
                 .resizable([false, false]) // resizable so we can shrink if the text edit grows
                 .constrain_to(ui.available_rect_before_wrap())
                 .show(ui, |ui| {
-                    self.grid_view_controls.ui(ui, &mut self.save_state);
+                    self.grid_view_controls.ui(ui);
                 });
 
             let rect = ui.clip_rect(); // Full canvas
@@ -106,6 +105,8 @@ const MAX_PNG_EXTENT: i32 = 8192;
 
 const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
+const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
+
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
         let finalized_simulation = Arc::new(finalized_simulation);
@@ -123,8 +124,9 @@ impl GridExplorer {
             min_zoom_pow2: MIN_ZOOM_POW2,
             max_zoom_pow2: MAX_ZOOM_POW2,
             player_colors: default_player_colors()[..=player_count].to_vec(),
-
             last_pointed_coords: GridPoint::new(0, 0),
+            save_state: SaveState::NotSaved,
+
             zoom_pow2: DEFAULT_ZOOM_POW2,
             zoom_pow2_png: DEFAULT_ZOOM_POW2,
             png_extent: DEFAULT_PNG_EXTENT,
@@ -137,7 +139,6 @@ impl GridExplorer {
             grid_renderer,
             finalized_simulation,
             grid_view_controls,
-            save_state: SaveState::NotSaved,
             grid_render_texture: None,
             last_grid_render_params: Default::default(),
         }
@@ -148,8 +149,12 @@ impl GridExplorer {
         let mut reader = std::io::BufReader::new(file);
         let simulation = FinalizedSimulation::read_from(&mut reader)?;
         let mut explorer = GridExplorer::new(simulation);
-        explorer.save_state = SaveState::Saved;
+        explorer.assume_saved();
         Ok(explorer)
+    }
+
+    fn assume_saved(&mut self) {
+        self.grid_view_controls.assume_saved();
     }
 
     fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
@@ -225,6 +230,7 @@ pub struct GridViewControls {
     max_zoom_pow2: i32,
     player_colors: Vec<Color32>,
     last_pointed_coords: GridPoint,
+    save_state: SaveState,
 
     zoom_pow2: i32,
     zoom_pow2_png: i32,
@@ -410,7 +416,50 @@ impl GridViewControls {
         self.origin_y = self.origin_y.clamp(-bounds, bounds);
     }
 
-    fn ui(&mut self, ui: &mut Ui, save_state: &mut SaveState) {
+    pub fn is_saved(&self) -> bool {
+        matches!(self.save_state, SaveState::Saved)
+    }
+
+    fn assume_saved(&mut self) {
+        self.save_state = SaveState::Saved;
+    }
+
+    fn try_save(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .set_file_name("simulation.uls")
+            .save_file()
+        {
+            let mut writer = BufWriter::new(File::create(path).unwrap());
+            if let Err(e) = self.finalized_simulation.write_to(&mut writer) {
+                eprintln!("Failed to save simulation: {}", e);
+                self.save_state = SaveState::Errored(e);
+            } else {
+                self.save_state = SaveState::Saved;
+            }
+        }
+    }
+
+    fn show_save(&mut self, ui: &mut Ui) {
+        match &self.save_state {
+            SaveState::NotSaved => {
+                ui.label("Simulation is not saved!");
+            }
+            SaveState::Errored(err) => {
+                ui.label(format!("Error while saving simulation: {}", err));
+            }
+            SaveState::Saved => {
+                ui.label("Simulation is saved!");
+            }
+        };
+
+        let save = ui.button("Save simulation").clicked()
+            || ui.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT));
+        if save {
+            self.try_save();
+        }
+    }
+
+    fn ui(&mut self, ui: &mut Ui) {
         let turns = self.finalized_simulation.complete_turns();
         let complete_shells = self.finalized_simulation.complete_shells();
         let side_cells = complete_shells.max(1) as usize * 2 - 1;
@@ -427,30 +476,8 @@ impl GridViewControls {
             "Pointer: {}, {}",
             self.last_pointed_coords.x, self.last_pointed_coords.y
         ));
-        match save_state {
-            SaveState::NotSaved => {
-                ui.label("Simulation is not saved!");
-            }
-            SaveState::Errored(err) => {
-                ui.label(format!("Error while saving simulation: {}", err));
-            }
-            SaveState::Saved => {
-                ui.label("Simulation is saved!");
-            }
-        };
-        if ui.button("Save simulation").clicked()
-            && let Some(path) = rfd::FileDialog::new()
-                .set_file_name("simulation.uls")
-                .save_file()
-        {
-            let mut writer = BufWriter::new(File::create(path).unwrap());
-            if let Err(e) = self.finalized_simulation.write_to(&mut writer) {
-                eprintln!("Failed to save simulation: {}", e);
-                *save_state = SaveState::Errored(e);
-            } else {
-                *save_state = SaveState::Saved;
-            }
-        }
+
+        self.show_save(ui);
 
         ui.heading("Controls");
 
