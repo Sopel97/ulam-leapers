@@ -88,7 +88,14 @@ impl StatefulWidget for SimulationLimitsInput {
             ui.add(
                 Slider::new(&mut self.turns, self.constraints.turns.clone())
                     .integer()
-                    .logarithmic(true),
+                    .logarithmic(true)
+                    .custom_formatter(|s, _| {
+                        if s < 1e9 {
+                            format!("{:} M", s / 1e6)
+                        } else {
+                            format!("{:} G", s / 1e9)
+                        }
+                    }),
             );
 
             ui.label("Complete shells:");
