@@ -1,13 +1,13 @@
-﻿use std::cmp;
-use crate::gui::widgets::misc::ui_layout_2d;
+﻿use crate::gui::widgets::misc::ui_layout_2d;
 use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
 use serde_json::{json, Value};
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::game::piece::LeaperAttacks;
+use ulam_leapers::game::piece::{leaper_name_from_attack_vector, LeaperAttacks};
 use ulam_leapers::math::coords::{symmetries, GridVector};
 use ulam_leapers::util::blit::{blit_array2d, Blit2D};
 use ulam_leapers::util::json::SerdeJsonValueExt;
@@ -70,14 +70,18 @@ impl LeaperAttacksInput {
         let blit_w = cmp::min(self.attack_map.width(), wh);
         let blit_h = cmp::min(self.attack_map.height(), wh);
         let mut new_attack_map = Array2D::new(wh, wh);
-        blit_array2d(&self.attack_map, &mut new_attack_map, &Blit2D {
-            src_x: (-diff).max(0) as usize,
-            src_y: (-diff).max(0) as usize,
-            dst_x: diff.max(0) as usize,
-            dst_y: diff.max(0) as usize,
-            width: blit_w,
-            height: blit_h,
-        });
+        blit_array2d(
+            &self.attack_map,
+            &mut new_attack_map,
+            &Blit2D {
+                src_x: (-diff).max(0) as usize,
+                src_y: (-diff).max(0) as usize,
+                dst_x: diff.max(0) as usize,
+                dst_y: diff.max(0) as usize,
+                width: blit_w,
+                height: blit_h,
+            },
+        );
 
         self.attack_map = new_attack_map;
         self.radius = radius;
@@ -143,6 +147,78 @@ impl LeaperAttacksInput {
                 painter.rect_filled(res.rect, 3, Color32::GREEN);
             }
         }
+    }
+
+    fn set_all(&mut self, enabled: bool) {
+        self.attack_map.as_flat_mut_slice().fill(enabled);
+        // Remember that origin cannot be set.
+        self.attack_map[(self.radius, self.radius)] = false;
+    }
+
+    fn invert_all(&mut self) {
+        for v in self.attack_map.as_flat_mut_slice().iter_mut() {
+            *v = !*v;
+        }
+        // Remember that origin cannot be set.
+        self.attack_map[(self.radius, self.radius)] = false;
+    }
+
+    fn set_symmetric_from_canonical(&mut self, canonical: GridVector, enabled: bool) {
+        for attack_vector in symmetries(&canonical) {
+            if let Some((x, y)) = Self::attack_offset_to_index(&attack_vector, self.radius) {
+                self.attack_map[(x, y)] = enabled;
+            }
+        }
+        // Remember that origin cannot be set.
+        self.attack_map[(self.radius, self.radius)] = false;
+    }
+
+    /// Returns the cardinal attack vector for the selected piece
+    /// or `None` if no piece was selected.
+    fn show_piece_selector(ui: &mut Ui, radius: usize) -> Option<GridVector> {
+        let mut clicked = None;
+        ui_layout_2d(ui, radius + 1, radius, |ui, x, y| {
+            let xx = x;
+            let yy = y + 1;
+            if xx <= yy {
+                let mut button = ui.button(format!("({xx},{yy})"));
+                
+                if let Some(name) =
+                    leaper_name_from_attack_vector(&GridVector::new(xx as i32, yy as i32))
+                {
+                    button = button.on_hover_text(name);
+                }
+                
+                if button.clicked() {
+                    clicked = Some(GridVector::new(xx as i32, yy as i32));
+                }
+            }
+        });
+        clicked
+    }
+
+    fn show_actions(&mut self, ui: &mut Ui) {
+        ui.menu_button("Ops", |ui| {
+            if ui.button("Clear").clicked() {
+                self.set_all(false);
+            }
+            if ui.button("Fill").clicked() {
+                self.set_all(true);
+            }
+            if ui.button("Inv").clicked() {
+                self.invert_all();
+            }
+            ui.menu_button("Add", |ui| {
+                if let Some(piece) = Self::show_piece_selector(ui, self.radius) {
+                    self.set_symmetric_from_canonical(piece, true);
+                }
+            });
+            ui.menu_button("Sub", |ui| {
+                if let Some(piece) = Self::show_piece_selector(ui, self.radius) {
+                    self.set_symmetric_from_canonical(piece, false);
+                }
+            });
+        });
     }
 
     fn attack_map_to_json(&self) -> Value {
@@ -247,6 +323,8 @@ impl StatefulWidget for LeaperAttacksInput {
                         {
                             self.apply_enabled_symmetrically();
                         }
+
+                        self.show_actions(ui);
                     });
 
                     self.show_player_config_attack_map(ui);

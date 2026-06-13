@@ -1,7 +1,36 @@
-﻿use crate::io::{ReadFrom, WriteTo};
+﻿use std::cmp;
+use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::{symmetries, GridPoint, GridVector};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
+
+static LEAPER_NAMES: std::sync::LazyLock<BTreeMap::<(i32, i32), &str>> = std::sync::LazyLock::new(|| {
+    let mut names = BTreeMap::<(i32, i32), &str>::new();
+    names.insert((0, 1), "Vazir");
+    names.insert((0, 2), "Dabbaba");
+    names.insert((0, 3), "Threeleaper");
+    names.insert((0, 4), "Fourleaper");
+    names.insert((1, 1), "Ferz");
+    names.insert((1, 2), "Knight");
+    names.insert((1, 3), "Camel");
+    names.insert((1, 4), "Giraffe");
+    names.insert((2, 2), "Alfil");
+    names.insert((2, 3), "Zebra");
+    names.insert((2, 4), "Stag");
+    names.insert((3, 3), "Tripper");
+    names.insert((3, 4), "Antelope");
+    names.insert((4, 4), "Commuter");
+    names
+});
+
+pub fn leaper_name_from_attack_vector(v: &GridVector) -> Option<&'static str> {
+    let canonical = GridVector::new(
+        cmp::min(v.x.abs(), v.y.abs()),
+        cmp::max(v.x.abs(), v.y.abs()),
+    );
+
+    LEAPER_NAMES.get(&(canonical.x, canonical.y)).copied()
+}
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacks {
