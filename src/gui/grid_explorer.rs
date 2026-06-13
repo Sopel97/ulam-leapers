@@ -439,7 +439,7 @@ impl GridViewControls {
         }
     }
 
-    fn show_save(&mut self, ui: &mut Ui) {
+    fn show_save_ui(&mut self, ui: &mut Ui) {
         match &self.save_state {
             SaveState::NotSaved => {
                 ui.label("Simulation is not saved!");
@@ -459,28 +459,7 @@ impl GridViewControls {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
-        let turns = self.finalized_simulation.complete_turns();
-        let complete_shells = self.finalized_simulation.complete_shells();
-        let side_cells = complete_shells.max(1) as usize * 2 - 1;
-        let cells = side_cells * side_cells;
-        let memory_usage = self.finalized_simulation.memory_usage();
-        let player_count = self.finalized_simulation.player_count();
-
-        ui.heading("Info");
-        ui.label(format!("Turns: {}M", turns / 1000 / 1000));
-        ui.label(format!("Complete shells: {}", complete_shells));
-        ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
-        ui.label(format!("Size in memory: {}", memory_usage.display().si()));
-        ui.label(format!(
-            "Pointer: {}, {}",
-            self.last_pointed_coords.x, self.last_pointed_coords.y
-        ));
-
-        self.show_save(ui);
-
-        ui.heading("Controls");
-
+    fn show_mipmaps_ui(&mut self, ui: &mut Ui) {
         let mut grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
 
         // Handle various stages of mipmap generation.
@@ -541,8 +520,13 @@ impl GridViewControls {
                 // in extreme cases. It's not an error.
             }
         }
+    }
 
+    fn show_zoom_origin_ui(&mut self, ui: &mut Ui) {
+        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
+        let complete_shells = self.finalized_simulation.complete_shells();
         let zoom_range = self.zoom_range(&grid_renderer_mutex_guard);
+
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
                 .text("Zoom")
@@ -556,17 +540,22 @@ impl GridViewControls {
                 &mut self.origin_x,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
-            .text("X")
-            .drag_value_speed(coord_drag_speed),
+                .text("X")
+                .drag_value_speed(coord_drag_speed),
         );
         ui.add(
             egui::Slider::new(
                 &mut self.origin_y,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
-            .text("Y")
-            .drag_value_speed(coord_drag_speed),
+                .text("Y")
+                .drag_value_speed(coord_drag_speed),
         );
+    }
+
+    fn show_player_colors_ui(&mut self, ui: &mut Ui) {
+        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
+        let player_count = self.finalized_simulation.player_count();
 
         for player_id in 0..=player_count {
             ui.horizontal_wrapped(|ui| {
@@ -579,7 +568,7 @@ impl GridViewControls {
                         &mut self.player_colors[player_id],
                         Alpha::Opaque,
                     )
-                    .changed()
+                        .changed()
                     {
                         self.have_colors_changed = true;
                     }
@@ -592,10 +581,28 @@ impl GridViewControls {
             });
             ui.end_row();
         }
+    }
 
-        ui.heading("Screenshots ❓")
-            .on_hover_text("Currently it only provides a way to save small PNG images.\n\
-            Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
+    fn show_info_ui(&mut self, ui: &mut Ui) {
+        let turns = self.finalized_simulation.complete_turns();
+        let complete_shells = self.finalized_simulation.complete_shells();
+        let side_cells = complete_shells.max(1) as usize * 2 - 1;
+        let cells = side_cells * side_cells;
+        let memory_usage = self.finalized_simulation.memory_usage();
+
+        ui.label(format!("Turns: {}M", turns / 1000 / 1000));
+        ui.label(format!("Complete shells: {}", complete_shells));
+        ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
+        ui.label(format!("Size in memory: {}", memory_usage.display().si()));
+        ui.label(format!(
+            "Pointer: {}, {}",
+            self.last_pointed_coords.x, self.last_pointed_coords.y
+        ));
+    }
+
+    fn show_screenshots_ui(&mut self, ui: &mut Ui) {
+        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
+        let zoom_range = self.zoom_range(&grid_renderer_mutex_guard);
 
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2_png, zoom_range)
@@ -615,9 +622,9 @@ impl GridViewControls {
 
         if ui.button("Screenshot").clicked()
             && let Some(path) = rfd::FileDialog::new()
-                .add_filter("PNG", &["png"])
-                .set_file_name("image.png")
-                .save_file()
+            .add_filter("PNG", &["png"])
+            .set_file_name("image.png")
+            .save_file()
         {
             let s = self.png_extent;
             let render_params =
@@ -634,5 +641,24 @@ impl GridViewControls {
             let mut writer = encoder.write_header().unwrap();
             writer.write_image_data(image.as_raw()).unwrap();
         }
+    }
+
+    fn ui(&mut self, ui: &mut Ui) {
+        ui.heading("Info");
+
+        self.show_info_ui(ui);
+        self.show_save_ui(ui);
+
+        ui.heading("Controls");
+
+        self.show_mipmaps_ui(ui);
+        self.show_zoom_origin_ui(ui);
+        self.show_player_colors_ui(ui);
+
+        ui.heading("Screenshots ❓")
+            .on_hover_text("Currently it only provides a way to save small PNG images.\n\
+            Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
+
+        self.show_screenshots_ui(ui);
     }
 }
