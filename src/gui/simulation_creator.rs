@@ -24,7 +24,10 @@ use crate::gui::render::samplers::MapLastCollector;
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
 const MAX_PLAYER_COUNT: usize = 8;
-const MAX_PIECE_RANGE: usize = 5;
+
+const MIN_ATTACK_RADIUS: usize = 3;
+const DEFAULT_ATTACK_RADIUS: usize = 5;
+const MAX_ATTACK_RADIUS: usize = 7;
 
 const MIN_TURNS: usize = 1_000_000;
 const DEFAULT_TURNS: usize = 1_000 * 1_000_000;
@@ -159,7 +162,7 @@ impl SimulationCreator {
 
     pub fn make_creation_state_constraints() -> SimulationConfigInputConstraints {
         SimulationConfigInputConstraints {
-            attack_radius: MAX_PIECE_RANGE..=MAX_PIECE_RANGE,
+            attack_radius: MIN_ATTACK_RADIUS..=MAX_ATTACK_RADIUS,
             memory_usage: MIN_MEMORY_USAGE..=MAX_MEMORY_USAGE,
             complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
             player_count: Self::get_player_count_range(),
@@ -174,6 +177,7 @@ impl SimulationCreator {
         let mut state = SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
+        state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
 
         Self {
             state,

@@ -1,4 +1,5 @@
-﻿use crate::gui::widgets::misc::ui_layout_2d;
+﻿use std::cmp;
+use crate::gui::widgets::misc::ui_layout_2d;
 use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
@@ -8,6 +9,7 @@ use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::piece::LeaperAttacks;
 use ulam_leapers::math::coords::{symmetries, GridVector};
+use ulam_leapers::util::blit::{blit_array2d, Blit2D};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -63,6 +65,21 @@ impl LeaperAttacksInput {
             )));
         }
 
+        let wh = radius * 2 + 1;
+        let diff = radius as i32 - self.radius as i32;
+        let blit_w = cmp::min(self.attack_map.width(), wh);
+        let blit_h = cmp::min(self.attack_map.height(), wh);
+        let mut new_attack_map = Array2D::new(wh, wh);
+        blit_array2d(&self.attack_map, &mut new_attack_map, &Blit2D {
+            src_x: (-diff).max(0) as usize,
+            src_y: (-diff).max(0) as usize,
+            dst_x: diff.max(0) as usize,
+            dst_y: diff.max(0) as usize,
+            width: blit_w,
+            height: blit_h,
+        });
+
+        self.attack_map = new_attack_map;
         self.radius = radius;
 
         Ok(())
@@ -70,6 +87,10 @@ impl LeaperAttacksInput {
 
     pub fn set_player_name(&mut self, name: String) {
         self.internal_state.name = Some(name);
+    }
+
+    pub fn radius(&self) -> usize {
+        self.radius
     }
 
     pub fn build_leaper_attacks(&self) -> LeaperAttacks {

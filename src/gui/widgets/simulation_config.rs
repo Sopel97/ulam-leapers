@@ -24,6 +24,7 @@ pub struct SimulationConfigInputConstraints {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationConfigInput {
     player_count: usize,
+    attack_radius: usize,
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
     simulation_limits: SimulationLimitsInput,
@@ -33,6 +34,7 @@ pub struct SimulationConfigInput {
 
 impl SimulationConfigInput {
     pub fn new(constraints: SimulationConfigInputConstraints) -> Result<Self, WidgetError> {
+        let attack_radius = *constraints.attack_radius.start();
         let player_count = *constraints.player_count.start();
         let mut player_configs = vec![];
         player_configs.resize_with(player_count, || {
@@ -48,6 +50,7 @@ impl SimulationConfigInput {
 
         Ok(SimulationConfigInput {
             player_count,
+            attack_radius,
             player_configs,
             player_relations,
             simulation_limits,
@@ -99,8 +102,34 @@ impl SimulationConfigInput {
         self.set_player_count_ignore_current(player_count)
     }
 
+    pub fn set_attack_radius(&mut self, attack_radius: usize) -> Result<(), WidgetError> {
+        self.set_attack_radius_ignore_current(attack_radius)
+    }
+
     fn on_player_count_changed(&mut self) -> Result<(), WidgetError> {
         self.set_player_count_ignore_current(self.player_count)
+    }
+
+    fn on_attack_radius_changed(&mut self) -> Result<(), WidgetError> {
+        self.set_attack_radius_ignore_current(self.attack_radius)
+    }
+
+    /// Ignores the current value of `self.attack_radius`.
+    fn set_attack_radius_ignore_current(&mut self, attack_radius: usize) -> Result<(), WidgetError> {
+        if !self.constraints.attack_radius.contains(&attack_radius) {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Attack radius {} outside of allowed range {:?}",
+                attack_radius, self.constraints.attack_radius
+            )));
+        }
+
+        for player_config in self.player_configs.iter_mut() {
+            player_config.set_radius(attack_radius)?;
+        }
+
+        self.attack_radius = attack_radius;
+
+        Ok(())
     }
 
     /// Ignores the current value of `self.player_count`.
@@ -113,7 +142,9 @@ impl SimulationConfigInput {
         }
 
         self.player_configs.resize_with(player_count, || {
-            LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints())
+            let mut res = LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints());
+            res.set_radius(self.attack_radius).unwrap();
+            res
         });
         self.player_relations.set_player_count(player_count)?;
 
@@ -156,6 +187,7 @@ impl JsonWidget for SimulationConfigInput {
             "player_configs": self.player_configs.iter().take(self.player_count).map(|p| p.to_json()).collect::<Vec<_>>(),
             "player_relations": self.player_relations.to_json(),
             "simulation_limits": self.simulation_limits.to_json(),
+            "attack_radius": self.attack_radius,
         })
     }
 
@@ -176,6 +208,7 @@ impl JsonWidget for SimulationConfigInput {
             .into());
         }
 
+        let attack_radius = json.read_u64("attack_radius")? as usize;
         let player_configs = json
             .read_array("player_configs")?
             .iter()
@@ -189,6 +222,17 @@ impl JsonWidget for SimulationConfigInput {
                 player_count
             ))
             .into());
+        }
+
+        for player_config in &player_configs {
+            if player_config.radius() != attack_radius {
+                return Err(WidgetError::InvalidState(format!(
+                    "Attack radius in player config {} does not match global radius {}",
+                    player_config.radius(),
+                    attack_radius
+                ))
+                .into());
+            }
         }
 
         let player_relations = PlayerRelationsInput::try_from_json(
@@ -212,6 +256,7 @@ impl JsonWidget for SimulationConfigInput {
 
         Ok(Self {
             player_count,
+            attack_radius,
             player_configs,
             player_relations,
             simulation_limits,
@@ -283,20 +328,36 @@ impl SimulationConfigInput {
     }
 
     fn show_player_count_selector(&mut self, ui: &mut Ui) {
-        if ui
-            .add(
-                Slider::new(
-                    &mut self.player_count,
-                    self.constraints.player_count.clone(),
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    Slider::new(
+                        &mut self.player_count,
+                        self.constraints.player_count.clone(),
+                    )
+                    .integer()
+                    .text("Player count"),
                 )
-                .integer()
-                .text("Player count"),
-            )
-            .changed()
-        {
-            self.on_player_count_changed()
-                .expect("The slider should be within the allowed range");
-        }
+                .changed()
+            {
+                self.on_player_count_changed()
+                    .expect("The slider should be within the allowed range");
+            }
+            if ui
+                .add(
+                    Slider::new(
+                        &mut self.attack_radius,
+                        self.constraints.attack_radius.clone(),
+                    )
+                        .integer()
+                        .text("Attack radius"),
+                )
+                .changed()
+            {
+                self.on_attack_radius_changed()
+                    .expect("The slider should be within the allowed range");
+            }
+        });
     }
 }
 
