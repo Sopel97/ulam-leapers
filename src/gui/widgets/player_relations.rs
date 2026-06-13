@@ -65,6 +65,10 @@ impl PlayerRelationsInput {
         enemy_map
     }
 
+    pub fn is_symmetric(&self) -> bool {
+        self.is_symmetric
+    }
+
     pub fn player_count(&self) -> usize {
         self.player_count
     }

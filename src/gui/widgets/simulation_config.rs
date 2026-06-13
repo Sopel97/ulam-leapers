@@ -316,13 +316,23 @@ impl SimulationConfigInput {
                 let attacker_rect = config_responses[attacker.index() - 1].rect;
                 let attacked_rect = config_responses[attacked.index() - 1].rect;
 
+                let attacker_color;
+                let attacked_color;
+                if attacker == attacked || self.player_relations.is_symmetric() {
+                    attacker_color = Color32::YELLOW;
+                    attacked_color = Color32::YELLOW;
+                } else {
+                    attacker_color = Color32::GREEN;
+                    attacked_color = Color32::RED;
+                }
+
                 let mut attacker_painter = ui.painter_at(attacker_rect);
                 attacker_painter.set_opacity(0.1);
-                attacker_painter.rect_filled(attacker_rect, 5, Color32::GREEN);
+                attacker_painter.rect_filled(attacker_rect, 5, attacker_color);
 
                 let mut attacked_painter = ui.painter_at(attacked_rect);
                 attacked_painter.set_opacity(0.1);
-                attacked_painter.rect_filled(attacked_rect, 5, Color32::RED);
+                attacked_painter.rect_filled(attacked_rect, 5, attacked_color);
             }
         });
     }
