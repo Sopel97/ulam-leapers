@@ -1,13 +1,16 @@
 ﻿use crate::gui::render::grid_render::default_player_colors;
+use crate::gui::render::samplers::MapLastCollector;
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::widgets::simulation_config::{SimulationConfigInput, SimulationConfigInputConstraints};
+use crate::gui::widgets::simulation_config::{
+    SimulationConfigInput, SimulationConfigInputConstraints,
+};
 use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
 use eframe::egui;
 use eframe::egui::{
-    pos2, Color32, ColorImage, Context, Rect, ScrollArea, Slider, TextureFilter,
-    TextureOptions, TextureWrapMode, Ui, Vec2,
+    pos2, vec2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect, ScrollArea,
+    Slider, Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2,
 };
 use eframe::epaint::TextureHandle;
 use std::ops::RangeInclusive;
@@ -15,11 +18,10 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
-use ulam_leapers::game::simulation::{PlayerId, Simulation, SimulationLimits};
+use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::render::samplers::MapLastCollector;
 
 const MIN_PLAYER_COUNT: usize = 1;
 const DEFAULT_PLAYER_COUNT: usize = 2;
@@ -174,7 +176,8 @@ impl SimulationCreator {
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
 
-        let mut state = SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
+        let mut state =
+            SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
@@ -241,19 +244,38 @@ impl Subwindow for SimulationCreator {
             // Actions
             ui.horizontal(|ui| {
                 ui.group(|ui| {
-                    if ui.button("Start").clicked() {
-                        submit = true;
-                    }
+                    ui.scope(|ui| {
+                        ui.style_mut()
+                            .text_styles
+                            .insert(TextStyle::Body, FontId::new(24.0, FontFamily::Proportional));
+                        let start_button = Button::new("START")
+                            .min_size(vec2(100.0, 40.0))
+                            .corner_radius(10.0)
+                            .stroke(Stroke::new(4.0, Color32::WHITE));
+                        if ui.add(start_button).clicked() {
+                            submit = true;
+                        }
+                    });
 
                     ui.separator();
 
-                    if ui.button("Export").on_hover_text("Export to clipboard").clicked() {
-                        ui.copy_text(self.state_json_actual.clone());
-                    }
+                    ui.vertical(|ui| {
+                        if ui
+                            .button("Export")
+                            .on_hover_text("Export to clipboard")
+                            .clicked()
+                        {
+                            ui.copy_text(self.state_json_actual.clone());
+                        }
 
-                    if ui.button("Import").on_hover_text("Import from clipboard").clicked() {
-                        ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-                    }
+                        if ui
+                            .button("Import")
+                            .on_hover_text("Import from clipboard")
+                            .clicked()
+                        {
+                            ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                        }
+                    });
 
                     ui.input(|i| {
                         for event in &i.events {
@@ -327,7 +349,8 @@ impl SimulationCreator {
     fn update_state_json(&mut self) {
         self.state_json_actual = self.state.to_json().to_string();
         let json = &serde_json::from_str(self.state_json_actual.as_str()).unwrap();
-        SimulationConfigInput::try_from_json(json, Self::make_creation_state_constraints()).unwrap();
+        SimulationConfigInput::try_from_json(json, Self::make_creation_state_constraints())
+            .unwrap();
         self.state_json_ui = self.state_json_actual.clone();
     }
 
