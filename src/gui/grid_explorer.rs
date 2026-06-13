@@ -6,7 +6,10 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, TextureHandle, Ui};
+use eframe::egui::{
+    color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense,
+    TextureHandle, Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -540,16 +543,16 @@ impl GridViewControls {
                 &mut self.origin_x,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
-                .text("X")
-                .drag_value_speed(coord_drag_speed),
+            .text("X")
+            .drag_value_speed(coord_drag_speed),
         );
         ui.add(
             egui::Slider::new(
                 &mut self.origin_y,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
-                .text("Y")
-                .drag_value_speed(coord_drag_speed),
+            .text("Y")
+            .drag_value_speed(coord_drag_speed),
         );
     }
 
@@ -557,30 +560,39 @@ impl GridViewControls {
         let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
         let player_count = self.finalized_simulation.player_count();
 
-        for player_id in 0..=player_count {
-            ui.horizontal_wrapped(|ui| {
-                // Disallow color picking after mipmaps have been generated
-                if !grid_renderer_mutex_guard.can_set_colors() {
-                    color_picker::show_color(ui, self.player_colors[player_id], vec2(16.0, 16.0));
-                } else {
-                    if color_picker::color_edit_button_srgba(
-                        ui,
-                        &mut self.player_colors[player_id],
-                        Alpha::Opaque,
-                    )
+        // TODO: Columns for some reason take more space than necessary.
+        //       This `set_max_width` is a hack to make it about as much as it should.
+        ui.set_max_width(200.0);
+        ui.columns(2, |columns| {
+            for player_id in 0..=player_count {
+                let column = &mut columns[player_id % 2];
+                column.horizontal_wrapped(|ui| {
+                    // Disallow color picking after mipmaps have been generated
+                    if !grid_renderer_mutex_guard.can_set_colors() {
+                        color_picker::show_color(
+                            ui,
+                            self.player_colors[player_id],
+                            vec2(16.0, 16.0),
+                        );
+                    } else {
+                        if color_picker::color_edit_button_srgba(
+                            ui,
+                            &mut self.player_colors[player_id],
+                            Alpha::Opaque,
+                        )
                         .changed()
-                    {
-                        self.have_colors_changed = true;
+                        {
+                            self.have_colors_changed = true;
+                        }
                     }
-                }
-                if player_id == 0 {
-                    ui.label("Empty");
-                } else {
-                    ui.label(format!("Player {}", player_id));
-                }
-            });
-            ui.end_row();
-        }
+                    if player_id == 0 {
+                        ui.label("Empty");
+                    } else {
+                        ui.label(format!("Player {}", player_id));
+                    }
+                });
+            }
+        })
     }
 
     fn show_info_ui(&mut self, ui: &mut Ui) {
@@ -622,9 +634,9 @@ impl GridViewControls {
 
         if ui.button("Screenshot").clicked()
             && let Some(path) = rfd::FileDialog::new()
-            .add_filter("PNG", &["png"])
-            .set_file_name("image.png")
-            .save_file()
+                .add_filter("PNG", &["png"])
+                .set_file_name("image.png")
+                .save_file()
         {
             let s = self.png_extent;
             let render_params =
