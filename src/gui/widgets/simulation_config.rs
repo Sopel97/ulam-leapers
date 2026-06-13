@@ -327,30 +327,35 @@ impl SimulationConfigInput {
         });
     }
 
-    fn show_player_count_selector(&mut self, ui: &mut Ui) {
+    fn show_player_count_and_range_selector(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
+            // Default slider width is 100.0, and we need it to be slightly less to fit.
+            ui.style_mut().spacing.slider_width = 60.0;
+            ui.label("Players:");
             if ui
                 .add(
                     Slider::new(
                         &mut self.player_count,
                         self.constraints.player_count.clone(),
                     )
-                    .integer()
-                    .text("Player count"),
+                    .integer(),
                 )
                 .changed()
             {
                 self.on_player_count_changed()
                     .expect("The slider should be within the allowed range");
             }
+
+            ui.separator();
+
+            ui.label("Range:");
             if ui
                 .add(
                     Slider::new(
                         &mut self.attack_radius,
                         self.constraints.attack_radius.clone(),
                     )
-                        .integer()
-                        .text("Attack radius"),
+                        .integer(),
                 )
                 .changed()
             {
@@ -366,7 +371,7 @@ impl StatefulWidget for SimulationConfigInput {
         egui::Frame::default()
             .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    self.show_player_count_selector(ui);
+                    self.show_player_count_and_range_selector(ui);
 
                     self.show_simulation_config(ui);
                 });
