@@ -1,5 +1,6 @@
-﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
-use eframe::egui::{Checkbox, Color32, Response, Sense, Ui, Vec2};
+﻿use crate::gui::widgets::misc::ui_layout_2d;
+use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
 use serde_json::{json, Value};
 use std::cmp;
 use std::collections::HashMap;
@@ -109,28 +110,26 @@ impl PlayerRelationsInput {
 
         let mut checkboxes = HashMap::new();
 
-        ui.spacing_mut().item_spacing = Vec2::ZERO;
-        ui.vertical(|ui| {
-            for y in 0..self.enemy_map.height() {
-                ui.horizontal(|ui| {
-                    for x in 0..self.enemy_map.width() {
-                        let checkbox_widget = Checkbox::new(&mut self.enemy_map[(x, y)], "");
-                        let checkbox = ui.add(checkbox_widget);
-                        if checkbox.changed() && self.is_symmetric {
-                            self.copy_symmetrically(x, y);
-                        }
+        ui_layout_2d(
+            ui,
+            self.enemy_map.width(),
+            self.enemy_map.height(),
+            |ui, x, y| {
+                let checkbox_widget = Checkbox::new(&mut self.enemy_map[(x, y)], "");
+                let checkbox = ui.add(checkbox_widget);
+                if checkbox.changed() && self.is_symmetric {
+                    self.copy_symmetrically(x, y);
+                }
 
-                        let checkbox_hover_sense = ui.allocate_rect(checkbox.rect, Sense::hover());
-                        if checkbox_hover_sense.hovered() {
-                            self.internal_state.hovered_attacker_attacked =
-                                Some(Self::index_to_attacker_attacked(x, y));
-                        }
+                let checkbox_hover_sense = ui.allocate_rect(checkbox.rect, Sense::hover());
+                if checkbox_hover_sense.hovered() {
+                    self.internal_state.hovered_attacker_attacked =
+                        Some(Self::index_to_attacker_attacked(x, y));
+                }
 
-                        checkboxes.insert((x, y), checkbox);
-                    }
-                });
-            }
-        });
+                checkboxes.insert((x, y), checkbox);
+            },
+        );
 
         if self.is_symmetric
             && let Some(hovered) = self.internal_state.hovered_attacker_attacked
