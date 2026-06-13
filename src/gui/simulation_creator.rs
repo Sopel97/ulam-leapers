@@ -245,6 +245,24 @@ impl Subwindow for SimulationCreator {
                         submit = true;
                     }
 
+                    ui.separator();
+
+                    if ui.button("Export").on_hover_text("Export to clipboard").clicked() {
+                        ui.copy_text(self.state_json_actual.clone());
+                    }
+
+                    if ui.button("Import").on_hover_text("Import from clipboard").clicked() {
+                        ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                    }
+
+                    ui.input(|i| {
+                        for event in &i.events {
+                            if let egui::Event::Paste(text) = event {
+                                self.state_json_ui = text.clone();
+                            }
+                        }
+                    });
+
                     Self::show_import_export(ui, &mut self.state_json_ui);
                 });
             });
