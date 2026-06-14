@@ -6,10 +6,7 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui;
 use eframe::egui::color_picker::Alpha;
-use eframe::egui::{
-    color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense,
-    TextureHandle, Ui,
-};
+use eframe::egui::{color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, Stroke, StrokeKind, TextureHandle, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -21,9 +18,11 @@ use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::GridPoint;
-use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
+use ulam_leapers::math::pow2::{floor_to_multiple, mod_floor, Pow2};
+use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 
 #[derive(Debug)]
 pub enum SaveState {
@@ -85,10 +84,18 @@ impl Subwindow for GridExplorer {
                     self.grid_view_controls.ui(ui);
                 });
 
-            let rect = ui.clip_rect(); // Full canvas
+            // The projection will give us a more restricted viewport.
+            let proj = GridViewControls::make_projection(
+                self.grid_view_controls.zoom_pow2,
+                GridPoint::new(self.grid_view_controls.origin_x as i32, self.grid_view_controls.origin_y as i32),
+                egui_to_grid_rect(ui.clip_rect()),
+            );
+            let rect = proj.screen_rect();
 
-            self.maybe_update_canvas_texture(ui, rect);
-            self.draw_canvas_texture(ui, rect);
+            if rect.width() >= MIN_CANVAS_WIDTH && rect.height() >= MIN_CANVAS_HEIGHT {
+                self.maybe_update_canvas_texture(ui, rect);
+                self.draw_canvas_texture(ui, rect);
+            }
 
             if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
                 self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
@@ -119,6 +126,11 @@ const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
 const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
+
+const SCREEN_TO_WORLD_AXIS_FLIP: FlipAxis = FlipAxis::Y;
+
+const MIN_CANVAS_WIDTH: i32 = 1;
+const MIN_CANVAS_HEIGHT: i32 = 1;
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
@@ -171,29 +183,30 @@ impl GridExplorer {
         self.grid_view_controls.assume_saved();
     }
 
-    fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
-        let painter = ui.painter_at(rect);
+    fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: GridRect) {
+        let egui_rect = grid_rect_to_egui(rect);
+        let painter = ui.painter_at(egui_rect);
 
         // background
-        painter.rect_filled(rect, 0.0, self.grid_view_controls.player_colors[0]);
+        painter.rect_filled(egui_rect, 0.0, self.grid_view_controls.player_colors[0]);
 
         if let Some(handle) = &self.grid_render_texture {
             // y-flip via uv
             painter.image(
                 handle.id(),
-                rect,
+                egui_rect,
                 Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
                 Color32::WHITE,
             );
         }
     }
 
-    fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, rect: Rect) {
+    fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, rect: GridRect) {
         // For the caching to be effective there needs to space for at least a few
         // framebuffers worth of data.
         const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
 
-        self.grid_view_controls.update_from_canvas_events(ui, &rect);
+        self.grid_view_controls.update_from_canvas_events(ui, rect);
 
         let framebuffer_size =
             rect.width() as usize * rect.height() as usize * size_of::<Color32>();
@@ -203,9 +216,7 @@ impl GridExplorer {
             .unwrap()
             .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
-        let curr_grid_render_params = self
-            .grid_view_controls
-            .to_render_params(rect.width() as usize, rect.height() as usize);
+        let curr_grid_render_params = self.grid_view_controls.to_render_params(rect);
 
         if self.last_grid_render_params != curr_grid_render_params
             || self.grid_view_controls.have_colors_changed
@@ -234,17 +245,25 @@ impl GridExplorer {
         }
     }
 
-    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, viewport: Rect) {
+    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, viewport: GridRect) {
         let pointed_coords = self.grid_view_controls.last_pointed_coords();
-        let chunk = self.finalized_simulation.get_chunk_containing(&pointed_coords);
+        let chunk = self
+            .finalized_simulation
+            .get_chunk_containing(&pointed_coords);
         if let Some(chunk) = chunk {
             let chunk_bounds = chunk.bounds();
-
-            // TODO: this
+            let proj = GridViewControls::make_projection(
+                self.grid_view_controls.zoom_pow2,
+                GridPoint::new(self.grid_view_controls.origin_x as i32, self.grid_view_controls.origin_y as i32),
+                viewport,
+            );
+            let chunk_bounds_screen_space = proj.world_to_screen_rect(*chunk_bounds);
+            let painter = ui.painter_at(grid_rect_to_egui(viewport));
+            painter.rect(grid_rect_to_egui(chunk_bounds_screen_space), 0, Color32::TRANSPARENT, Stroke::new(1.0, Color32::GREEN), StrokeKind::Outside);
         }
     }
 
-    fn show_debug_ui(&mut self, ui: &mut Ui, rect: Rect) {
+    fn show_debug_ui(&mut self, ui: &mut Ui, rect: GridRect) {
         self.show_pointed_chunk_overlay(ui, rect);
     }
 }
@@ -293,80 +312,59 @@ impl GridViewControls {
         }
     }
 
+    pub fn make_projection(
+        zoom_pow2: i32,
+        origin_world: GridPoint,
+        mut rect: GridRect,
+    ) -> ScreenWorldDiscrete2D {
+        if zoom_pow2 > 0 {
+            // Restrict viewport to bounds compatible with the alignment required by the zoom.
+            let factor = Pow2::from_exponent(zoom_pow2 as u8);
+            let w = floor_to_multiple(rect.width(), factor);
+            let h = floor_to_multiple(rect.height(), factor);
+            let dx = mod_floor(rect.width(), factor) / 2;
+            let dy = mod_floor(rect.height(), factor) / 2;
+            let min = GridPoint::new(rect.start.x + dx, rect.start.y + dy);
+            rect = GridRect::with_size(min, w, h);
+        }
+
+        ScreenWorldDiscrete2D::new(
+            zoom_pow2,
+            origin_world,
+            rect,
+            SCREEN_TO_WORLD_AXIS_FLIP,
+        )
+    }
+
     fn render_params(
         zoom_pow2: i32,
-        origin_x: f32,
-        origin_y: f32,
-        viewport_width: i32,
-        viewport_height: i32,
+        origin_world: GridPoint,
+        rect: GridRect,
     ) -> GridRenderParameters {
         let zoom = match zoom_pow2 {
             e @ 0.. => Magnification(Pow2::from_exponent(e as u8)),
             e @ ..0 => Minification(Pow2::from_exponent((-e) as u8)),
         };
-
-        let bounds = match zoom {
-            Magnification(factor) => {
-                let origin_x = origin_x as i32;
-                let origin_y = origin_y as i32;
-
-                GridRect::with_size(
-                    GridPoint::new(
-                        origin_x - div_floor(viewport_width / 2, factor),
-                        origin_y - div_floor(viewport_height / 2, factor),
-                    ),
-                    div_floor(viewport_width, factor),
-                    div_floor(viewport_height, factor),
-                )
-            }
-            Minification(factor) => {
-                // We have to ensure proper alignment for the sampling.
-                let origin_x = floor_to_multiple(origin_x as i32, factor);
-                let origin_y = floor_to_multiple(origin_y as i32, factor);
-                let factor_i32: i32 = factor.as_u64() as i32;
-
-                GridRect::with_size(
-                    GridPoint::new(
-                        floor_to_multiple(origin_x, factor) - viewport_width / 2 * factor_i32,
-                        floor_to_multiple(origin_y, factor) - viewport_height / 2 * factor_i32,
-                    ),
-                    viewport_width * factor_i32,
-                    viewport_height * factor_i32,
-                )
-            }
-        };
-
+        let proj = Self::make_projection(zoom_pow2, origin_world, rect);
+        let bounds = proj.world_rect();
         GridRenderParameters::new(bounds, zoom)
     }
 
-    pub fn to_render_params(
-        &self,
-        viewport_width: usize,
-        viewport_height: usize,
-    ) -> GridRenderParameters {
+    pub fn to_render_params(&self, viewport: GridRect) -> GridRenderParameters {
         Self::render_params(
             self.zoom_pow2,
-            self.origin_x,
-            self.origin_y,
-            viewport_width as i32,
-            viewport_height as i32,
+            GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+            viewport,
         )
     }
 
-    fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: &Rect) {
-        let response = ui.allocate_rect(*viewport, Sense::drag() | Sense::hover() | Sense::click());
+    fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: GridRect) {
+        let response = ui.allocate_rect(grid_rect_to_egui(viewport), Sense::drag() | Sense::hover() | Sense::click());
 
         let get_mouse_pos_in_grid_space = |response: &Response| {
-            let middle_pos = (viewport.max - viewport.min.to_vec2()) * 0.5f32;
+            let middle_pos = (response.rect.max - response.rect.min.to_vec2()) * 0.5f32;
             let mouse = response
                 .hover_pos()
-                .map(|pos| {
-                    // Invert y to match world coordinates.
-                    pos2(
-                        pos.x - viewport.min.x,
-                        viewport.height() - (pos.y - viewport.min.y),
-                    )
-                })
                 .unwrap_or(middle_pos);
 
             let mouse_relative_to_center = mouse - middle_pos;
@@ -388,33 +386,17 @@ impl GridViewControls {
             let zoom_range = self.zoom_range(&self.grid_renderer.lock().unwrap());
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
-            {
-                // Last pointed coords needs to be more precise.
-                // Use the actual bounds from rendering.
-                // Interpolate within the viewport.
-                let render_params =
-                    self.to_render_params(viewport.width() as usize, viewport.height() as usize);
-                let tx = mouse.x / viewport.width();
-                let ty = mouse.y / viewport.height();
-                let mouse_world_x = render_params.bounds().start.x as f32 * (1.0 - tx)
-                    + render_params.bounds().end.x as f32 * tx;
-                let mouse_world_y = render_params.bounds().start.y as f32 * (1.0 - ty)
-                    + render_params.bounds().end.y as f32 * ty;
-                self.last_pointed_coords =
-                    GridPoint::new(mouse_world_x.floor() as i32, mouse_world_y.floor() as i32);
-            }
+            let proj = Self::make_projection(self.zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
+            self.last_pointed_coords = proj.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
 
-            // Reproject with respect to the origin
             if new_zoom_pow2 != self.zoom_pow2 {
-                let old_scale = (self.zoom_pow2 as f32).exp2();
-                let new_scale = (new_zoom_pow2 as f32).exp2();
+                let proj_new = Self::make_projection(new_zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
 
-                let mouse_world_x = self.origin_x + mouse_relative_to_center.x / old_scale;
-                let mouse_world_y = self.origin_y + mouse_relative_to_center.y / old_scale;
-
-                self.origin_x = mouse_world_x - mouse_relative_to_center.x / new_scale;
-                self.origin_y = mouse_world_y - mouse_relative_to_center.y / new_scale;
-
+                let mouse_world = proj.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
+                let mouse_world_new = proj_new.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
+                let diff = mouse_world - mouse_world_new;
+                self.origin_x += diff.x as f32;
+                self.origin_y += diff.y as f32;
                 self.zoom_pow2 = new_zoom_pow2;
             }
         }
@@ -436,8 +418,8 @@ impl GridViewControls {
         {
             let (_mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
 
-            let tx = mouse_relative_to_center.x / viewport.width() * 2.0;
-            let ty = mouse_relative_to_center.y / viewport.height() * 2.0;
+            let tx = mouse_relative_to_center.x / viewport.width() as f32 * 2.0;
+            let ty = mouse_relative_to_center.y / viewport.height() as f32 * 2.0;
 
             self.origin_x = tx * complete_shells as f32;
             self.origin_y = ty * complete_shells as f32;
@@ -670,8 +652,11 @@ impl GridViewControls {
                 .save_file()
         {
             let s = self.png_extent;
-            let render_params =
-                Self::render_params(self.zoom_pow2_png, self.origin_x, self.origin_y, s, s);
+            let render_params = Self::render_params(
+                self.zoom_pow2_png,
+                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                GridRect::with_size(GridPoint::zero(), s, s),
+            );
             let image = grid_renderer_mutex_guard
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);
 

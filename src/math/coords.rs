@@ -117,6 +117,20 @@ where
     }
 }
 
+impl<T> Sub<Point2D<T>> for Point2D<T>
+where
+    T: Sub<T, Output = T>,
+{
+    type Output = Vector2D<T>;
+
+    fn sub(self, rhs: Point2D<T>) -> Self::Output {
+        Vector2D::<T> {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
 impl<T> SubAssign<Vector2D<T>> for Point2D<T>
 where
     T: SubAssign<T>,
