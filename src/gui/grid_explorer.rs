@@ -51,8 +51,8 @@ pub enum SaveState {
 }
 
 pub struct GridExplorer {
-    finalized_simulation: Arc<FinalizedSimulation>,
-    grid_renderer: Arc<Mutex<GridRenderer>>,
+    finalized_simulation: FinalizedSimulation,
+    grid_renderer: GridRenderer,
     grid_render_texture: Option<TextureHandle>,
     last_grid_render_params: GridRenderParameters,
     is_debug_ui_enabled: bool,
@@ -151,11 +151,10 @@ impl Subwindow for GridExplorer {
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
-        let finalized_simulation = Arc::new(finalized_simulation);
-        let grid_renderer = Arc::new(Mutex::new(GridRenderer::new(
+        let grid_renderer = GridRenderer::new(
             &finalized_simulation,
             default_player_colors().as_slice(),
-        )));
+        );
 
         let player_count = finalized_simulation.player_count();
 
@@ -220,10 +219,7 @@ impl GridExplorer {
         let framebuffer_size =
             rect.width() as usize * rect.height() as usize * size_of::<Color32>();
 
-        self.grid_renderer
-            .lock()
-            .unwrap()
-            .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
+        self.grid_renderer.set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
         let curr_grid_render_params = self.to_render_params(rect);
 
@@ -234,16 +230,13 @@ impl GridExplorer {
             // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
             //       The control panel must ensure the controls are disabled.
             if self.have_colors_changed {
-                self.grid_renderer
-                    .lock()
-                    .unwrap()
-                    .set_colors(self.player_colors.as_slice());
+                self.grid_renderer.set_colors(self.player_colors.as_slice());
 
                 // Do not forget to reset the colors changed flag.
                 self.have_colors_changed = false;
             }
 
-            self.grid_render_texture = Some(self.grid_renderer.lock().unwrap().render_texture(
+            self.grid_render_texture = Some(self.grid_renderer.render_texture(
                 ui.ctx(),
                 &curr_grid_render_params.bounds,
                 curr_grid_render_params.zoom,
@@ -291,8 +284,8 @@ impl GridExplorer {
         self.last_pointed_coords
     }
 
-    pub fn zoom_range(&self, grid_renderer: &GridRenderer) -> RangeInclusive<i32> {
-        if let Some(factor) = grid_renderer.highest_mipmap_minification_factor() {
+    pub fn zoom_range(&self) -> RangeInclusive<i32> {
+        if let Some(factor) = self.grid_renderer.highest_mipmap_minification_factor() {
             (-(factor.exponent() as i32))..=self.max_zoom_pow2
         } else {
             self.min_zoom_pow2..=self.max_zoom_pow2
@@ -370,7 +363,7 @@ impl GridExplorer {
                 }
             });
 
-            let zoom_range = self.zoom_range(&self.grid_renderer.lock().unwrap());
+            let zoom_range = self.zoom_range();
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             let proj = Self::make_projection(self.zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
@@ -461,17 +454,15 @@ impl GridExplorer {
     }
 
     fn show_mipmaps_ui(&mut self, ui: &mut Ui) {
-        let mut grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
-
         // Handle various stages of mipmap generation.
         // We rely directly on the state reported by the grid renderer instead of the
         // progress from the callback.
-        if grid_renderer_mutex_guard.has_mipmaps() {
+        if self.grid_renderer.has_mipmaps() {
             ui.label("Mipmaps are generated.");
-        } else if grid_renderer_mutex_guard.can_generate_mipmaps() {
+        } else if self.grid_renderer.can_generate_mipmaps() {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
-            let estimated_mipmaps_memory_requirement = grid_renderer_mutex_guard
+            let estimated_mipmaps_memory_requirement = self.grid_renderer
                 .estimate_mipmaps_memory_requirement(lowest_minification, highest_minification);
             let on_hover_text = if estimated_mipmaps_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
@@ -496,7 +487,7 @@ impl GridExplorer {
                 .clicked()
             {
                 self.mipmap_generation_progress = Some(
-                    grid_renderer_mutex_guard
+                    self.grid_renderer
                         .generate_mipmaps_async(lowest_minification, highest_minification),
                 );
             }
@@ -504,7 +495,7 @@ impl GridExplorer {
         /* if mipmap generation in progress */
         {
             if ui.button("Cancel mipmap generation.").clicked() {
-                grid_renderer_mutex_guard.cancel_mipmap_generation();
+                self.grid_renderer.cancel_mipmap_generation();
             } else if let Some(progress) = &self.mipmap_generation_progress {
                 let progress = progress.get();
                 let progress_pct = (progress.0 * 100).checked_div(progress.1).unwrap_or(0);
@@ -524,9 +515,8 @@ impl GridExplorer {
     }
 
     fn show_zoom_origin_ui(&mut self, ui: &mut Ui) {
-        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
         let complete_shells = self.finalized_simulation.complete_shells();
-        let zoom_range = self.zoom_range(&grid_renderer_mutex_guard);
+        let zoom_range = self.zoom_range();
 
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
@@ -555,7 +545,6 @@ impl GridExplorer {
     }
 
     fn show_player_colors_ui(&mut self, ui: &mut Ui) {
-        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
         let player_count = self.finalized_simulation.player_count();
 
         // TODO: Columns for some reason take more space than necessary.
@@ -566,7 +555,7 @@ impl GridExplorer {
                 let column = &mut columns[player_id % 2];
                 column.horizontal_wrapped(|ui| {
                     // Disallow color picking after mipmaps have been generated
-                    if !grid_renderer_mutex_guard.can_set_colors() {
+                    if !self.grid_renderer.can_set_colors() {
                         color_picker::show_color(
                             ui,
                             self.player_colors[player_id],
@@ -613,8 +602,7 @@ impl GridExplorer {
     }
 
     fn show_screenshots_ui(&mut self, ui: &mut Ui) {
-        let grid_renderer_mutex_guard = self.grid_renderer.lock().unwrap();
-        let zoom_range = self.zoom_range(&grid_renderer_mutex_guard);
+        let zoom_range = self.zoom_range();
 
         ui.add(
             egui::Slider::new(&mut self.zoom_pow2_png, zoom_range)
@@ -644,7 +632,7 @@ impl GridExplorer {
                 GridPoint::new(self.origin_x as i32, self.origin_y as i32),
                 GridRect::with_size(GridPoint::zero(), s, s),
             );
-            let image = grid_renderer_mutex_guard
+            let image = self.grid_renderer
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);
 
             let file = File::create(path).unwrap();
