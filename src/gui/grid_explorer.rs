@@ -24,6 +24,25 @@ use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 
+const MIN_ZOOM_POW2: i32 = -5;
+const MIN_ZOOM_POW2_MIPS: i32 = -12;
+const DEFAULT_ZOOM_POW2: i32 = 0;
+const MAX_ZOOM_POW2: i32 = 3;
+
+const MIN_PNG_EXTENT: i32 = 256;
+const DEFAULT_PNG_EXTENT: i32 = 2048;
+const MAX_PNG_EXTENT: i32 = 8192;
+
+const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
+
+const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
+const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
+
+const SCREEN_TO_WORLD_AXIS_FLIP: FlipAxis = FlipAxis::Y;
+
+const MIN_CANVAS_WIDTH: i32 = 1;
+const MIN_CANVAS_HEIGHT: i32 = 1;
+
 #[derive(Debug)]
 pub enum SaveState {
     NotSaved,
@@ -32,12 +51,29 @@ pub enum SaveState {
 }
 
 pub struct GridExplorer {
-    grid_view_controls: GridViewControls,
     finalized_simulation: Arc<FinalizedSimulation>,
     grid_renderer: Arc<Mutex<GridRenderer>>,
     grid_render_texture: Option<TextureHandle>,
     last_grid_render_params: GridRenderParameters,
     is_debug_ui_enabled: bool,
+
+    mipmap_generation_progress: Option<MipmapGenerationProgress>,
+
+    min_zoom_pow2: i32,
+    max_zoom_pow2: i32,
+    player_colors: Vec<Color32>,
+    last_pointed_coords: GridPoint,
+    save_state: SaveState,
+
+    zoom_pow2: i32,
+    zoom_pow2_png: i32,
+    png_extent: i32,
+
+    // The origin must be a floating-point number because we require subpixel precision
+    // for moving the grid while zoomed-in.
+    origin_x: f32,
+    origin_y: f32,
+    have_colors_changed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,7 +103,7 @@ impl Default for GridRenderParameters {
 
 impl Subwindow for GridExplorer {
     fn name(&self) -> String {
-        if self.grid_view_controls.is_saved() {
+        if self.is_saved() {
             "Explorer".to_owned()
         } else {
             "*Explorer".to_owned()
@@ -81,13 +117,13 @@ impl Subwindow for GridExplorer {
                 .resizable([false, false]) // resizable so we can shrink if the text edit grows
                 .constrain_to(ui.available_rect_before_wrap())
                 .show(ui, |ui| {
-                    self.grid_view_controls.ui(ui);
+                    self.show_controls_window_ui(ui);
                 });
 
             // The projection will give us a more restricted viewport.
-            let proj = GridViewControls::make_projection(
-                self.grid_view_controls.zoom_pow2,
-                GridPoint::new(self.grid_view_controls.origin_x as i32, self.grid_view_controls.origin_y as i32),
+            let proj = Self::make_projection(
+                self.zoom_pow2,
+                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
                 egui_to_grid_rect(ui.clip_rect()),
             );
             let rect = proj.screen_rect();
@@ -113,25 +149,6 @@ impl Subwindow for GridExplorer {
     }
 }
 
-const MIN_ZOOM_POW2: i32 = -5;
-const MIN_ZOOM_POW2_MIPS: i32 = -12;
-const DEFAULT_ZOOM_POW2: i32 = 0;
-const MAX_ZOOM_POW2: i32 = 3;
-
-const MIN_PNG_EXTENT: i32 = 256;
-const DEFAULT_PNG_EXTENT: i32 = 2048;
-const MAX_PNG_EXTENT: i32 = 8192;
-
-const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
-
-const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
-const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
-
-const SCREEN_TO_WORLD_AXIS_FLIP: FlipAxis = FlipAxis::Y;
-
-const MIN_CANVAS_WIDTH: i32 = 1;
-const MIN_CANVAS_HEIGHT: i32 = 1;
-
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
         let finalized_simulation = Arc::new(finalized_simulation);
@@ -141,9 +158,14 @@ impl GridExplorer {
         )));
 
         let player_count = finalized_simulation.player_count();
-        let grid_view_controls = GridViewControls {
-            finalized_simulation: Arc::clone(&finalized_simulation),
-            grid_renderer: Arc::clone(&grid_renderer),
+
+        Self {
+            grid_renderer,
+            finalized_simulation,
+            grid_render_texture: None,
+            last_grid_render_params: Default::default(),
+            is_debug_ui_enabled: false,
+
             mipmap_generation_progress: None,
 
             min_zoom_pow2: MIN_ZOOM_POW2,
@@ -158,15 +180,6 @@ impl GridExplorer {
             origin_x: 0.0,
             origin_y: 0.0,
             have_colors_changed: false,
-        };
-
-        Self {
-            grid_renderer,
-            finalized_simulation,
-            grid_view_controls,
-            grid_render_texture: None,
-            last_grid_render_params: Default::default(),
-            is_debug_ui_enabled: false,
         }
     }
 
@@ -179,16 +192,12 @@ impl GridExplorer {
         Ok(explorer)
     }
 
-    fn assume_saved(&mut self) {
-        self.grid_view_controls.assume_saved();
-    }
-
     fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: GridRect) {
         let egui_rect = grid_rect_to_egui(rect);
         let painter = ui.painter_at(egui_rect);
 
         // background
-        painter.rect_filled(egui_rect, 0.0, self.grid_view_controls.player_colors[0]);
+        painter.rect_filled(egui_rect, 0.0, self.player_colors[0]);
 
         if let Some(handle) = &self.grid_render_texture {
             // y-flip via uv
@@ -206,7 +215,7 @@ impl GridExplorer {
         // framebuffers worth of data.
         const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
 
-        self.grid_view_controls.update_from_canvas_events(ui, rect);
+        self.update_from_canvas_events(ui, rect);
 
         let framebuffer_size =
             rect.width() as usize * rect.height() as usize * size_of::<Color32>();
@@ -216,22 +225,22 @@ impl GridExplorer {
             .unwrap()
             .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
-        let curr_grid_render_params = self.grid_view_controls.to_render_params(rect);
+        let curr_grid_render_params = self.to_render_params(rect);
 
         if self.last_grid_render_params != curr_grid_render_params
-            || self.grid_view_controls.have_colors_changed
+            || self.have_colors_changed
         {
             // Check for changed colors and notify the renderer.
             // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
             //       The control panel must ensure the controls are disabled.
-            if self.grid_view_controls.have_colors_changed {
+            if self.have_colors_changed {
                 self.grid_renderer
                     .lock()
                     .unwrap()
-                    .set_colors(self.grid_view_controls.player_colors.as_slice());
+                    .set_colors(self.player_colors.as_slice());
 
                 // Do not forget to reset the colors changed flag.
-                self.grid_view_controls.have_colors_changed = false;
+                self.have_colors_changed = false;
             }
 
             self.grid_render_texture = Some(self.grid_renderer.lock().unwrap().render_texture(
@@ -246,15 +255,15 @@ impl GridExplorer {
     }
 
     fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, viewport: GridRect) {
-        let pointed_coords = self.grid_view_controls.last_pointed_coords();
+        let pointed_coords = self.last_pointed_coords();
         let chunk = self
             .finalized_simulation
             .get_chunk_containing(&pointed_coords);
         if let Some(chunk) = chunk {
             let chunk_bounds = chunk.bounds();
-            let proj = GridViewControls::make_projection(
-                self.grid_view_controls.zoom_pow2,
-                GridPoint::new(self.grid_view_controls.origin_x as i32, self.grid_view_controls.origin_y as i32),
+            let proj = Self::make_projection(
+                self.zoom_pow2,
+                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
                 viewport,
             );
             let chunk_bounds_screen_space = proj.world_to_screen_rect(*chunk_bounds);
@@ -268,28 +277,6 @@ impl GridExplorer {
     }
 }
 
-pub struct GridViewControls {
-    finalized_simulation: Arc<FinalizedSimulation>,
-    grid_renderer: Arc<Mutex<GridRenderer>>,
-    mipmap_generation_progress: Option<MipmapGenerationProgress>,
-
-    min_zoom_pow2: i32,
-    max_zoom_pow2: i32,
-    player_colors: Vec<Color32>,
-    last_pointed_coords: GridPoint,
-    save_state: SaveState,
-
-    zoom_pow2: i32,
-    zoom_pow2_png: i32,
-    png_extent: i32,
-
-    // The origin must be a floating-point number because we require subpixel precision
-    // for moving the grid while zoomed-in.
-    origin_x: f32,
-    origin_y: f32,
-    have_colors_changed: bool,
-}
-
 fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
     let n = n.round() as i32;
     if n >= 0 {
@@ -299,7 +286,7 @@ fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
     }
 }
 
-impl GridViewControls {
+impl GridExplorer {
     pub fn last_pointed_coords(&self) -> GridPoint {
         self.last_pointed_coords
     }
@@ -671,7 +658,7 @@ impl GridViewControls {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui) {
+    fn show_controls_window_ui(&mut self, ui: &mut Ui) {
         ui.heading("Info");
 
         self.show_info_ui(ui);
