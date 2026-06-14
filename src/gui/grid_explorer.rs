@@ -1,18 +1,21 @@
-﻿use crate::gui::render::grid_render::{
+﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
+use crate::gui::render::grid_render::{
     default_player_colors, GridRenderer, MipmapGenerationProgress,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, Stroke, StrokeKind, TextureHandle, Ui};
+use eframe::egui::{
+    Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, Stroke, StrokeKind,
+    TextureHandle, Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
@@ -22,7 +25,6 @@ use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -151,10 +153,8 @@ impl Subwindow for GridExplorer {
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
-        let grid_renderer = GridRenderer::new(
-            &finalized_simulation,
-            default_player_colors().as_slice(),
-        );
+        let grid_renderer =
+            GridRenderer::new(&finalized_simulation, default_player_colors().as_slice());
 
         let player_count = finalized_simulation.player_count();
 
@@ -219,13 +219,12 @@ impl GridExplorer {
         let framebuffer_size =
             rect.width() as usize * rect.height() as usize * size_of::<Color32>();
 
-        self.grid_renderer.set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
+        self.grid_renderer
+            .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
         let curr_grid_render_params = self.to_render_params(rect);
 
-        if self.last_grid_render_params != curr_grid_render_params
-            || self.have_colors_changed
-        {
+        if self.last_grid_render_params != curr_grid_render_params || self.have_colors_changed {
             // Check for changed colors and notify the renderer.
             // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
             //       The control panel must ensure the controls are disabled.
@@ -261,7 +260,13 @@ impl GridExplorer {
             );
             let chunk_bounds_screen_space = proj.world_to_screen_rect(*chunk_bounds);
             let painter = ui.painter_at(grid_rect_to_egui(viewport));
-            painter.rect(grid_rect_to_egui(chunk_bounds_screen_space), 0, Color32::TRANSPARENT, Stroke::new(1.0, Color32::GREEN), StrokeKind::Outside);
+            painter.rect(
+                grid_rect_to_egui(chunk_bounds_screen_space),
+                0,
+                Color32::TRANSPARENT,
+                Stroke::new(1.0, Color32::GREEN),
+                StrokeKind::Outside,
+            );
         }
     }
 
@@ -308,12 +313,7 @@ impl GridExplorer {
             rect = GridRect::with_size(min, w, h);
         }
 
-        ScreenWorldDiscrete2D::new(
-            zoom_pow2,
-            origin_world,
-            rect,
-            SCREEN_TO_WORLD_AXIS_FLIP,
-        )
+        ScreenWorldDiscrete2D::new(zoom_pow2, origin_world, rect, SCREEN_TO_WORLD_AXIS_FLIP)
     }
 
     fn render_params(
@@ -339,7 +339,10 @@ impl GridExplorer {
     }
 
     fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: GridRect) {
-        let response = ui.allocate_rect(grid_rect_to_egui(viewport), Sense::drag() | Sense::hover() | Sense::click());
+        let response = ui.allocate_rect(
+            grid_rect_to_egui(viewport),
+            Sense::drag() | Sense::hover() | Sense::click(),
+        );
 
         let get_mouse_pos = |response: &Response| {
             response
@@ -362,14 +365,25 @@ impl GridExplorer {
             let zoom_range = self.zoom_range();
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
-            let proj = Self::make_projection(self.zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
-            self.last_pointed_coords = proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
+            let proj = Self::make_projection(
+                self.zoom_pow2,
+                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                viewport,
+            );
+            self.last_pointed_coords =
+                proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
 
             if new_zoom_pow2 != self.zoom_pow2 {
-                let proj_new = Self::make_projection(new_zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
+                let proj_new = Self::make_projection(
+                    new_zoom_pow2,
+                    GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                    viewport,
+                );
 
-                let mouse_world = proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
-                let mouse_world_new = proj_new.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
+                let mouse_world =
+                    proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
+                let mouse_world_new = proj_new
+                    .screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
                 let diff = mouse_world - mouse_world_new;
                 self.origin_x += diff.x as f32;
                 self.origin_y += diff.y as f32;
@@ -402,8 +416,12 @@ impl GridExplorer {
             self.origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
         }
 
-        self.origin_x = self.origin_x.clamp(-complete_shells_f32, complete_shells_f32);
-        self.origin_y = self.origin_y.clamp(-complete_shells_f32, complete_shells_f32);
+        self.origin_x = self
+            .origin_x
+            .clamp(-complete_shells_f32, complete_shells_f32);
+        self.origin_y = self
+            .origin_y
+            .clamp(-complete_shells_f32, complete_shells_f32);
     }
 
     pub fn is_saved(&self) -> bool {
@@ -458,7 +476,8 @@ impl GridExplorer {
         } else if self.grid_renderer.can_generate_mipmaps() {
             let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
             let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
-            let estimated_mipmaps_memory_requirement = self.grid_renderer
+            let estimated_mipmaps_memory_requirement = self
+                .grid_renderer
                 .estimate_mipmaps_memory_requirement(lowest_minification, highest_minification);
             let on_hover_text = if estimated_mipmaps_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
@@ -542,6 +561,7 @@ impl GridExplorer {
 
     fn show_player_colors_ui(&mut self, ui: &mut Ui) {
         let player_count = self.finalized_simulation.player_count();
+        let allow_color_change = self.grid_renderer.can_set_colors();
 
         // TODO: Columns for some reason take more space than necessary.
         //       This `set_max_width` is a hack to make it about as much as it should.
@@ -550,24 +570,12 @@ impl GridExplorer {
             for player_id in 0..=player_count {
                 let column = &mut columns[player_id % 2];
                 column.horizontal_wrapped(|ui| {
-                    // Disallow color picking after mipmaps have been generated
-                    if !self.grid_renderer.can_set_colors() {
-                        color_picker::show_color(
-                            ui,
-                            self.player_colors[player_id],
-                            vec2(16.0, 16.0),
-                        );
-                    } else {
-                        if color_picker::color_edit_button_srgba(
-                            ui,
-                            &mut self.player_colors[player_id],
-                            Alpha::Opaque,
-                        )
+                    if srgb_color_button(ui, &mut self.player_colors[player_id], allow_color_change)
                         .changed()
-                        {
-                            self.have_colors_changed = true;
-                        }
+                    {
+                        self.have_colors_changed = true;
                     }
+
                     if player_id == 0 {
                         ui.label("Empty");
                     } else {
@@ -628,7 +636,8 @@ impl GridExplorer {
                 GridPoint::new(self.origin_x as i32, self.origin_y as i32),
                 GridRect::with_size(GridPoint::zero(), s, s),
             );
-            let image = self.grid_renderer
+            let image = self
+                .grid_renderer
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);
 
             let file = File::create(path).unwrap();
