@@ -600,11 +600,13 @@ impl GridViewControls {
         let complete_shells = self.finalized_simulation.complete_shells();
         let side_cells = complete_shells.max(1) as usize * 2 - 1;
         let cells = side_cells * side_cells;
+        let chunks = self.finalized_simulation.chunk_count();
         let memory_usage = self.finalized_simulation.memory_usage();
 
         ui.label(format!("Turns: {}M", turns / 1000 / 1000));
         ui.label(format!("Complete shells: {}", complete_shells));
         ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
+        ui.label(format!("Number of chunks: {}", chunks));
         ui.label(format!("Size in memory: {}", memory_usage.display().si()));
         ui.label(format!(
             "Pointer: {}, {}",
