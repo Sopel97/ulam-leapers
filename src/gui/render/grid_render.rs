@@ -15,19 +15,13 @@ use ulam_leapers::game::sampler::FrozenGridSampler;
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::pow2::{ceil_to_multiple, div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
+use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zoom {
-    Magnification(Pow2),
-    Minification(Pow2),
-}
 use crate::gui::render::samplers::{AvgMapColor32Collector, MapLastCollector};
-use Zoom::*;
 
 pub fn default_player_colors() -> Vec<Color32> {
     vec![
@@ -234,9 +228,9 @@ impl GridRenderer {
         res
     }
 
-    pub fn render_to_rgba_samples(&self, bounds: &GridRect, zoom: Zoom) -> Array2D<Color32> {
+    pub fn render_to_rgba_samples(&self, bounds: &GridRect, zoom: Zoom<Pow2>) -> Array2D<Color32> {
         match zoom {
-            Magnification(_factor) => {
+            Zoom::Magnification(_factor) => {
                 let colors = &self.colors;
                 let sampler = FrozenGridSampler::new(
                     &self.grid,
@@ -248,7 +242,7 @@ impl GridRenderer {
                 // compute and the results take more memory than the probed chunk cells.
                 sampler.par_sample()
             }
-            Minification(factor) => {
+            Zoom::Minification(factor) => {
                 if self.has_mipmap(factor) {
                     self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
                 } else {
@@ -260,7 +254,7 @@ impl GridRenderer {
 
     // The caller to this function must guarantee that there are enough colors in
     // params.colors to facilitate every cell. Otherwise, the behavior is undefined.
-    pub fn render_to_rgba_image(&self, bounds: &GridRect, zoom: Zoom) -> ColorImage {
+    pub fn render_to_rgba_image(&self, bounds: &GridRect, zoom: Zoom<Pow2>) -> ColorImage {
         let samples = self.render_to_rgba_samples(bounds, zoom);
         ColorImage::new(
             [samples.width(), samples.height()],
@@ -272,7 +266,7 @@ impl GridRenderer {
         &mut self,
         ctx: &egui::Context,
         bounds: &GridRect,
-        zoom: Zoom,
+        zoom: Zoom<Pow2>,
     ) -> TextureHandle {
         let texture_options = TextureOptions {
             magnification: TextureFilter::Nearest,

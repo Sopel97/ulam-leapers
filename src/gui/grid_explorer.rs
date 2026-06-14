@@ -1,6 +1,5 @@
-﻿use crate::gui::render::grid_render::Zoom::{Magnification, Minification};
-use crate::gui::render::grid_render::{
-    default_player_colors, GridRenderer, MipmapGenerationProgress, Zoom,
+﻿use crate::gui::render::grid_render::{
+    default_player_colors, GridRenderer, MipmapGenerationProgress,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
@@ -21,6 +20,7 @@ use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::pow2::{floor_to_multiple, mod_floor, Pow2};
 use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
 use ulam_leapers::math::rect::GridRect;
+use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 
@@ -43,11 +43,11 @@ pub struct GridExplorer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GridRenderParameters {
     bounds: GridRect,
-    zoom: Zoom,
+    zoom: Zoom<Pow2>,
 }
 
 impl GridRenderParameters {
-    pub fn new(bounds: GridRect, zoom: Zoom) -> Self {
+    pub fn new(bounds: GridRect, zoom: Zoom<Pow2>) -> Self {
         Self { bounds, zoom }
     }
 
@@ -60,7 +60,7 @@ impl Default for GridRenderParameters {
     fn default() -> Self {
         GridRenderParameters {
             bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
-            zoom: Magnification(Pow2::try_from(1).unwrap()),
+            zoom: Zoom::Magnification(Pow2::try_from(1).unwrap()),
         }
     }
 }
@@ -342,8 +342,8 @@ impl GridViewControls {
         rect: GridRect,
     ) -> GridRenderParameters {
         let zoom = match zoom_pow2 {
-            e @ 0.. => Magnification(Pow2::from_exponent(e as u8)),
-            e @ ..0 => Minification(Pow2::from_exponent((-e) as u8)),
+            e @ 0.. => Zoom::Magnification(Pow2::from_exponent(e as u8)),
+            e @ ..0 => Zoom::Minification(Pow2::from_exponent((-e) as u8)),
         };
         let proj = Self::make_projection(zoom_pow2, origin_world, rect);
         let bounds = proj.world_rect();
