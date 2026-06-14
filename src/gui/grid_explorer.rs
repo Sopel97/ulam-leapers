@@ -341,19 +341,15 @@ impl GridExplorer {
     fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: GridRect) {
         let response = ui.allocate_rect(grid_rect_to_egui(viewport), Sense::drag() | Sense::hover() | Sense::click());
 
-        let get_mouse_pos_in_grid_space = |response: &Response| {
-            let middle_pos = (response.rect.max - response.rect.min.to_vec2()) * 0.5f32;
-            let mouse = response
+        let get_mouse_pos = |response: &Response| {
+            response
                 .hover_pos()
-                .unwrap_or(middle_pos);
-
-            let mouse_relative_to_center = mouse - middle_pos;
-            (mouse, mouse_relative_to_center)
+                .unwrap_or_else(|| (response.rect.max - response.rect.min.to_vec2()) * 0.5f32)
         };
 
         if response.hovered() {
             let mut new_zoom_pow2 = self.zoom_pow2;
-            let (mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
+            let mouse_pos = get_mouse_pos(&response);
 
             ui.input(|i| {
                 for event in &i.events {
@@ -367,13 +363,13 @@ impl GridExplorer {
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
 
             let proj = Self::make_projection(self.zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
-            self.last_pointed_coords = proj.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
+            self.last_pointed_coords = proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
 
             if new_zoom_pow2 != self.zoom_pow2 {
                 let proj_new = Self::make_projection(new_zoom_pow2, GridPoint::new(self.origin_x as i32, self.origin_y as i32), viewport);
 
-                let mouse_world = proj.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
-                let mouse_world_new = proj_new.screen_to_world(GridPoint::new(mouse.x as i32, mouse.y as i32));
+                let mouse_world = proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
+                let mouse_world_new = proj_new.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
                 let diff = mouse_world - mouse_world_new;
                 self.origin_x += diff.x as f32;
                 self.origin_y += diff.y as f32;
@@ -390,24 +386,24 @@ impl GridExplorer {
         }
 
         let complete_shells = self.finalized_simulation.complete_shells();
+        let complete_shells_f32 = complete_shells as f32;
 
         // Set origin to current pointer placement scaled to the size of the whole grid.
         // Allows going to any region on the grid, useful for large grids.
         if response.clicked_by(egui::PointerButton::Secondary)
             || response.dragged_by(egui::PointerButton::Secondary)
         {
-            let (_mouse, mouse_relative_to_center) = get_mouse_pos_in_grid_space(&response);
+            let mouse_pos = get_mouse_pos(&response);
 
-            let tx = mouse_relative_to_center.x / viewport.width() as f32 * 2.0;
-            let ty = mouse_relative_to_center.y / viewport.height() as f32 * 2.0;
+            let tx = mouse_pos.x / viewport.width() as f32;
+            let ty = 1.0 - mouse_pos.y / viewport.height() as f32;
 
-            self.origin_x = tx * complete_shells as f32;
-            self.origin_y = ty * complete_shells as f32;
+            self.origin_x = -complete_shells_f32 + tx * complete_shells_f32 * 2.0;
+            self.origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
         }
 
-        let bounds = complete_shells as f32;
-        self.origin_x = self.origin_x.clamp(-bounds, bounds);
-        self.origin_y = self.origin_y.clamp(-bounds, bounds);
+        self.origin_x = self.origin_x.clamp(-complete_shells_f32, complete_shells_f32);
+        self.origin_y = self.origin_y.clamp(-complete_shells_f32, complete_shells_f32);
     }
 
     pub fn is_saved(&self) -> bool {
