@@ -212,6 +212,11 @@ impl<T> FrozenGrid<T> {
         self.frozen_chunks.get(origin)
     }
 
+    pub fn get_chunk_containing(&self, point: &GridPoint) -> Option<&CompressedChunk<T>> {
+        let origin = self.chunker.resolve_chunk_origin(point);
+        self.get_chunk_at(&origin)
+    }
+
     pub fn chunker(&self) -> &dyn Chunker {
         self.chunker.as_ref()
     }

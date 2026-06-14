@@ -15,6 +15,7 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use crate::game::chunk::CompressedChunk;
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -204,6 +205,10 @@ impl FinalizedSimulation {
 
     pub fn chunk_count(&self) -> usize {
         self.grid.chunk_count()
+    }
+
+    pub fn get_chunk_containing(&self, point: &GridPoint) -> Option<&CompressedChunk<PlayerId>> {
+        self.grid.get_chunk_containing(point)
     }
 }
 

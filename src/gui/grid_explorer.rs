@@ -17,6 +17,7 @@ use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::GridPoint;
@@ -37,6 +38,7 @@ pub struct GridExplorer {
     grid_renderer: Arc<Mutex<GridRenderer>>,
     grid_render_texture: Option<TextureHandle>,
     last_grid_render_params: GridRenderParameters,
+    is_debug_ui_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,6 +89,13 @@ impl Subwindow for GridExplorer {
 
             self.maybe_update_canvas_texture(ui, rect);
             self.draw_canvas_texture(ui, rect);
+
+            if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
+                self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
+            }
+            if self.is_debug_ui_enabled {
+                self.show_debug_ui(ui, rect);
+            }
         });
 
         Keep(self)
@@ -109,6 +118,7 @@ const MAX_PNG_EXTENT: i32 = 8192;
 const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
+const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
@@ -144,6 +154,7 @@ impl GridExplorer {
             grid_view_controls,
             grid_render_texture: None,
             last_grid_render_params: Default::default(),
+            is_debug_ui_enabled: false,
         }
     }
 
@@ -222,6 +233,20 @@ impl GridExplorer {
             self.last_grid_render_params = curr_grid_render_params;
         }
     }
+
+    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, viewport: Rect) {
+        let pointed_coords = self.grid_view_controls.last_pointed_coords();
+        let chunk = self.finalized_simulation.get_chunk_containing(&pointed_coords);
+        if let Some(chunk) = chunk {
+            let chunk_bounds = chunk.bounds();
+
+            // TODO: this
+        }
+    }
+
+    fn show_debug_ui(&mut self, ui: &mut Ui, rect: Rect) {
+        self.show_pointed_chunk_overlay(ui, rect);
+    }
 }
 
 pub struct GridViewControls {
@@ -256,6 +281,10 @@ fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
 }
 
 impl GridViewControls {
+    pub fn last_pointed_coords(&self) -> GridPoint {
+        self.last_pointed_coords
+    }
+
     pub fn zoom_range(&self, grid_renderer: &GridRenderer) -> RangeInclusive<i32> {
         if let Some(factor) = grid_renderer.highest_mipmap_minification_factor() {
             (-(factor.exponent() as i32))..=self.max_zoom_pow2
