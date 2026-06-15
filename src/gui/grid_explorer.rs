@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::math::coords::GridPoint;
+use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
 use ulam_leapers::math::rect::GridRect;
@@ -52,23 +52,47 @@ pub enum SaveState {
     Errored(std::io::Error),
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Camera {
+    zoom_pow2: i32,
+    position: Point2D<f32>,
+}
+
+impl Camera {
+    pub fn new(zoom_pow2: i32, position: Point2D<f32>) -> Self {
+        Self { zoom_pow2, position }
+    }
+
+    pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
+        Self { zoom_pow2, position: self.position }
+    }
+}
+
 struct Canvas {
+    camera: Camera,
     viewport: GridRect,
-    world_origin: GridPoint,
     projection: ScreenWorldDiscrete2D,
 }
 
 impl Canvas {
-    pub fn new(zoom_pow2: i32, world_origin: GridPoint, viewport: GridRect) -> Self {
+    pub fn new(camera: Camera, viewport: GridRect) -> Self {
+        let rect = if camera.zoom_pow2 > 0 {
+            // Restrict viewport to bounds compatible with the alignment required by the zoom.
+            let factor = Pow2::from_exponent(camera.zoom_pow2 as u8);
+            viewport.aligned_to_pow2_inside(factor)
+        } else {
+            viewport
+        };
+
         Self {
             projection: ScreenWorldDiscrete2D::new(
-                zoom_pow2,
-                world_origin,
-                viewport,
+                camera.zoom_pow2,
+                GridPoint::new(camera.position.x as i32, camera.position.y as i32),
+                rect,
                 SCREEN_TO_WORLD_AXIS_FLIP,
             ),
+            camera,
             viewport,
-            world_origin,
         }
     }
 
@@ -76,16 +100,12 @@ impl Canvas {
         ui.painter_at(grid_rect_to_egui(self.rect()))
     }
 
+    pub fn with_camera(&self, camera: Camera) -> Self {
+        Self::new(camera, self.viewport)
+    }
+
     pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
-        Self::new(zoom_pow2, self.world_origin, self.viewport)
-    }
-
-    pub fn with_world_origin(&self, world_origin: GridPoint) -> Self {
-        Self::new(self.projection.zoom_pow2(), world_origin, self.viewport)
-    }
-
-    pub fn with_zoom_and_world_origin(&self, zoom_pow2: i32, world_origin: GridPoint) -> Self {
-        Self::new(zoom_pow2, world_origin, self.viewport)
+        Self::new(self.camera.with_zoom(zoom_pow2), self.viewport)
     }
 
     pub fn to_render_params(&self) -> GridRenderParameters {
@@ -140,14 +160,10 @@ pub struct GridExplorer {
     last_pointed_coords: GridPoint,
     save_state: SaveState,
 
-    zoom_pow2: i32,
     zoom_pow2_png: i32,
     png_extent: i32,
 
-    // The origin must be a floating-point number because we require subpixel precision
-    // for moving the grid while zoomed-in.
-    origin_x: f32,
-    origin_y: f32,
+    camera: Camera,
     have_colors_changed: bool,
 }
 
@@ -242,11 +258,10 @@ impl GridExplorer {
             last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
 
-            zoom_pow2: DEFAULT_ZOOM_POW2,
             zoom_pow2_png: DEFAULT_ZOOM_POW2,
             png_extent: DEFAULT_PNG_EXTENT,
-            origin_x: 0.0,
-            origin_y: 0.0,
+
+            camera: Camera::new(DEFAULT_ZOOM_POW2, Point2D::new(0.0, 0.0)),
             have_colors_changed: false,
         }
     }
@@ -359,22 +374,8 @@ impl GridExplorer {
         }
     }
 
-    pub fn origin(&self) -> GridPoint {
-        GridPoint::new(self.origin_x as i32, self.origin_y as i32)
-    }
-
-    fn make_canvas_for(zoom_pow2: i32, world_origin: GridPoint, mut rect: GridRect) -> Canvas {
-        if zoom_pow2 > 0 {
-            // Restrict viewport to bounds compatible with the alignment required by the zoom.
-            let factor = Pow2::from_exponent(zoom_pow2 as u8);
-            rect = rect.aligned_to_pow2_inside(factor);
-        }
-
-        Canvas::new(zoom_pow2, world_origin, rect)
-    }
-
     fn make_canvas(&self, rect: GridRect) -> Canvas {
-        Self::make_canvas_for(self.zoom_pow2, self.origin(), rect)
+        Canvas::new(self.camera, rect)
     }
 
     fn update_canvas_from_events(&mut self, ui: &mut Ui, canvas: &mut Canvas) {
@@ -392,9 +393,9 @@ impl GridExplorer {
         let mouse_world = canvas.screen_to_world(mouse_pos);
         self.last_pointed_coords = mouse_world;
 
-        let mut new_origin_x = self.origin_x;
-        let mut new_origin_y = self.origin_y;
-        let mut new_zoom_pow2 = self.zoom_pow2;
+        let mut new_origin_x = self.camera.position.x;
+        let mut new_origin_y = self.camera.position.y;
+        let mut new_zoom_pow2 = self.camera.zoom_pow2;
 
         if response.hovered() {
             ui.input(|i| {
@@ -432,7 +433,7 @@ impl GridExplorer {
             new_origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
         }
 
-        if new_zoom_pow2 != self.zoom_pow2 {
+        if new_zoom_pow2 != self.camera.zoom_pow2 {
             let canvas_new = canvas.with_zoom(new_zoom_pow2);
 
             let mouse_world_new = canvas_new.screen_to_world(mouse_pos);
@@ -445,17 +446,16 @@ impl GridExplorer {
         new_origin_y = new_origin_y.clamp(-complete_shells_f32, complete_shells_f32);
 
         // Update canvas if anything changed.
-        if new_origin_x != self.origin_x
-            || new_origin_y != self.origin_y
-            || new_zoom_pow2 != self.zoom_pow2
+        if new_origin_x != self.camera.position.x
+            || new_origin_y != self.camera.position.y
+            || new_zoom_pow2 != self.camera.zoom_pow2
         {
-            self.origin_x = new_origin_x;
-            self.origin_y = new_origin_y;
-            self.zoom_pow2 = new_zoom_pow2;
+            self.camera.position.x = new_origin_x;
+            self.camera.position.y = new_origin_y;
+            self.camera.zoom_pow2 = new_zoom_pow2;
 
-            *canvas = canvas.with_zoom_and_world_origin(
-                self.zoom_pow2,
-                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+            *canvas = canvas.with_camera(
+                self.camera
             );
         }
     }
@@ -570,7 +570,7 @@ impl GridExplorer {
         let zoom_range = self.zoom_range();
 
         ui.add(
-            egui::Slider::new(&mut self.zoom_pow2, zoom_range.clone())
+            egui::Slider::new(&mut self.camera.zoom_pow2, zoom_range.clone())
                 .text("Zoom")
                 .custom_formatter(format_zoom_slider_text),
         );
@@ -579,7 +579,7 @@ impl GridExplorer {
         let coord_drag_speed = (complete_shells / 200) as f64;
         ui.add(
             egui::Slider::new(
-                &mut self.origin_x,
+                &mut self.camera.position.x,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
             .text("X")
@@ -587,7 +587,7 @@ impl GridExplorer {
         );
         ui.add(
             egui::Slider::new(
-                &mut self.origin_y,
+                &mut self.camera.position.y,
                 -(complete_shells as f32)..=(complete_shells as f32),
             )
             .text("Y")
@@ -667,9 +667,8 @@ impl GridExplorer {
                 .save_file()
         {
             let s = self.png_extent;
-            let render_params = Self::make_canvas_for(
-                self.zoom_pow2_png,
-                self.origin(),
+            let render_params = Canvas::new(
+                self.camera.with_zoom(self.zoom_pow2_png),
                 GridRect::with_size(GridPoint::zero(), s, s),
             )
             .to_render_params();

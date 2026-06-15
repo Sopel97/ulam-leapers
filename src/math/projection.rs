@@ -32,7 +32,7 @@ pub struct ScreenWorldDiscrete2D {
 impl ScreenWorldDiscrete2D {
     pub fn new(
         zoom_pow2: i32,
-        origin_world: GridPoint,
+        camera_position: GridPoint,
         screen_rect: GridRect,
         flip_axis: FlipAxis,
     ) -> ScreenWorldDiscrete2D {
@@ -42,8 +42,8 @@ impl ScreenWorldDiscrete2D {
 
                 GridRect::with_size(
                     GridPoint::new(
-                        origin_world.x - div_floor(screen_rect.width() / 2, factor),
-                        origin_world.y - div_floor(screen_rect.height() / 2, factor),
+                        camera_position.x - div_floor(screen_rect.width() / 2, factor),
+                        camera_position.y - div_floor(screen_rect.height() / 2, factor),
                     ),
                     div_floor(screen_rect.width(), factor),
                     div_floor(screen_rect.height(), factor),
@@ -56,8 +56,8 @@ impl ScreenWorldDiscrete2D {
 
                 GridRect::with_size(
                     GridPoint::new(
-                        floor_to_multiple(origin_world.x, factor) - screen_rect.width() / 2 * factor_i32,
-                        floor_to_multiple(origin_world.y, factor) - screen_rect.height() / 2 * factor_i32,
+                        floor_to_multiple(camera_position.x, factor) - screen_rect.width() / 2 * factor_i32,
+                        floor_to_multiple(camera_position.y, factor) - screen_rect.height() / 2 * factor_i32,
                     ),
                     screen_rect.width() * factor_i32,
                     screen_rect.height() * factor_i32,
