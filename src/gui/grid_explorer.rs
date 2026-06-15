@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::math::coords::{GridPoint, Point2D};
+use ulam_leapers::math::coords::{GridPoint, GridVector, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;

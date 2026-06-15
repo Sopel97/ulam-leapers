@@ -155,14 +155,29 @@ impl GridProjection {
         // Due to optional flipping of axes we have to be very careful, because
         // if we provide `rect.end`, which is outside the rectangle's area, it may get
         // flipped to be outside too but on the side we don't expect.
-        // To avoid this we first transform the coordinates to be within the rectangle,
-        // and then reform the actual `.end` based on the correct maximum coordinates.
-        let p0 = self.world_to_screen(world_rect.start);
-        let p1 = self.world_to_screen(world_rect.end - GridVector::new(1, 1));
-        GridRect::with_start_end(
-            GridPoint::new(cmp::min(p0.x, p1.x), cmp::min(p0.y, p1.y)),
-            GridPoint::new(cmp::max(p0.x, p1.x), cmp::max(p0.y, p1.y)) + GridVector::new(1, 1),
-        )
+
+        let mut screen_rect = GridRect::with_start_end(
+            self.world_to_screen(world_rect.start),
+            self.world_to_screen(world_rect.end)
+        );
+
+        // We avoid this by checking if the resulting coordinates are in ascending order,
+        // and correcting the range by swapping start with end in case they are not.
+        // (end, start] -> (start, end] -> [start, end)
+        if screen_rect.start.x > screen_rect.end.x {
+            std::mem::swap(&mut screen_rect.start.x, &mut screen_rect.end.x);
+            // One is added to each start and end to account for exclusivity of the range.
+            // We want [start, end), not (start, end]
+            screen_rect.start.x += 1;
+            screen_rect.end.x += 1;
+        }
+        if screen_rect.start.y > screen_rect.end.y {
+            std::mem::swap(&mut screen_rect.start.y, &mut screen_rect.end.y);
+            screen_rect.start.y += 1;
+            screen_rect.end.y += 1;
+        }
+
+        screen_rect
     }
 }
 
