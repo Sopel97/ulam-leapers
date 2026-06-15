@@ -24,6 +24,7 @@ use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -50,19 +51,19 @@ pub struct GridExplorer {
     finalized_simulation: FinalizedSimulation,
     grid_renderer: GridRenderer,
     grid_render: Option<GridRender>,
-    is_debug_ui_enabled: bool,
+    camera: GridCamera,
 
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
     player_colors: Vec<Color32>,
+    have_colors_changed: bool,
     last_pointed_coords: GridPoint,
     save_state: SaveState,
 
     zoom_pow2_png: i32,
     png_extent: i32,
 
-    camera: GridCamera,
-    have_colors_changed: bool,
+    is_debug_ui_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,19 +146,19 @@ impl GridExplorer {
             grid_renderer,
             finalized_simulation,
             grid_render: None,
-            is_debug_ui_enabled: false,
+            camera: GridCamera::new(DEFAULT_ZOOM_POW2, Point2D::new(0.0, 0.0)),
 
             mipmap_generation_progress: None,
 
             player_colors: default_player_colors()[..=player_count].to_vec(),
+            have_colors_changed: false,
             last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
 
             zoom_pow2_png: DEFAULT_ZOOM_POW2,
             png_extent: DEFAULT_PNG_EXTENT,
 
-            camera: GridCamera::new(DEFAULT_ZOOM_POW2, Point2D::new(0.0, 0.0)),
-            have_colors_changed: false,
+            is_debug_ui_enabled: false,
         }
     }
 
@@ -168,6 +169,26 @@ impl GridExplorer {
         let mut explorer = GridExplorer::new(simulation);
         explorer.assume_saved();
         Ok(explorer)
+    }
+
+    fn is_saved(&self) -> bool {
+        matches!(self.save_state, SaveState::Saved)
+    }
+
+    fn assume_saved(&mut self) {
+        self.save_state = SaveState::Saved;
+    }
+
+    fn last_pointed_coords(&self) -> GridPoint {
+        self.last_pointed_coords
+    }
+
+    fn zoom_range(&self) -> RangeInclusive<i32> {
+        if let Some(factor) = self.grid_renderer.highest_mipmap_minification_factor() {
+            (-(factor.exponent() as i32))..=MAX_ZOOM_POW2
+        } else {
+            MIN_ZOOM_POW2..=MAX_ZOOM_POW2
+        }
     }
 
     fn draw_canvas_texture(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
@@ -261,32 +282,6 @@ impl GridExplorer {
     fn show_debug_ui(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
         self.show_pointed_chunk_overlay(ui, canvas);
     }
-}
-
-impl GridExplorer {
-    pub fn last_pointed_coords(&self) -> GridPoint {
-        self.last_pointed_coords
-    }
-
-    pub fn zoom_range(&self) -> RangeInclusive<i32> {
-        if let Some(factor) = self.grid_renderer.highest_mipmap_minification_factor() {
-            (-(factor.exponent() as i32))..=MAX_ZOOM_POW2
-        } else {
-            MIN_ZOOM_POW2..=MAX_ZOOM_POW2
-        }
-    }
-
-    fn scroll_delta_from_input(ui: &Ui) -> i32 {
-        ui.input(|i| {
-            let mut zoom_delta = 0;
-            for event in &i.events {
-                if let egui::Event::MouseWheel { delta, .. } = event {
-                    zoom_delta += delta.y as i32;
-                }
-            }
-            zoom_delta
-        })
-    }
 
     fn make_camera_position_bounds(&self) -> Rect2D<f32> {
         let complete_shells = self.finalized_simulation.complete_shells();
@@ -314,10 +309,10 @@ impl GridExplorer {
         let camera_position_bounds = self.make_camera_position_bounds();
 
         let mut new_camera =
-            RestrictedGridCamera::from_camera(self.camera, zoom_range, camera_position_bounds);
+            self.camera.restricted(zoom_range, camera_position_bounds);
 
         let zoom_delta = if response.hovered() {
-            Self::scroll_delta_from_input(ui)
+            scroll_delta_in_ui(ui)
         } else {
             0
         };
@@ -350,14 +345,6 @@ impl GridExplorer {
         }
 
         self.last_pointed_coords = canvas.screen_to_world(mouse_pos);
-    }
-
-    pub fn is_saved(&self) -> bool {
-        matches!(self.save_state, SaveState::Saved)
-    }
-
-    fn assume_saved(&mut self) {
-        self.save_state = SaveState::Saved;
     }
 
     fn try_save(&mut self) {
@@ -595,14 +582,5 @@ impl GridExplorer {
             Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
 
         self.show_screenshots_ui(ui);
-    }
-}
-
-fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
-    let n = n.round() as i32;
-    if n >= 0 {
-        format!("{}x", 1 << n)
-    } else {
-        format!("1/{}x", 1 << -n)
     }
 }

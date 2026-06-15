@@ -6,3 +6,4 @@ pub mod simulation_creator;
 pub mod simulation_runner;
 pub mod subwindow;
 pub mod widgets;
+pub mod util;

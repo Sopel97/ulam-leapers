@@ -33,6 +33,14 @@ impl GridCamera {
     pub fn zoom(&self) -> Zoom<Pow2> {
         Zoom::from_exponent(self.zoom_pow2)
     }
+
+    pub fn restricted(
+        &self,
+        zoom_pow2_range: RangeInclusive<i32>,
+        position_range: Rect2D<f32>,
+    ) -> RestrictedGridCamera {
+        RestrictedGridCamera::from_camera(*self, zoom_pow2_range, position_range)
+    }
 }
 
 #[derive(Debug, Clone)]
