@@ -22,7 +22,7 @@ impl FlipAxis {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct GridProjection {
-    zoom_pow2: i32,
+    zoom: Zoom<Pow2>,
     screen_rect: GridRect,
     world_rect: GridRect,
     flip_x: bool,
@@ -31,15 +31,13 @@ pub struct GridProjection {
 
 impl GridProjection {
     pub fn new(
-        zoom_pow2: i32,
+        zoom: Zoom<Pow2>,
         camera_position: GridPoint,
         screen_rect: GridRect,
         flip_axis: FlipAxis,
     ) -> GridProjection {
-        let world_rect = match zoom_pow2 {
-            e @ 0.. => {
-                let factor = Pow2::from_exponent(e as u8);
-
+        let world_rect = match zoom {
+            Zoom::Magnification(factor) => {
                 GridRect::with_size(
                     GridPoint::new(
                         camera_position.x - div_floor(screen_rect.width() / 2, factor),
@@ -49,8 +47,7 @@ impl GridProjection {
                     div_floor(screen_rect.height(), factor),
                 )
             }
-            e @ ..0 => {
-                let factor = Pow2::from_exponent((-e) as u8);
+            Zoom::Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
                 let factor_i32: i32 = factor.as_u64() as i32;
 
@@ -69,7 +66,7 @@ impl GridProjection {
 
         GridProjection {
             screen_rect,
-            zoom_pow2,
+            zoom,
             world_rect,
             flip_x,
             flip_y,
@@ -85,25 +82,19 @@ impl GridProjection {
     }
     
     pub fn zoom(&self) -> Zoom<Pow2> {
-        Zoom::from_exponent(self.zoom_pow2)
+        self.zoom
     }
     
-    pub fn zoom_pow2(&self) -> i32 {
-        self.zoom_pow2
-    }
-
     pub fn screen_to_world(&self, screen_point: GridPoint) -> GridPoint {
         let mut dx;
         let mut dy;
 
-        match self.zoom_pow2 {
-            e @ 0.. => {
-                let factor = Pow2::from_exponent(e as u8);
+        match self.zoom {
+            Zoom::Magnification(factor) => {
                 dx = div_floor(screen_point.x - self.screen_rect.start.x, factor);
                 dy = div_floor(screen_point.y - self.screen_rect.start.y, factor);
             }
-            e @ ..0 => {
-                let factor = Pow2::from_exponent((-e) as u8);
+            Zoom::Minification(factor) => {
                 let factor_i32: i32 = factor.as_u64() as i32;
                 dx = (screen_point.x - self.screen_rect.start.x) * factor_i32;
                 dy = (screen_point.y - self.screen_rect.start.y) * factor_i32;
@@ -125,15 +116,13 @@ impl GridProjection {
         let mut dx;
         let mut dy;
 
-        match self.zoom_pow2 {
-            e @ 0.. => {
-                let factor = Pow2::from_exponent(e as u8);
+        match self.zoom {
+            Zoom::Magnification(factor) => {
                 let factor_i32: i32 = factor.as_u64() as i32;
                 dx = (world_point.x - self.world_rect.start.x) * factor_i32;
                 dy = (world_point.y - self.world_rect.start.y) * factor_i32;
             }
-            e @ ..0 => {
-                let factor = Pow2::from_exponent((-e) as u8);
+            Zoom::Minification(factor) => {
                 dx = div_floor(world_point.x - self.world_rect.start.x, factor);
                 dy = div_floor(world_point.y - self.world_rect.start.y, factor);
             }

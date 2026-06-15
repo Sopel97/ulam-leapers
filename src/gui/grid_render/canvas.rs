@@ -30,6 +30,10 @@ impl GridCamera {
             position: self.position,
         }
     }
+
+    pub fn zoom(&self) -> Zoom<Pow2> {
+        Zoom::from_exponent(self.zoom_pow2)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -132,17 +136,18 @@ impl GridCanvas {
     }
 
     pub fn new(camera: GridCamera, viewport: GridRect) -> Self {
-        let rect = if camera.zoom_pow2 > 0 {
-            // Restrict viewport to bounds compatible with the alignment required by the zoom.
-            let factor = Pow2::from_exponent(camera.zoom_pow2 as u8);
-            viewport.aligned_to_pow2_inside(factor)
-        } else {
-            viewport
+        let rect = match camera.zoom() {
+            Zoom::Magnification(factor) => {
+                viewport.aligned_to_pow2_inside(factor)
+            }
+            Zoom::Minification(_) => {
+                viewport
+            }
         };
 
         Self {
             projection: GridProjection::new(
-                camera.zoom_pow2,
+                camera.zoom(),
                 GridPoint::new(camera.position.x as i32, camera.position.y as i32),
                 rect,
                 SCREEN_TO_WORLD_AXIS_FLIP,
