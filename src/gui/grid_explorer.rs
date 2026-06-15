@@ -460,7 +460,7 @@ impl GridExplorer {
     }
 
     fn show_camera_ui(&mut self, ui: &mut Ui) {
-        let complete_shells = self.finalized_simulation.complete_shells();
+        let complete_shells_f32 = self.finalized_simulation.complete_shells() as f32;
         let zoom_range = self.zoom_range();
 
         ui.add(
@@ -469,23 +469,20 @@ impl GridExplorer {
                 .custom_formatter(format_zoom_slider_text),
         );
 
-        // How many per pixel.
-        let coord_drag_speed = (complete_shells / 200) as f64;
         ui.add(
             egui::Slider::new(
                 &mut self.camera.position.x,
-                -(complete_shells as f32)..=(complete_shells as f32),
+                -complete_shells_f32..=complete_shells_f32,
             )
-            .text("X")
-            .drag_value_speed(coord_drag_speed),
+            .text("X"),
         );
+        
         ui.add(
             egui::Slider::new(
                 &mut self.camera.position.y,
-                -(complete_shells as f32)..=(complete_shells as f32),
+                -complete_shells_f32..=complete_shells_f32,
             )
-            .text("Y")
-            .drag_value_speed(coord_drag_speed),
+            .text("Y"),
         );
     }
 
