@@ -6,7 +6,10 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Response, Sense, Stroke, StrokeKind, TextureHandle, Ui};
+use eframe::egui::{
+    Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke, StrokeKind,
+    TextureHandle, Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -57,11 +60,17 @@ struct Camera {
 
 impl Camera {
     pub fn new(zoom_pow2: i32, position: Point2D<f32>) -> Self {
-        Self { zoom_pow2, position }
+        Self {
+            zoom_pow2,
+            position,
+        }
     }
 
     pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
-        Self { zoom_pow2, position: self.position }
+        Self {
+            zoom_pow2,
+            position: self.position,
+        }
     }
 }
 
@@ -79,7 +88,10 @@ impl BoundedCamera {
         position_range: Rect2D<f32>,
     ) -> Self {
         Self {
-            camera,
+            camera: Camera::new(
+                Self::clamped_zoom(camera.zoom_pow2, zoom_pow2_range.clone()),
+                Self::clamped_position(camera.position, position_range),
+            ),
             zoom_pow2_range,
             position_range,
         }
@@ -89,43 +101,60 @@ impl BoundedCamera {
         self.camera
     }
 
-    pub fn add_zoom_with_invariant_point(&mut self, canvas: &Canvas, zoom_delta: i32, invariant_point: GridPoint) {
-        let new_zoom_pow2 = self.clamped_zoom(self.camera.zoom_pow2 + zoom_delta);
+    pub fn add_zoom_with_invariant_point(
+        &mut self,
+        canvas: &Canvas,
+        zoom_delta: i32,
+        invariant_point: GridPoint,
+    ) {
+        let new_zoom_pow2 =
+            Self::clamped_zoom(self.camera.zoom_pow2 + zoom_delta, self.zoom_pow2_range.clone());
         let canvas_new = canvas.with_zoom(new_zoom_pow2);
 
         let invariant_world = canvas.screen_to_world(invariant_point);
         let invariant_world_new = canvas_new.screen_to_world(invariant_point);
         let diff = invariant_world - invariant_world_new;
 
-        self.camera.position = self.clamped_position(Point2D::new(
-            self.camera.position.x + diff.x as f32,
-            self.camera.position.y + diff.y as f32,
-        ));
+        self.camera.position = Self::clamped_position(
+            Point2D::new(
+                self.camera.position.x + diff.x as f32,
+                self.camera.position.y + diff.y as f32,
+            ),
+            self.position_range,
+        );
         self.camera.zoom_pow2 = new_zoom_pow2;
     }
 
     pub fn drag(&mut self, dx: f32, dy: f32) {
         let zoom_scale = 0.5f32.powf(self.camera.zoom_pow2 as f32);
-        self.camera.position = self.clamped_position(
+        self.camera.position = Self::clamped_position(
             self.camera.position + Vector2D::new(dx, dy) * zoom_scale,
+            self.position_range,
         );
     }
 
     pub fn set_position_proportional_within_bounds(&mut self, tx: f32, ty: f32) {
-        self.camera.position = self.clamped_position(Point2D::new(
-            self.position_range.start.x + tx * self.position_range.width(),
-            self.position_range.start.y + ty * self.position_range.height(),
-        ));
+        self.camera.position = Self::clamped_position(
+            Point2D::new(
+                self.position_range.start.x + tx * self.position_range.width(),
+                self.position_range.start.y + ty * self.position_range.height(),
+            ),
+            self.position_range,
+        );
     }
 
-    fn clamped_zoom(&self, zoom_pow2: i32) -> i32 {
-        zoom_pow2.clamp(*self.zoom_pow2_range.start(), *self.zoom_pow2_range.end())
+    fn clamped_zoom(zoom_pow2: i32, zoom_pow2_range: RangeInclusive<i32>) -> i32 {
+        zoom_pow2.clamp(*zoom_pow2_range.start(), *zoom_pow2_range.end())
     }
 
-    fn clamped_position(&self, position: Point2D<f32>) -> Point2D<f32> {
+    fn clamped_position(position: Point2D<f32>, position_range: Rect2D<f32>) -> Point2D<f32> {
         Point2D::new(
-            position.x.clamp(self.position_range.start.x, self.position_range.end.x),
-            position.y.clamp(self.position_range.start.y, self.position_range.end.y),
+            position
+                .x
+                .clamp(position_range.start.x, position_range.end.x),
+            position
+                .y
+                .clamp(position_range.start.y, position_range.end.y),
         )
     }
 }
@@ -447,7 +476,7 @@ impl GridExplorer {
             zoom_delta
         })
     }
-    
+
     fn make_camera_position_bounds(&self) -> Rect2D<f32> {
         let complete_shells = self.finalized_simulation.complete_shells();
         let complete_shells_f32 = complete_shells as f32;
@@ -472,7 +501,8 @@ impl GridExplorer {
         let zoom_range = self.zoom_range();
         let camera_position_bounds = self.make_camera_position_bounds();
 
-        let mut new_camera = BoundedCamera::from_camera(self.camera, zoom_range, camera_position_bounds);
+        let mut new_camera =
+            BoundedCamera::from_camera(self.camera, zoom_range, camera_position_bounds);
 
         let zoom_delta = if response.hovered() {
             Self::scroll_delta_from_input(ui)
@@ -502,12 +532,9 @@ impl GridExplorer {
 
         // Update canvas if anything changed.
         let new_camera = new_camera.to_camera();
-        if new_camera != self.camera
-        {
+        if new_camera != self.camera {
             self.camera = new_camera;
-            *canvas = canvas.with_camera(
-                self.camera
-            );
+            *canvas = canvas.with_camera(self.camera);
         }
 
         self.last_pointed_coords = canvas.screen_to_world(mouse_pos);
