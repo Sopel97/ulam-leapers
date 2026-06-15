@@ -12,7 +12,6 @@ pub trait CacheEnabled {
 }
 
 struct Entry<V> {
-    computation_cost: usize,
     memory_cost: usize,
     cost_ratio: f64,
     last_use_gen: AtomicUsize,
@@ -107,7 +106,6 @@ where
             new_entries.push_back((
                 key,
                 Entry {
-                    computation_cost,
                     memory_cost,
                     cost_ratio: (computation_cost as f64) / (memory_cost as f64),
                     last_use_gen: AtomicUsize::new(self.curr_gen),

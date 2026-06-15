@@ -189,7 +189,7 @@ mod tests {
         }
     }
 
-    /// All alignments we want to exercise in parameterised tests.
+    /// All alignments we want to exercise in parameterized tests.
     fn all_alignments() -> Vec<MemoryAlignment> {
         vec![
             MemoryAlignment::new(16),

@@ -428,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn test_best_prefix_iec_kibi() {
+    fn test_best_prefix_iec_kib() {
         let d = MemSizeDisplay::new(1024).iec();
         let (prefix, unit) = d.best_prefix();
         assert_eq!(prefix, "K");
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn test_best_prefix_iec_mebi() {
+    fn test_best_prefix_iec_mib() {
         let d = MemSizeDisplay::new(1 << 20).iec();
         let (prefix, unit) = d.best_prefix();
         assert_eq!(prefix, "M");

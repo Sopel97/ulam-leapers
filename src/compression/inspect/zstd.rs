@@ -477,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_raw_block() {
-        // Very small inputs or uncompressible data should produce a raw block.
+        // Very small inputs or incompressible data should produce a raw block.
         // Use level 1 and short length to encourage it.
         let input = b"\x01\x02\x03";
         let compressed = zstd_compress_level(input, 1);

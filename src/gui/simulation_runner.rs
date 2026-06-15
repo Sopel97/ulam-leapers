@@ -64,11 +64,6 @@ impl ProgressTracker {
         self.curr_progress
     }
 
-    pub fn elapsed(&self) -> Duration {
-        let now = std::time::Instant::now();
-        now.duration_since(self.start_time)
-    }
-
     pub fn active_time_elapsed(&self) -> Duration {
         self.last_progress_update_time - self.start_time
     }

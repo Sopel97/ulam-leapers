@@ -17,7 +17,7 @@ use std::ops::RangeInclusive;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::game::sampler::{FrozenGridSampler, SampleCollector};
+use ulam_leapers::game::sampler::FrozenGridSampler;
 use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
@@ -410,7 +410,7 @@ impl SimulationCreator {
     fn show_import_export(ui: &mut Ui, state_json_ui: &mut String) {
         ScrollArea::horizontal().show(ui, |ui| {
             let json_code_block = egui::TextEdit::singleline(state_json_ui)
-                .font(egui::TextStyle::Monospace)
+                .font(TextStyle::Monospace)
                 .lock_focus(true)
                 .desired_width(f32::INFINITY);
             ui.add(json_code_block);

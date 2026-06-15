@@ -65,7 +65,7 @@ impl From<&Point2D<i32>> for UlamSpiralPoint {
     /// ```
     ///
     /// There exists a version with one less branch, but it requires computing max(ax, ay)
-    /// and it ends up being slower, probably due to longer dependency chain and the fact
+    /// and it ends up being slower. This is probably due to longer dependency chain and the fact
     /// that the branches are very predictable in our current use of this function.
     fn from(point: &Point2D<i32>) -> Self {
         let x = point.x as i64;

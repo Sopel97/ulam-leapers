@@ -284,7 +284,7 @@ impl SimulationConfigInput {
         egui::Frame::default().show(ui, |ui| {
             ui.vertical(|ui| {
                 // Players
-                for (i, player_config) in player_configs.iter_mut().enumerate() {
+                for player_config in player_configs.iter_mut() {
                     let res = ui
                         .group(|ui| {
                             Self::show_player_config(ui, player_config);

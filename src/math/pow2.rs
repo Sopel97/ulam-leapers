@@ -88,6 +88,8 @@ impl From<Pow2> for u64 {
 
 impl Mul for Pow2 {
     type Output = Pow2;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, other: Pow2) -> Pow2 {
         Pow2::from_exponent(self.exponent + other.exponent)
     }
