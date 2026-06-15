@@ -20,6 +20,13 @@ impl FlipAxis {
     }
 }
 
+/// Represents a screen to world projection, where the world is a discrete grid.
+/// Supports power-of-two zoom factors - both magnification and minification.
+/// When magnifying, the world grid is kept uniformly sized, that is, every
+/// world grid point has the same size in screen space.
+/// Since this is a discrete projection the coordinates are always aligned
+/// to the world grid. This means that multiple different `camera_position` values
+/// may correspond to the same world position depending on the `zoom`.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct GridProjection {
     zoom: Zoom<Pow2>,
@@ -30,6 +37,8 @@ pub struct GridProjection {
 }
 
 impl GridProjection {
+    /// Creates a new projection based on camera parameters and viewport.
+    /// `camera_position` is the world point to be centered in the viewport.
     pub fn new(
         zoom: Zoom<Pow2>,
         camera_position: GridPoint,
@@ -139,6 +148,9 @@ impl GridProjection {
         GridPoint::new(x, y)
     }
 
+    /// Projects the given `world_rect` into screen coordinates.
+    /// Note, that if flipping of any axis is present this is not equivalent
+    /// to simply mapping `world_rect.start` and `world_rect.end` separately. 
     pub fn world_to_screen_rect(&self, world_rect: GridRect) -> GridRect {
         // Due to optional flipping of axes we have to be very careful, because
         // if we provide `rect.end`, which is outside the rectangle's area, it may get
