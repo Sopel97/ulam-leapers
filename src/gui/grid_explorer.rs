@@ -8,7 +8,10 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{vec2, Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
+use eframe::egui::{
+    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
+    Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -18,7 +21,7 @@ use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::math::coords::{GridPoint, GridVector, Point2D};
+use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
@@ -287,7 +290,12 @@ impl GridExplorer {
 
                 // Offsets slightly to prevent occlusion by the cursor.
                 let offset = vec2(16.0, 24.0);
-                painter.debug_text(egui_mouse_pos + offset, Align2::LEFT_TOP, Color32::BLACK, text);
+                painter.debug_text(
+                    egui_mouse_pos + offset,
+                    Align2::LEFT_TOP,
+                    Color32::BLACK,
+                    text,
+                );
             }
         }
     }
@@ -385,8 +393,9 @@ impl GridExplorer {
             }
         };
 
-        let save = ui.button("Save simulation").clicked()
-            || ui.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT));
+        let button =
+            Button::new("Save simulation").shortcut_text(ui.ctx().format_shortcut(&SAVE_SHORTCUT));
+        let save = ui.add(button).clicked() || ui.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT));
         if save {
             self.try_save();
         }
