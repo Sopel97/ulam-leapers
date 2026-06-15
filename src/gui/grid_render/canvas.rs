@@ -4,7 +4,7 @@ use eframe::egui::{Painter, Ui};
 use std::ops::RangeInclusive;
 use ulam_leapers::math::coords::{GridPoint, Point2D, Vector2D};
 use ulam_leapers::math::pow2::Pow2;
-use crate::gui::render::grid_projection::{FlipAxis, GridProjection};
+use crate::gui::grid_render::projection::{FlipAxis, GridProjection};
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 

@@ -4,5 +4,5 @@ pub mod simulation_creator;
 pub mod simulation_runner;
 pub mod subwindow;
 pub mod widgets;
-pub mod render;
+pub mod grid_render;
 pub mod conv;

@@ -1,6 +1,6 @@
 ﻿use crate::gui::conv::{egui_to_grid_point, egui_to_grid_rect, grid_rect_to_egui};
-use crate::gui::render::grid_canvas::{GridCamera, GridCanvas, RestrictedGridCamera};
-use crate::gui::render::grid_render::{
+use crate::gui::grid_render::canvas::{GridCamera, GridCanvas, RestrictedGridCamera};
+use crate::gui::grid_render::render::{
     default_player_colors, GridRenderer, MipmapGenerationProgress,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;

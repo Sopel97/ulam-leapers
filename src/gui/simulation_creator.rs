@@ -1,5 +1,5 @@
-﻿use crate::gui::render::grid_render::default_player_colors;
-use crate::gui::render::samplers::MapLastCollector;
+﻿use crate::gui::grid_render::render::default_player_colors;
+use crate::gui::grid_render::samplers::MapLastCollector;
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
