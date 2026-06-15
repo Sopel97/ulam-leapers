@@ -300,6 +300,10 @@ impl Subwindow for GridExplorer {
                     self.show_controls_window_ui(ui);
                 });
 
+            if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
+                self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
+            }
+
             // The projection will give us a more restricted viewport.
             let mut canvas = self.make_canvas(egui_to_grid_rect(ui.clip_rect()));
 
@@ -307,10 +311,6 @@ impl Subwindow for GridExplorer {
                 self.update_canvas_from_events(ui, &mut canvas);
                 self.maybe_update_canvas_texture(ui, &canvas);
                 self.draw_canvas_texture(ui, &canvas);
-            }
-
-            if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
-                self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
             }
             if self.is_debug_ui_enabled {
                 self.show_debug_ui(ui, &canvas);
