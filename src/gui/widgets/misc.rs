@@ -1,10 +1,9 @@
-﻿use eframe::egui::{color_picker, vec2, Checkbox, Color32, Response, Sense, Ui, Vec2};
-use eframe::egui::color_picker::Alpha;
-use ulam_leapers::collections::array2d::Array2D;
+﻿use eframe::egui::color_picker::Alpha;
+use eframe::egui::{color_picker, vec2, Color32, Response, Ui, Vec2};
 
-pub fn ui_layout_2d<F>(ui: &mut Ui, width: usize, height: usize, mut func: F) 
+pub fn ui_layout_2d<F>(ui: &mut Ui, width: usize, height: usize, mut func: F)
 where
-    F: FnMut(&mut Ui, usize, usize)
+    F: FnMut(&mut Ui, usize, usize),
 {
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     ui.vertical(|ui| {
@@ -20,16 +19,8 @@ where
 
 pub fn srgb_color_button(ui: &mut Ui, color: &mut Color32, allow_change: bool) -> Response {
     if allow_change {
-        color_picker::color_edit_button_srgba(
-            ui,
-            color,
-            Alpha::Opaque,
-        )
+        color_picker::color_edit_button_srgba(ui, color, Alpha::Opaque)
     } else {
-        color_picker::show_color(
-            ui,
-            *color,
-            vec2(16.0, 16.0),
-        )
+        color_picker::show_color(ui, *color, vec2(16.0, 16.0))
     }
 }

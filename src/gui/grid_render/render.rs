@@ -1,4 +1,5 @@
-﻿use eframe::egui;
+﻿use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
+use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
 };
@@ -21,7 +22,6 @@ use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
-use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
 
 pub fn default_player_colors() -> Vec<Color32> {
     vec![

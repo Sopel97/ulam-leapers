@@ -115,7 +115,10 @@ impl SimulationConfigInput {
     }
 
     /// Ignores the current value of `self.attack_radius`.
-    fn set_attack_radius_ignore_current(&mut self, attack_radius: usize) -> Result<(), WidgetError> {
+    fn set_attack_radius_ignore_current(
+        &mut self,
+        attack_radius: usize,
+    ) -> Result<(), WidgetError> {
         if !self.constraints.attack_radius.contains(&attack_radius) {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Attack radius {} outside of allowed range {:?}",
@@ -142,7 +145,8 @@ impl SimulationConfigInput {
         }
 
         self.player_configs.resize_with(player_count, || {
-            let mut res = LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints());
+            let mut res =
+                LeaperAttacksInput::new(self.constraints.leaper_attacks_input_constraints());
             res.set_radius(self.attack_radius).unwrap();
             res
         });
@@ -365,7 +369,7 @@ impl SimulationConfigInput {
                         &mut self.attack_radius,
                         self.constraints.attack_radius.clone(),
                     )
-                        .integer(),
+                    .integer(),
                 )
                 .changed()
             {

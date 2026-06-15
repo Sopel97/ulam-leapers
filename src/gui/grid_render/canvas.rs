@@ -1,10 +1,10 @@
 ﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 use crate::gui::grid_explorer::GridRenderParameters;
+use crate::gui::grid_render::projection::{FlipAxis, GridProjection};
 use eframe::egui::{Painter, Response, Sense, Ui};
 use std::ops::RangeInclusive;
 use ulam_leapers::math::coords::{GridPoint, Point2D, Vector2D};
 use ulam_leapers::math::pow2::Pow2;
-use crate::gui::grid_render::projection::{FlipAxis, GridProjection};
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 
@@ -137,12 +137,8 @@ impl GridCanvas {
 
     pub fn new(camera: GridCamera, viewport: GridRect) -> Self {
         let rect = match camera.zoom() {
-            Zoom::Magnification(factor) => {
-                viewport.aligned_to_pow2_inside(factor)
-            }
-            Zoom::Minification(_) => {
-                viewport
-            }
+            Zoom::Magnification(factor) => viewport.aligned_to_pow2_inside(factor),
+            Zoom::Minification(_) => viewport,
         };
 
         Self {
@@ -156,16 +152,13 @@ impl GridCanvas {
             viewport,
         }
     }
-    
+
     pub fn is_zero_area(&self) -> bool {
         self.width() == 0 || self.height() == 0
     }
-    
+
     pub fn make_sense(&self, ui: &mut Ui, sense: Sense) -> Response {
-        ui.allocate_rect(
-            grid_rect_to_egui(self.rect()),
-            sense,
-        )
+        ui.allocate_rect(grid_rect_to_egui(self.rect()), sense)
     }
 
     pub fn make_painter(&self, ui: &mut Ui) -> Painter {

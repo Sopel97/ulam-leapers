@@ -182,13 +182,13 @@ impl LeaperAttacksInput {
             let yy = y + 1;
             if xx <= yy {
                 let mut button = ui.button(format!("({xx},{yy})"));
-                
+
                 if let Some(name) =
                     leaper_name_from_attack_vector(&GridVector::new(xx as i32, yy as i32))
                 {
                     button = button.on_hover_text(name);
                 }
-                
+
                 if button.clicked() {
                     clicked = Some(GridVector::new(xx as i32, yy as i32));
                 }

@@ -37,24 +37,24 @@ impl GridProjection {
         flip_axis: FlipAxis,
     ) -> GridProjection {
         let world_rect = match zoom {
-            Zoom::Magnification(factor) => {
-                GridRect::with_size(
-                    GridPoint::new(
-                        camera_position.x - div_floor(screen_rect.width() / 2, factor),
-                        camera_position.y - div_floor(screen_rect.height() / 2, factor),
-                    ),
-                    div_floor(screen_rect.width(), factor),
-                    div_floor(screen_rect.height(), factor),
-                )
-            }
+            Zoom::Magnification(factor) => GridRect::with_size(
+                GridPoint::new(
+                    camera_position.x - div_floor(screen_rect.width() / 2, factor),
+                    camera_position.y - div_floor(screen_rect.height() / 2, factor),
+                ),
+                div_floor(screen_rect.width(), factor),
+                div_floor(screen_rect.height(), factor),
+            ),
             Zoom::Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
                 let factor_i32: i32 = factor.as_u64() as i32;
 
                 GridRect::with_size(
                     GridPoint::new(
-                        floor_to_multiple(camera_position.x, factor) - screen_rect.width() / 2 * factor_i32,
-                        floor_to_multiple(camera_position.y, factor) - screen_rect.height() / 2 * factor_i32,
+                        floor_to_multiple(camera_position.x, factor)
+                            - screen_rect.width() / 2 * factor_i32,
+                        floor_to_multiple(camera_position.y, factor)
+                            - screen_rect.height() / 2 * factor_i32,
                     ),
                     screen_rect.width() * factor_i32,
                     screen_rect.height() * factor_i32,
@@ -80,11 +80,11 @@ impl GridProjection {
     pub fn screen_rect(&self) -> GridRect {
         self.screen_rect
     }
-    
+
     pub fn zoom(&self) -> Zoom<Pow2> {
         self.zoom
     }
-    
+
     pub fn screen_to_world(&self, screen_point: GridPoint) -> GridPoint {
         let mut dx;
         let mut dy;

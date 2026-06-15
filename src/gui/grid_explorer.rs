@@ -1,4 +1,4 @@
-﻿use crate::gui::conv::{egui_to_grid_point, egui_to_grid_rect, grid_rect_to_egui};
+﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
 use crate::gui::grid_render::canvas::{GridCamera, GridCanvas, RestrictedGridCamera};
 use crate::gui::grid_render::render::{
     default_player_colors, GridRenderer, MipmapGenerationProgress,
@@ -8,8 +8,7 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
 use eframe::egui::{
-    Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
-    TextureHandle, Ui,
+    Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, TextureHandle, Ui,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
