@@ -6,10 +6,7 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{
-    Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke, StrokeKind,
-    TextureHandle, Ui,
-};
+use eframe::egui::{Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Response, Sense, Stroke, StrokeKind, TextureHandle, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -19,10 +16,10 @@ use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
-use ulam_leapers::math::coords::{GridPoint, Point2D};
+use ulam_leapers::math::coords::{GridPoint, Point2D, Vector2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
-use ulam_leapers::math::rect::GridRect;
+use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 
@@ -52,7 +49,7 @@ pub enum SaveState {
     Errored(std::io::Error),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 struct Camera {
     zoom_pow2: i32,
     position: Point2D<f32>,
@@ -65,6 +62,71 @@ impl Camera {
 
     pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
         Self { zoom_pow2, position: self.position }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BoundedCamera {
+    camera: Camera,
+    zoom_pow2_range: RangeInclusive<i32>,
+    position_range: Rect2D<f32>,
+}
+
+impl BoundedCamera {
+    pub fn from_camera(
+        camera: Camera,
+        zoom_pow2_range: RangeInclusive<i32>,
+        position_range: Rect2D<f32>,
+    ) -> Self {
+        Self {
+            camera,
+            zoom_pow2_range,
+            position_range,
+        }
+    }
+
+    pub fn to_camera(&self) -> Camera {
+        self.camera
+    }
+
+    pub fn add_zoom_with_invariant_point(&mut self, canvas: &Canvas, zoom_delta: i32, invariant_point: GridPoint) {
+        let new_zoom_pow2 = self.clamped_zoom(self.camera.zoom_pow2 + zoom_delta);
+        let canvas_new = canvas.with_zoom(new_zoom_pow2);
+
+        let invariant_world = canvas.screen_to_world(invariant_point);
+        let invariant_world_new = canvas_new.screen_to_world(invariant_point);
+        let diff = invariant_world - invariant_world_new;
+
+        self.camera.position = self.clamped_position(Point2D::new(
+            self.camera.position.x + diff.x as f32,
+            self.camera.position.y + diff.y as f32,
+        ));
+        self.camera.zoom_pow2 = new_zoom_pow2;
+    }
+
+    pub fn drag(&mut self, dx: f32, dy: f32) {
+        let zoom_scale = 0.5f32.powf(self.camera.zoom_pow2 as f32);
+        self.camera.position = self.clamped_position(
+            self.camera.position + Vector2D::new(dx, dy) * zoom_scale,
+        );
+    }
+
+    pub fn set_position_proportional_within_bounds(&mut self, tx: f32, ty: f32) {
+        self.camera.position = self.clamped_position(Point2D::new(
+            self.position_range.start.x + tx * self.position_range.width(),
+            self.position_range.start.y + ty * self.position_range.height(),
+        ));
+    }
+
+    fn clamped_zoom(&self, zoom_pow2: i32) -> i32 {
+        zoom_pow2.clamp(*self.zoom_pow2_range.start(), *self.zoom_pow2_range.end())
+    }
+
+    fn clamped_position(&self, position: Point2D<f32>) -> Point2D<f32> {
+        Point2D::new(
+            position.x.clamp(self.position_range.start.x, self.position_range.end.x),
+            position.y.clamp(self.position_range.start.y, self.position_range.end.y),
+        )
     }
 }
 
@@ -374,6 +436,18 @@ impl GridExplorer {
         Canvas::new(self.camera, rect)
     }
 
+    fn scroll_delta_from_input(ui: &Ui) -> i32 {
+        ui.input(|i| {
+            let mut zoom_delta = 0;
+            for event in &i.events {
+                if let egui::Event::MouseWheel { delta, .. } = event {
+                    zoom_delta += delta.y as i32;
+                }
+            }
+            zoom_delta
+        })
+    }
+
     fn update_canvas_from_events(&mut self, ui: &mut Ui, canvas: &mut Canvas) {
         let response = ui.allocate_rect(
             grid_rect_to_egui(canvas.rect()),
@@ -389,33 +463,30 @@ impl GridExplorer {
         let mouse_world = canvas.screen_to_world(mouse_pos);
         self.last_pointed_coords = mouse_world;
 
-        let mut new_origin_x = self.camera.position.x;
-        let mut new_origin_y = self.camera.position.y;
-        let mut new_zoom_pow2 = self.camera.zoom_pow2;
+        let zoom_range = self.zoom_range();
+        let complete_shells = self.finalized_simulation.complete_shells();
+        let complete_shells_f32 = complete_shells as f32;
+        let camera_position_bounds = Rect2D::with_start_end(
+            Point2D::new(-complete_shells_f32, -complete_shells_f32),
+            Point2D::new(complete_shells_f32, complete_shells_f32),
+        );
 
-        if response.hovered() {
-            ui.input(|i| {
-                for event in &i.events {
-                    if let egui::Event::MouseWheel { delta, .. } = event {
-                        new_zoom_pow2 += delta.y as i32;
-                    }
-                }
-            });
+        let mut new_camera = BoundedCamera::from_camera(self.camera, zoom_range, camera_position_bounds);
 
-            let zoom_range = self.zoom_range();
-            new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
-        }
+        let zoom_delta = if response.hovered() {
+            Self::scroll_delta_from_input(ui)
+        } else {
+            0
+        };
+
+        new_camera.add_zoom_with_invariant_point(canvas, zoom_delta, mouse_pos);
 
         // Drag keeping origin at the pointer.
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
-            let zoom_scale = 0.5f32.powf(new_zoom_pow2 as f32);
-            new_origin_x -= zoom_scale * delta.x;
-            new_origin_y += zoom_scale * delta.y;
+            // Normally both would be negated but we flip y.
+            new_camera.drag(-delta.x, delta.y);
         }
-
-        let complete_shells = self.finalized_simulation.complete_shells();
-        let complete_shells_f32 = complete_shells as f32;
 
         // Set origin to current pointer placement scaled to the size of the whole grid.
         // Allows going to any region on the grid, useful for large grids.
@@ -425,31 +496,14 @@ impl GridExplorer {
             let tx = mouse_pos.x as f32 / canvas.width() as f32;
             let ty = 1.0 - mouse_pos.y as f32 / canvas.height() as f32;
 
-            new_origin_x = -complete_shells_f32 + tx * complete_shells_f32 * 2.0;
-            new_origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
+            new_camera.set_position_proportional_within_bounds(tx, ty);
         }
-
-        if new_zoom_pow2 != self.camera.zoom_pow2 {
-            let canvas_new = canvas.with_zoom(new_zoom_pow2);
-
-            let mouse_world_new = canvas_new.screen_to_world(mouse_pos);
-            let diff = mouse_world - mouse_world_new;
-            new_origin_x += diff.x as f32;
-            new_origin_y += diff.y as f32;
-        }
-
-        new_origin_x = new_origin_x.clamp(-complete_shells_f32, complete_shells_f32);
-        new_origin_y = new_origin_y.clamp(-complete_shells_f32, complete_shells_f32);
 
         // Update canvas if anything changed.
-        if new_origin_x != self.camera.position.x
-            || new_origin_y != self.camera.position.y
-            || new_zoom_pow2 != self.camera.zoom_pow2
+        let new_camera = new_camera.to_camera();
+        if new_camera != self.camera
         {
-            self.camera.position.x = new_origin_x;
-            self.camera.position.y = new_origin_y;
-            self.camera.zoom_pow2 = new_zoom_pow2;
-
+            self.camera = new_camera;
             *canvas = canvas.with_camera(
                 self.camera
             );
