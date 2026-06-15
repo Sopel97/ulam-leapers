@@ -1,5 +1,4 @@
-﻿use std::cmp;
-use ulam_leapers::math::coords::{GridPoint, GridVector};
+﻿use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
@@ -46,27 +45,21 @@ impl GridProjection {
         flip_axis: FlipAxis,
     ) -> GridProjection {
         let world_rect = match zoom {
-            Zoom::Magnification(factor) => GridRect::with_size(
-                GridPoint::new(
-                    camera_position.x - div_floor(screen_rect.width() / 2, factor),
-                    camera_position.y - div_floor(screen_rect.height() / 2, factor),
-                ),
-                div_floor(screen_rect.width(), factor),
-                div_floor(screen_rect.height(), factor),
+            Zoom::Magnification(factor) => GridRect::with_extent(
+                camera_position
+                    - screen_rect
+                        .extent()
+                        .map_coords(|c| div_floor(c, factor.next())),
+                screen_rect.extent().map_coords(|c| div_floor(c, factor)),
             ),
             Zoom::Minification(factor) => {
                 // We have to ensure proper alignment for the sampling.
                 let factor_i32: i32 = factor.as_u64() as i32;
 
-                GridRect::with_size(
-                    GridPoint::new(
-                        floor_to_multiple(camera_position.x, factor)
-                            - screen_rect.width() / 2 * factor_i32,
-                        floor_to_multiple(camera_position.y, factor)
-                            - screen_rect.height() / 2 * factor_i32,
-                    ),
-                    screen_rect.width() * factor_i32,
-                    screen_rect.height() * factor_i32,
+                GridRect::with_extent(
+                    camera_position.map_coords(|c| floor_to_multiple(c, factor))
+                        - screen_rect.extent() * (factor_i32 / 2),
+                    screen_rect.extent() * factor_i32,
                 )
             }
         };
@@ -95,62 +88,50 @@ impl GridProjection {
     }
 
     pub fn screen_to_world(&self, screen_point: GridPoint) -> GridPoint {
-        let mut dx;
-        let mut dy;
-
-        match self.zoom {
+        let mut d = match self.zoom {
             Zoom::Magnification(factor) => {
-                dx = div_floor(screen_point.x - self.screen_rect.start.x, factor);
-                dy = div_floor(screen_point.y - self.screen_rect.start.y, factor);
+                (screen_point - self.screen_rect.start).map_coords(|c| div_floor(c, factor))
             }
             Zoom::Minification(factor) => {
                 let factor_i32: i32 = factor.as_u64() as i32;
-                dx = (screen_point.x - self.screen_rect.start.x) * factor_i32;
-                dy = (screen_point.y - self.screen_rect.start.y) * factor_i32;
+                (screen_point - self.screen_rect.start) * factor_i32
             }
-        }
+        };
 
         if self.flip_x {
-            dx = self.world_rect.width() - dx - 1;
+            d.x = self.world_rect.width() - d.x - 1;
         }
         if self.flip_y {
-            dy = self.world_rect.height() - dy - 1;
+            d.y = self.world_rect.height() - d.y - 1;
         }
-        let x = self.world_rect.start.x + dx;
-        let y = self.world_rect.start.y + dy;
-        GridPoint::new(x, y)
+
+        self.world_rect.start + d
     }
 
     pub fn world_to_screen(&self, world_point: GridPoint) -> GridPoint {
-        let mut dx;
-        let mut dy;
-
-        match self.zoom {
+        let mut d = match self.zoom {
             Zoom::Magnification(factor) => {
                 let factor_i32: i32 = factor.as_u64() as i32;
-                dx = (world_point.x - self.world_rect.start.x) * factor_i32;
-                dy = (world_point.y - self.world_rect.start.y) * factor_i32;
+                (world_point - self.world_rect.start) * factor_i32
             }
             Zoom::Minification(factor) => {
-                dx = div_floor(world_point.x - self.world_rect.start.x, factor);
-                dy = div_floor(world_point.y - self.world_rect.start.y, factor);
+                (world_point - self.world_rect.start).map_coords(|c| div_floor(c, factor))
             }
-        }
+        };
 
         if self.flip_x {
-            dx = self.screen_rect.width() - dx - 1;
+            d.x = self.screen_rect.width() - d.x - 1;
         }
         if self.flip_y {
-            dy = self.screen_rect.height() - dy - 1;
+            d.y = self.screen_rect.height() - d.y - 1;
         }
-        let x = self.screen_rect.start.x + dx;
-        let y = self.screen_rect.start.y + dy;
-        GridPoint::new(x, y)
+
+        self.screen_rect.start + d
     }
 
     /// Projects the given `world_rect` into screen coordinates.
     /// Note, that if flipping of any axis is present this is not equivalent
-    /// to simply mapping `world_rect.start` and `world_rect.end` separately. 
+    /// to simply mapping `world_rect.start` and `world_rect.end` separately.
     pub fn world_to_screen_rect(&self, world_rect: GridRect) -> GridRect {
         // Due to optional flipping of axes we have to be very careful, because
         // if we provide `rect.end`, which is outside the rectangle's area, it may get
@@ -158,7 +139,7 @@ impl GridProjection {
 
         let mut screen_rect = GridRect::with_start_end(
             self.world_to_screen(world_rect.start),
-            self.world_to_screen(world_rect.end)
+            self.world_to_screen(world_rect.end),
         );
 
         // We avoid this by checking if the resulting coordinates are in ascending order,
