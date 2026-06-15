@@ -108,14 +108,7 @@ impl SquareChunker {
 
 impl Chunker for SquareChunker {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin {
-        let x = point.x;
-        let y = point.y;
-
-        // arithmetic shift provides floored division by a power of 2
-        let cx = floor_to_multiple(x, self.size);
-        let cy = floor_to_multiple(y, self.size);
-
-        ChunkOrigin::new(GridPoint::new(cx, cy))
+        ChunkOrigin::new(point.map_coords(|c| floor_to_multiple(c, self.size)))
     }
 
     fn resolve_chunk_bounds(&self, point: &GridPoint) -> GridRect {
@@ -124,12 +117,11 @@ impl Chunker for SquareChunker {
     }
 
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
-        let min_ox = floor_to_multiple(region.start.x, self.size);
-        let min_oy = floor_to_multiple(region.start.y, self.size);
-        (min_oy..region.end.y)
+        let min_o = region.start.map_coords(|c| floor_to_multiple(c, self.size));
+        (min_o.y..region.end.y)
             .step_by(self.size.as_u64() as usize)
             .flat_map(|oy| {
-                (min_ox..region.end.x)
+                (min_o.x..region.end.x)
                     .step_by(self.size.as_u64() as usize)
                     .map(move |ox| ChunkOrigin::new(GridPoint::new(ox, oy)))
             })
@@ -335,38 +327,36 @@ impl StripChunker {
 
 impl Chunker for StripChunker {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin {
-        let superchunk_x = div_floor(point.x, self.strip_length);
-        let superchunk_y = div_floor(point.y, self.strip_length);
+        let superchunk_pos = point.map_coords(|c| div_floor(c, self.strip_length));
 
-        let orientation = Self::superchunk_orientation(superchunk_x, superchunk_y);
+        let orientation = Self::superchunk_orientation(superchunk_pos.x, superchunk_pos.y);
         // We can reuse superchunk position for one axis,
         // the other needs to be more fine-grained.
         match orientation {
             SuperchunkOrientation::Horizontal => {
-                let ox = superchunk_x * self.strip_length.as_u64() as i32;
+                let ox = superchunk_pos.x * self.strip_length.as_u64() as i32;
                 let oy = floor_to_multiple(point.y, self.strip_thickness);
                 ChunkOrigin::new(GridPoint::new(ox, oy))
             }
             SuperchunkOrientation::Vertical => {
                 let ox = floor_to_multiple(point.x, self.strip_thickness);
-                let oy = superchunk_y * self.strip_length.as_u64() as i32;
+                let oy = superchunk_pos.y * self.strip_length.as_u64() as i32;
                 ChunkOrigin::new(GridPoint::new(ox, oy))
             }
         }
     }
 
     fn resolve_chunk_bounds(&self, point: &GridPoint) -> GridRect {
-        let superchunk_x = div_floor(point.x, self.strip_length);
-        let superchunk_y = div_floor(point.y, self.strip_length);
+        let superchunk_pos = point.map_coords(|c| div_floor(c, self.strip_length));
 
-        let orientation = Self::superchunk_orientation(superchunk_x, superchunk_y);
+        let orientation = Self::superchunk_orientation(superchunk_pos.x, superchunk_pos.y);
         // We can reuse superchunk position for one axis,
         // the other needs to be more fine-grained.
         match orientation {
             SuperchunkOrientation::Horizontal => {
                 let cw = self.strip_length.as_u64() as i32;
                 let ch = self.strip_thickness.as_u64() as i32;
-                let ox = superchunk_x * cw;
+                let ox = superchunk_pos.x * cw;
                 let oy = floor_to_multiple(point.y, self.strip_thickness);
                 GridRect::with_size(GridPoint::new(ox, oy), cw, ch)
             }
@@ -374,31 +364,28 @@ impl Chunker for StripChunker {
                 let cw = self.strip_thickness.as_u64() as i32;
                 let ch = self.strip_length.as_u64() as i32;
                 let ox = floor_to_multiple(point.x, self.strip_thickness);
-                let oy = superchunk_y * self.strip_length.as_u64() as i32;
+                let oy = superchunk_pos.y * self.strip_length.as_u64() as i32;
                 GridRect::with_size(GridPoint::new(ox, oy), cw, ch)
             }
         }
     }
 
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
-        let min_sox = floor_to_multiple(region.start.x, self.strip_length);
-        let min_soy = floor_to_multiple(region.start.y, self.strip_length);
+        let min_so = region.start.map_coords(|c| floor_to_multiple(c, self.strip_length));
 
         // All superchunks have the same amount of chunks.
         // Not all of them may actually intersect the region, but doesn't hurt
         // to allocate space for the worst case, the difference is small.
-        let superchunk_count_x = div_floor(region.end.x - min_sox, self.strip_length) as usize;
-        let superchunk_count_y = div_floor(region.end.y - min_soy, self.strip_length) as usize;
-        let superchunk_count = superchunk_count_x * superchunk_count_y;
-        let chunk_count = superchunk_count * self.num_chunks_in_superchunk();
+        let superchunk_count = (region.end - min_so).map_coords(|c| div_floor(c, self.strip_length) as usize);
+        let chunk_count = superchunk_count.x * superchunk_count.y * self.num_chunks_in_superchunk();
         let mut origins = Vec::with_capacity(chunk_count);
 
         let superchunk_size_usize = self.strip_length.as_u64() as usize;
         let superchunk_size_i32 = superchunk_size_usize as i32;
         let strip_thickness_usize = self.strip_thickness.as_u64() as usize;
 
-        for soy in (min_soy..region.end.y).step_by(superchunk_size_usize) {
-            for sox in (min_sox..region.end.x).step_by(superchunk_size_usize) {
+        for soy in (min_so.y..region.end.y).step_by(superchunk_size_usize) {
+            for sox in (min_so.x..region.end.x).step_by(superchunk_size_usize) {
                 // We need to emit strips within this superchunks,
                 // so we need to know orientation.
                 let sx = div_floor(sox, self.strip_length);
