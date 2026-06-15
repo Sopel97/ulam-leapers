@@ -154,8 +154,6 @@ pub struct GridExplorer {
 
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
-    min_zoom_pow2: i32,
-    max_zoom_pow2: i32,
     player_colors: Vec<Color32>,
     last_pointed_coords: GridPoint,
     save_state: SaveState,
@@ -252,8 +250,6 @@ impl GridExplorer {
 
             mipmap_generation_progress: None,
 
-            min_zoom_pow2: MIN_ZOOM_POW2,
-            max_zoom_pow2: MAX_ZOOM_POW2,
             player_colors: default_player_colors()[..=player_count].to_vec(),
             last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
@@ -368,9 +364,9 @@ impl GridExplorer {
 
     pub fn zoom_range(&self) -> RangeInclusive<i32> {
         if let Some(factor) = self.grid_renderer.highest_mipmap_minification_factor() {
-            (-(factor.exponent() as i32))..=self.max_zoom_pow2
+            (-(factor.exponent() as i32))..=MAX_ZOOM_POW2
         } else {
-            self.min_zoom_pow2..=self.max_zoom_pow2
+            MIN_ZOOM_POW2..=MAX_ZOOM_POW2
         }
     }
 
