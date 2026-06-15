@@ -1,4 +1,4 @@
-﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
+﻿use crate::gui::conv::{egui_to_grid_point, egui_to_grid_rect, grid_rect_to_egui};
 use crate::gui::render::grid_render::{
     default_player_colors, GridRenderer, MipmapGenerationProgress,
 };
@@ -7,7 +7,7 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
 use eframe::egui::{
-    Context, Key, KeyboardShortcut, Modifiers, Rect, Response, Sense, Stroke, StrokeKind,
+    Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke, StrokeKind,
     TextureHandle, Ui,
 };
 use eframe::emath::pos2;
@@ -20,7 +20,7 @@ use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::GridPoint;
-use ulam_leapers::math::pow2::{floor_to_multiple, mod_floor, Pow2};
+use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
@@ -50,6 +50,79 @@ pub enum SaveState {
     NotSaved,
     Saved,
     Errored(std::io::Error),
+}
+
+struct Canvas {
+    viewport: GridRect,
+    world_origin: GridPoint,
+    projection: ScreenWorldDiscrete2D,
+}
+
+impl Canvas {
+    pub fn new(zoom_pow2: i32, world_origin: GridPoint, viewport: GridRect) -> Self {
+        Self {
+            projection: ScreenWorldDiscrete2D::new(
+                zoom_pow2,
+                world_origin,
+                viewport,
+                SCREEN_TO_WORLD_AXIS_FLIP,
+            ),
+            viewport,
+            world_origin,
+        }
+    }
+
+    pub fn make_painter(&self, ui: &mut Ui) -> Painter {
+        ui.painter_at(grid_rect_to_egui(self.rect()))
+    }
+
+    pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
+        Self::new(zoom_pow2, self.world_origin, self.viewport)
+    }
+
+    pub fn with_world_origin(&self, world_origin: GridPoint) -> Self {
+        Self::new(self.projection.zoom_pow2(), world_origin, self.viewport)
+    }
+
+    pub fn with_zoom_and_world_origin(&self, zoom_pow2: i32, world_origin: GridPoint) -> Self {
+        Self::new(zoom_pow2, world_origin, self.viewport)
+    }
+
+    pub fn to_render_params(&self) -> GridRenderParameters {
+        GridRenderParameters::new(self.world_rect(), self.zoom())
+    }
+
+    pub fn zoom(&self) -> Zoom<Pow2> {
+        self.projection.zoom()
+    }
+
+    pub fn world_rect(&self) -> GridRect {
+        self.projection.world_rect()
+    }
+
+    pub fn rect(&self) -> GridRect {
+        self.projection.screen_rect()
+    }
+
+    pub fn width(&self) -> i32 {
+        self.projection.screen_rect().width()
+    }
+
+    pub fn height(&self) -> i32 {
+        self.projection.screen_rect().height()
+    }
+
+    pub fn screen_to_world(&self, screen_point: GridPoint) -> GridPoint {
+        self.projection.screen_to_world(screen_point)
+    }
+
+    pub fn world_to_screen(&self, world_point: GridPoint) -> GridPoint {
+        self.projection.world_to_screen(world_point)
+    }
+
+    pub fn world_to_screen_rect(&self, world_rect: GridRect) -> GridRect {
+        self.projection.world_to_screen_rect(world_rect)
+    }
 }
 
 pub struct GridExplorer {
@@ -123,23 +196,19 @@ impl Subwindow for GridExplorer {
                 });
 
             // The projection will give us a more restricted viewport.
-            let proj = Self::make_projection(
-                self.zoom_pow2,
-                self.origin(),
-                egui_to_grid_rect(ui.clip_rect()),
-            );
-            let rect = proj.screen_rect();
+            let mut canvas = self.make_canvas(egui_to_grid_rect(ui.clip_rect()));
 
-            if rect.width() >= MIN_CANVAS_WIDTH && rect.height() >= MIN_CANVAS_HEIGHT {
-                self.maybe_update_canvas_texture(ui, rect);
-                self.draw_canvas_texture(ui, rect);
+            if canvas.width() >= MIN_CANVAS_WIDTH && canvas.height() >= MIN_CANVAS_HEIGHT {
+                self.update_canvas_from_events(ui, &mut canvas);
+                self.maybe_update_canvas_texture(ui, &canvas);
+                self.draw_canvas_texture(ui, &canvas);
             }
 
             if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
                 self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
             }
             if self.is_debug_ui_enabled {
-                self.show_debug_ui(ui, rect);
+                self.show_debug_ui(ui, &canvas);
             }
         });
 
@@ -191,38 +260,36 @@ impl GridExplorer {
         Ok(explorer)
     }
 
-    fn draw_canvas_texture(&mut self, ui: &mut Ui, rect: GridRect) {
-        let egui_rect = grid_rect_to_egui(rect);
-        let painter = ui.painter_at(egui_rect);
+    fn draw_canvas_texture(&mut self, ui: &mut Ui, canvas: &Canvas) {
+        let painter = canvas.make_painter(ui);
+        let rect = painter.clip_rect();
 
         // background
-        painter.rect_filled(egui_rect, 0.0, self.player_colors[0]);
+        painter.rect_filled(rect, 0.0, self.player_colors[0]);
 
         if let Some(handle) = &self.grid_render_texture {
             // y-flip via uv
             painter.image(
                 handle.id(),
-                egui_rect,
+                rect,
                 Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
                 Color32::WHITE,
             );
         }
     }
 
-    fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, rect: GridRect) {
+    fn maybe_update_canvas_texture(&mut self, ui: &mut Ui, canvas: &Canvas) {
         // For the caching to be effective there needs to space for at least a few
         // framebuffers worth of data.
         const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
 
-        self.update_from_canvas_events(ui, rect);
-
         let framebuffer_size =
-            rect.width() as usize * rect.height() as usize * size_of::<Color32>();
+            canvas.width() as usize * canvas.height() as usize * size_of::<Color32>();
 
         self.grid_renderer
             .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
-        let curr_grid_render_params = self.to_render_params(rect);
+        let curr_grid_render_params = canvas.to_render_params();
 
         if self.last_grid_render_params != curr_grid_render_params || self.have_colors_changed {
             // Check for changed colors and notify the renderer.
@@ -246,20 +313,15 @@ impl GridExplorer {
         }
     }
 
-    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, viewport: GridRect) {
+    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, canvas: &Canvas) {
         let pointed_coords = self.last_pointed_coords();
         let chunk = self
             .finalized_simulation
             .get_chunk_containing(&pointed_coords);
         if let Some(chunk) = chunk {
             let chunk_bounds = chunk.bounds();
-            let proj = Self::make_projection(
-                self.zoom_pow2,
-                self.origin(),
-                viewport,
-            );
-            let chunk_bounds_screen_space = proj.world_to_screen_rect(*chunk_bounds);
-            let painter = ui.painter_at(grid_rect_to_egui(viewport));
+            let chunk_bounds_screen_space = canvas.world_to_screen_rect(*chunk_bounds);
+            let painter = canvas.make_painter(ui);
             painter.rect(
                 grid_rect_to_egui(chunk_bounds_screen_space),
                 0,
@@ -270,8 +332,8 @@ impl GridExplorer {
         }
     }
 
-    fn show_debug_ui(&mut self, ui: &mut Ui, rect: GridRect) {
-        self.show_pointed_chunk_overlay(ui, rect);
+    fn show_debug_ui(&mut self, ui: &mut Ui, canvas: &Canvas) {
+        self.show_pointed_chunk_overlay(ui, canvas);
     }
 }
 
@@ -296,60 +358,45 @@ impl GridExplorer {
             self.min_zoom_pow2..=self.max_zoom_pow2
         }
     }
-    
+
     pub fn origin(&self) -> GridPoint {
         GridPoint::new(self.origin_x as i32, self.origin_y as i32)
     }
 
-    pub fn make_projection(
-        zoom_pow2: i32,
-        origin_world: GridPoint,
-        mut rect: GridRect,
-    ) -> ScreenWorldDiscrete2D {
+    fn make_canvas_for(zoom_pow2: i32, world_origin: GridPoint, mut rect: GridRect) -> Canvas {
         if zoom_pow2 > 0 {
             // Restrict viewport to bounds compatible with the alignment required by the zoom.
             let factor = Pow2::from_exponent(zoom_pow2 as u8);
             rect = rect.aligned_to_pow2_inside(factor);
         }
 
-        ScreenWorldDiscrete2D::new(zoom_pow2, origin_world, rect, SCREEN_TO_WORLD_AXIS_FLIP)
+        Canvas::new(zoom_pow2, world_origin, rect)
     }
 
-    fn render_params(
-        zoom_pow2: i32,
-        origin_world: GridPoint,
-        rect: GridRect,
-    ) -> GridRenderParameters {
-        let zoom = Zoom::from_exponent(zoom_pow2);
-        let proj = Self::make_projection(zoom_pow2, origin_world, rect);
-        let bounds = proj.world_rect();
-        GridRenderParameters::new(bounds, zoom)
+    fn make_canvas(&self, rect: GridRect) -> Canvas {
+        Self::make_canvas_for(self.zoom_pow2, self.origin(), rect)
     }
 
-    pub fn to_render_params(&self, viewport: GridRect) -> GridRenderParameters {
-        Self::render_params(
-            self.zoom_pow2,
-            self.origin(),
-            viewport,
-        )
-    }
-
-    fn update_from_canvas_events(&mut self, ui: &mut Ui, viewport: GridRect) {
+    fn update_canvas_from_events(&mut self, ui: &mut Ui, canvas: &mut Canvas) {
         let response = ui.allocate_rect(
-            grid_rect_to_egui(viewport),
+            grid_rect_to_egui(canvas.rect()),
             Sense::drag() | Sense::hover() | Sense::click(),
         );
 
-        let get_mouse_pos = |response: &Response| {
+        let mouse_pos = egui_to_grid_point(
             response
                 .hover_pos()
-                .unwrap_or_else(|| (response.rect.max - response.rect.min.to_vec2()) * 0.5f32)
-        };
+                .unwrap_or_else(|| (response.rect.max - response.rect.min.to_vec2()) * 0.5f32),
+        );
+
+        let mouse_world = canvas.screen_to_world(mouse_pos);
+        self.last_pointed_coords = mouse_world;
+
+        let mut new_origin_x = self.origin_x;
+        let mut new_origin_y = self.origin_y;
+        let mut new_zoom_pow2 = self.zoom_pow2;
 
         if response.hovered() {
-            let mut new_zoom_pow2 = self.zoom_pow2;
-            let mouse_pos = get_mouse_pos(&response);
-
             ui.input(|i| {
                 for event in &i.events {
                     if let egui::Event::MouseWheel { delta, .. } = event {
@@ -360,39 +407,14 @@ impl GridExplorer {
 
             let zoom_range = self.zoom_range();
             new_zoom_pow2 = new_zoom_pow2.clamp(*zoom_range.start(), *zoom_range.end());
-
-            let proj = Self::make_projection(
-                self.zoom_pow2,
-                self.origin(),
-                viewport,
-            );
-            self.last_pointed_coords =
-                proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
-
-            if new_zoom_pow2 != self.zoom_pow2 {
-                let proj_new = Self::make_projection(
-                    new_zoom_pow2,
-                    self.origin(),
-                    viewport,
-                );
-
-                let mouse_world =
-                    proj.screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
-                let mouse_world_new = proj_new
-                    .screen_to_world(GridPoint::new(mouse_pos.x as i32, mouse_pos.y as i32));
-                let diff = mouse_world - mouse_world_new;
-                self.origin_x += diff.x as f32;
-                self.origin_y += diff.y as f32;
-                self.zoom_pow2 = new_zoom_pow2;
-            }
         }
 
         // Drag keeping origin at the pointer.
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
-            let zoom_scale = 0.5f32.powf(self.zoom_pow2 as f32);
-            self.origin_x -= zoom_scale * delta.x;
-            self.origin_y += zoom_scale * delta.y;
+            let zoom_scale = 0.5f32.powf(new_zoom_pow2 as f32);
+            new_origin_x -= zoom_scale * delta.x;
+            new_origin_y += zoom_scale * delta.y;
         }
 
         let complete_shells = self.finalized_simulation.complete_shells();
@@ -403,21 +425,39 @@ impl GridExplorer {
         if response.clicked_by(egui::PointerButton::Secondary)
             || response.dragged_by(egui::PointerButton::Secondary)
         {
-            let mouse_pos = get_mouse_pos(&response);
+            let tx = mouse_pos.x as f32 / canvas.width() as f32;
+            let ty = 1.0 - mouse_pos.y as f32 / canvas.height() as f32;
 
-            let tx = mouse_pos.x / viewport.width() as f32;
-            let ty = 1.0 - mouse_pos.y / viewport.height() as f32;
-
-            self.origin_x = -complete_shells_f32 + tx * complete_shells_f32 * 2.0;
-            self.origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
+            new_origin_x = -complete_shells_f32 + tx * complete_shells_f32 * 2.0;
+            new_origin_y = -complete_shells_f32 + ty * complete_shells_f32 * 2.0;
         }
 
-        self.origin_x = self
-            .origin_x
-            .clamp(-complete_shells_f32, complete_shells_f32);
-        self.origin_y = self
-            .origin_y
-            .clamp(-complete_shells_f32, complete_shells_f32);
+        if new_zoom_pow2 != self.zoom_pow2 {
+            let canvas_new = canvas.with_zoom(new_zoom_pow2);
+
+            let mouse_world_new = canvas_new.screen_to_world(mouse_pos);
+            let diff = mouse_world - mouse_world_new;
+            new_origin_x += diff.x as f32;
+            new_origin_y += diff.y as f32;
+        }
+
+        new_origin_x = new_origin_x.clamp(-complete_shells_f32, complete_shells_f32);
+        new_origin_y = new_origin_y.clamp(-complete_shells_f32, complete_shells_f32);
+
+        // Update canvas if anything changed.
+        if new_origin_x != self.origin_x
+            || new_origin_y != self.origin_y
+            || new_zoom_pow2 != self.zoom_pow2
+        {
+            self.origin_x = new_origin_x;
+            self.origin_y = new_origin_y;
+            self.zoom_pow2 = new_zoom_pow2;
+
+            *canvas = canvas.with_zoom_and_world_origin(
+                self.zoom_pow2,
+                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+            );
+        }
     }
 
     pub fn is_saved(&self) -> bool {
@@ -627,11 +667,12 @@ impl GridExplorer {
                 .save_file()
         {
             let s = self.png_extent;
-            let render_params = Self::render_params(
+            let render_params = Self::make_canvas_for(
                 self.zoom_pow2_png,
                 self.origin(),
                 GridRect::with_size(GridPoint::zero(), s, s),
-            );
+            )
+            .to_render_params();
             let image = self
                 .grid_renderer
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);

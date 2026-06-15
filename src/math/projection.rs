@@ -2,6 +2,7 @@
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
+use crate::math::zoom::Zoom;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum FlipAxis {
@@ -81,6 +82,14 @@ impl ScreenWorldDiscrete2D {
 
     pub fn screen_rect(&self) -> GridRect {
         self.screen_rect
+    }
+    
+    pub fn zoom(&self) -> Zoom<Pow2> {
+        Zoom::from_exponent(self.zoom_pow2)
+    }
+    
+    pub fn zoom_pow2(&self) -> i32 {
+        self.zoom_pow2
     }
 
     pub fn screen_to_world(&self, screen_point: GridPoint) -> GridPoint {
