@@ -239,20 +239,8 @@ impl GridRenderer {
         assert!(mipmap_bounds.is_aligned_to_pow2(factor));
 
         // We convert the bounds into local coordinates (after minification).
-        let mut src_bounds = mipmap_bounds;
-        src_bounds.start.x = div_floor(src_bounds.start.x, factor);
-        src_bounds.start.y = div_floor(src_bounds.start.y, factor);
-        src_bounds.end.x = div_floor(src_bounds.end.x, factor);
-        src_bounds.end.y = div_floor(src_bounds.end.y, factor);
-
-        let mut dst_bounds = world_bounds;
-        dst_bounds.start.x = div_floor(dst_bounds.start.x, factor);
-        dst_bounds.start.y = div_floor(dst_bounds.start.y, factor);
-        dst_bounds.end.x = div_floor(dst_bounds.end.x, factor);
-        dst_bounds.end.y = div_floor(dst_bounds.end.y, factor);
-
-        // The intersection of the whole mipmap and the view is what we actually need to blit.
-        let intersection = src_bounds.intersection(&dst_bounds).unwrap();
+        let src_bounds = mipmap_bounds.map_coords(|c| div_floor(c, factor));
+        let dst_bounds = world_bounds.map_coords(|c| div_floor(c, factor));
 
         let mut res = Array2D::<Color32>::new_aligned(
             dst_bounds.width() as usize,
@@ -265,11 +253,16 @@ impl GridRenderer {
         let mipmaps = &self.mipmaps.get().unwrap().by_minification_factor;
         let mipmap = mipmaps.get(&factor).unwrap();
 
+        // The intersection of the whole mipmap and the view is what we actually need to blit.
+        let intersection = src_bounds.intersection(&dst_bounds).unwrap();
+        let src = intersection.start - src_bounds.start;
+        let dst = intersection.start - dst_bounds.start;
+
         blit_array2d(mipmap, &mut res, &Blit2D {
-            src_x: (intersection.start.x - src_bounds.start.x) as usize,
-            src_y: (intersection.start.y - src_bounds.start.y) as usize,
-            dst_x: (intersection.start.x - dst_bounds.start.x) as usize,
-            dst_y: (intersection.start.y - dst_bounds.start.y) as usize,
+            src_x: src.x as usize,
+            src_y: src.y as usize,
+            dst_x: dst.x as usize,
+            dst_y: dst.y as usize,
             width: intersection.width() as usize,
             height: intersection.height() as usize,
         });
@@ -346,18 +339,13 @@ impl GridRenderer {
         lowest_minification: Pow2,
         highest_minification: Pow2,
     ) -> MemSize {
-        let mut grid_bounds = self.grid.bounds();
-        grid_bounds.start.x = floor_to_multiple(grid_bounds.start.x, highest_minification);
-        grid_bounds.start.y = floor_to_multiple(grid_bounds.start.y, highest_minification);
-        grid_bounds.end.x = ceil_to_multiple(grid_bounds.end.x, highest_minification);
-        grid_bounds.end.y = ceil_to_multiple(grid_bounds.end.y, highest_minification);
+        let grid_bounds = self.grid.bounds().hull_aligned_to_pow2(highest_minification);
 
         let pixels_at_no_minification =
             grid_bounds.width() as usize * grid_bounds.height() as usize;
-        let pixels_at_lowest_minification = div_floor(
-            div_floor(pixels_at_no_minification, lowest_minification),
-            lowest_minification,
-        );
+        // lowest_minification squared we're reducing area
+        let pixels_at_lowest_minification =
+            div_floor(pixels_at_no_minification, lowest_minification * lowest_minification);
 
         // 1 + 1/4 + 1/16 + 1/64 + ... converges to 4/3
         MemSize::sizes_of::<Color32>(pixels_at_lowest_minification * 4 / 3)
@@ -382,11 +370,7 @@ impl GridRenderer {
         // Strictly speaking we only require the width and height to be aligned to
         // the higher minification factor, but having this constraint on the whole rect
         // is very beneficial for how the Grid behaves.
-        let mut grid_bounds = self.grid.bounds();
-        grid_bounds.start.x = floor_to_multiple(grid_bounds.start.x, highest_minification);
-        grid_bounds.start.y = floor_to_multiple(grid_bounds.start.y, highest_minification);
-        grid_bounds.end.x = ceil_to_multiple(grid_bounds.end.x, highest_minification);
-        grid_bounds.end.y = ceil_to_multiple(grid_bounds.end.y, highest_minification);
+        let grid_bounds = self.grid.bounds().hull_aligned_to_pow2(highest_minification);
 
         // Disallow zero-sized bounds
         assert!(grid_bounds.width() > 0);

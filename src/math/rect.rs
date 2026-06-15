@@ -1,10 +1,10 @@
 ﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{GridPoint, Point2D, Vector2D};
+use crate::math::coords::{Point2D, Vector2D};
 use crate::math::pow2;
-use crate::math::pow2::{floor_to_multiple, mod_floor, Pow2};
+use crate::math::pow2::{ceil_to_multiple, floor_to_multiple, mod_floor, Pow2};
 use std::cmp;
 use std::io::{Read, Write};
-use std::ops::{Add, AddAssign, Shl, Shr, Sub};
+use std::ops::{Add, AddAssign, BitAnd, Not, Shl, Shr, Sub};
 
 /// Models a 2-dimensional range inclusive at `start` and exclusive at `end`.
 /// The rectangle's projection onto the x-axis is `start.x .. end.x`.
@@ -27,6 +27,18 @@ impl<T> Rect2D<T> {
 impl<T: From<u8>> Rect2D<T> {
     pub fn zero() -> Self {
         Self::with_start_end(Point2D::<T>::zero(), Point2D::<T>::zero())
+    }
+}
+
+impl<T> Rect2D<T> {
+    pub fn map_coords<F, U>(self, mut f: F) -> Rect2D<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        Rect2D {
+            start: Point2D::new(f(self.start.x), f(self.start.y)),
+            end: Point2D::new(f(self.end.x), f(self.end.y)),
+        }
     }
 }
 
@@ -66,7 +78,41 @@ where
 
 impl<T> Rect2D<T>
 where
-    T: Shl<Output = T> + Shr<Output = T> + Sub<Output = T> + Add<Output = T> + From<u8> + Eq + Clone + Copy,
+    T: Shl<Output = T>
+        + Shr<Output = T>
+        + Add<Output = T>
+        + Sub<Output = T>
+        + BitAnd<Output = T>
+        + Not<Output = T>
+        + From<u8>
+        + Clone
+        + Copy,
+{
+    /// Returns the smallest Rect2D `r` such that `r.contains(self)` and `r.is_aligned_to_pow2()`
+    pub fn hull_aligned_to_pow2(&self, align: Pow2) -> Self {
+        Self {
+            start: Point2D::new(
+                floor_to_multiple(self.start.x, align),
+                floor_to_multiple(self.start.y, align),
+            ),
+            end: Point2D::new(
+                ceil_to_multiple(self.end.x, align),
+                ceil_to_multiple(self.end.y, align),
+            ),
+        }
+    }
+}
+
+impl<T> Rect2D<T>
+where
+    T: Shl<Output = T>
+        + Shr<Output = T>
+        + Sub<Output = T>
+        + Add<Output = T>
+        + From<u8>
+        + Eq
+        + Clone
+        + Copy,
 {
     /// Returns a new `r = Rect2D<T>` contained within `self` such that
     /// `r.is_aligned_to_pow2(align)` is true.
@@ -380,5 +426,28 @@ mod test {
         let intersection = rect1.intersection(&rect2).unwrap();
         assert!(rect1.contains(&intersection));
         assert!(rect2.contains(&intersection));
+    }
+
+    #[test]
+    fn hull_aligned_to_pow2_contains_original_rect() {
+        let rect = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
+        let hull = rect.hull_aligned_to_pow2(Pow2::from_exponent(2));
+        assert!(hull.contains(&rect));
+    }
+
+    #[test]
+    fn hull_aligned_to_pow2_is_aligned_to_pow2() {
+        let rect = Rect2D::with_size(Point2D::new(-3, -5), 10, 10);
+        let align = Pow2::from_exponent(2);
+        let hull = rect.hull_aligned_to_pow2(align);
+        assert!(hull.is_aligned_to_pow2(align));
+    }
+
+    #[test]
+    fn hull_aligned_to_pow2_equal_if_already_aligned() {
+        let rect = Rect2D::with_size(Point2D::new(0, 0), 10, 10);
+        let hull = rect.hull_aligned_to_pow2(Pow2::from_exponent(2));
+        let hull2 = hull.hull_aligned_to_pow2(Pow2::from_exponent(2));
+        assert_eq!(hull, hull2);
     }
 }
