@@ -1,13 +1,16 @@
 ﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
-use crate::gui::grid_render::canvas::{GridCamera, GridCanvas, RestrictedGridCamera};
+use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
     default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
+use eframe::egui::{
+    Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -22,7 +25,6 @@ use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -140,8 +142,10 @@ impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
         let max_id = finalized_simulation.highest_player_id();
 
-        let grid_renderer =
-            GridRenderer::new(&finalized_simulation, default_player_colors(max_id).as_slice());
+        let grid_renderer = GridRenderer::new(
+            &finalized_simulation,
+            default_player_colors(max_id).as_slice(),
+        );
 
         Self {
             grid_renderer,
@@ -236,12 +240,10 @@ impl GridExplorer {
         let world_bounds = canvas.world_rect();
         let zoom = canvas.zoom();
 
-        if self.grid_render.is_none()
-            || self.grid_render.as_ref().unwrap().is_outdated(
-                &self.grid_renderer,
-                world_bounds,
-                zoom,
-            )
+        if self
+            .grid_render
+            .as_ref()
+            .is_none_or(|v| v.is_outdated(&self.grid_renderer, world_bounds, zoom))
         {
             let framebuffer_size =
                 canvas.width() as usize * canvas.height() as usize * size_of::<Color32>();
@@ -322,8 +324,7 @@ impl GridExplorer {
         let zoom_range = self.zoom_range();
         let camera_position_bounds = self.make_camera_position_bounds();
 
-        let mut new_camera =
-            self.camera.restricted(zoom_range, camera_position_bounds);
+        let mut new_camera = self.camera.restricted(zoom_range, camera_position_bounds);
 
         let zoom_delta = if response.hovered() {
             scroll_delta_in_ui(ui)
@@ -403,9 +404,11 @@ impl GridExplorer {
         if self.grid_renderer.has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else if self.grid_renderer.can_generate_mipmaps() {
-            let estimated_mipmaps_memory_requirement = self
-                .grid_renderer
-                .estimate_mipmaps_memory_requirement(MIP_LOWEST_MINIFICATION, MIP_HIGHEST_MINIFICATION);
+            let estimated_mipmaps_memory_requirement =
+                self.grid_renderer.estimate_mipmaps_memory_requirement(
+                    MIP_LOWEST_MINIFICATION,
+                    MIP_HIGHEST_MINIFICATION,
+                );
             let on_hover_text = if estimated_mipmaps_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
             {
