@@ -186,19 +186,16 @@ where
                             || {
                                 let chunk = compressed_chunk.decompress();
 
-                                let blocks_x =
-                                    pow2::div_floor(bounds.width(), self.minification) as usize;
-                                let blocks_y =
-                                    pow2::div_floor(bounds.height(), self.minification) as usize;
+                                let block_count = bounds.extent().map_coords(|c| pow2::div_floor(c, self.minification));
                                 let block_size: i32 = self.minification.as_u64() as i32;
 
                                 let mut whole_chunk_result: Array2D<TCollector::OutputType> =
-                                    Array2D::new(blocks_x, blocks_y);
+                                    Array2D::new(block_count.x as usize, block_count.y as usize);
 
-                                for by in 0..blocks_y {
-                                    for bx in 0..blocks_x {
-                                        let cx = bounds.start.x + bx as i32 * block_size;
-                                        let cy = bounds.start.y + by as i32 * block_size;
+                                for by in 0..block_count.y {
+                                    for bx in 0..block_count.x {
+                                        let cx = bounds.start.x + bx * block_size;
+                                        let cy = bounds.start.y + by * block_size;
 
                                         // SAFETY: We are iterating within `bounds`,
                                         //         which are taken directly from the chunk.
@@ -212,7 +209,7 @@ where
 
                                         // SAFETY: Explicitly iterating within the subregion.
                                         unsafe {
-                                            *whole_chunk_result.get_unchecked_mut(bx, by) = v;
+                                            *whole_chunk_result.get_unchecked_mut(bx as usize, by as usize) = v;
                                         }
                                     }
                                 }
@@ -232,35 +229,19 @@ where
 
                         assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                        let dst_x = pow2::div_floor(
-                            subregion.start.x - self.region.start.x,
-                            self.minification,
-                        ) as usize;
-                        let dst_y = pow2::div_floor(
-                            subregion.start.y - self.region.start.y,
-                            self.minification,
-                        ) as usize;
-
-                        let src_x =
-                            pow2::div_floor(subregion.start.x - bounds.start.x, self.minification)
-                                as usize;
-                        let src_y =
-                            pow2::div_floor(subregion.start.y - bounds.start.y, self.minification)
-                                as usize;
-
-                        let width = pow2::div_floor(subregion.width(), self.minification) as usize;
-                        let height =
-                            pow2::div_floor(subregion.height(), self.minification) as usize;
+                        let dst = (subregion.start - self.region.start).map_coords(|c| pow2::div_floor(c, self.minification));
+                        let src = (subregion.start - bounds.start).map_coords(|c| pow2::div_floor(c, self.minification));
+                        let size = subregion.extent().map_coords(|c| pow2::div_floor(c, self.minification));
 
                         tx.send((
                             Arc::clone(&whole_chunk_result),
                             Blit2D {
-                                src_x,
-                                src_y,
-                                dst_x,
-                                dst_y,
-                                width,
-                                height,
+                                src_x: src.x as usize,
+                                src_y: src.y as usize,
+                                dst_x: dst.x as usize,
+                                dst_y: dst.y as usize,
+                                width: size.x as usize,
+                                height: size.y as usize,
                             },
                         ))
                         .unwrap();
@@ -309,49 +290,37 @@ where
 
                         let chunk = compressed_chunk.decompress();
 
+                        let block_count = subregion.extent().map_coords(|c| pow2::div_floor(c, self.minification));
                         let block_size: i32 = self.minification.as_u64() as i32;
 
                         let mut subregion_result: Array2D<TCollector::OutputType> = Array2D::new(
-                            pow2::div_floor(subregion.width(), self.minification) as usize,
-                            pow2::div_floor(subregion.height(), self.minification) as usize,
+                            block_count.x as usize,
+                            block_count.y as usize,
                         );
 
-                        for by in (subregion.start.y..subregion.end.y).step_by(block_size as usize)
-                        {
-                            for bx in
-                                (subregion.start.x..subregion.end.x).step_by(block_size as usize)
-                            {
+                        for by in 0..block_count.y {
+                            for bx in 0..block_count.x {
+                                let cx = subregion.start.x + bx * block_size;
+                                let cy = subregion.start.y + by * block_size;
+
                                 // SAFETY: We are iterating within `bounds`,
                                 //         which are taken directly from the chunk.
                                 let v = unsafe {
                                     self.collect_block(
                                         &chunk,
-                                        bx..bx + block_size,
-                                        by..by + block_size,
+                                        cx..cx + block_size,
+                                        cy..cy + block_size,
                                     )
                                 };
 
-                                // Map the block and store into the actual result.
-                                let srx = pow2::div_floor(bx - subregion.start.x, self.minification)
-                                    as usize;
-                                let sry = pow2::div_floor(by - subregion.start.y, self.minification)
-                                    as usize;
                                 // SAFETY: Explicitly iterating within the subregion.
                                 unsafe {
-                                    *subregion_result.get_unchecked_mut(srx, sry) = v;
+                                    *subregion_result.get_unchecked_mut(bx as usize, by as usize) = v;
                                 }
                             }
                         }
 
-                        let dst_x = pow2::div_floor(
-                            subregion.start.x - self.region.start.x,
-                            self.minification,
-                        ) as usize;
-                        let dst_y = pow2::div_floor(
-                            subregion.start.y - self.region.start.y,
-                            self.minification,
-                        ) as usize;
-
+                        let dst = (subregion.start - self.region.start).map_coords(|c| pow2::div_floor(c, self.minification));
                         let width = subregion_result.width();
                         let height = subregion_result.height();
 
@@ -360,8 +329,8 @@ where
                             Blit2D {
                                 src_x: 0,
                                 src_y: 0,
-                                dst_x,
-                                dst_y,
+                                dst_x: dst.x as usize,
+                                dst_y: dst.y as usize,
                                 width,
                                 height,
                             },

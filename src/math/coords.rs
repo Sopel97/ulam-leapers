@@ -3,6 +3,7 @@ use std::cmp;
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::ops::*;
+use crate::math::rect::Rect2D;
 
 /// Models a point in a 2-dimensional Cartesian coordinate system.
 /// Supports both integer and floating point coordinates.
@@ -44,6 +45,18 @@ impl<T: From<u8>> Point2D<T> {
     }
 }
 
+impl<T> Point2D<T> {
+    pub fn map_coords<F, U>(self, mut f: F) -> Point2D<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        Point2D {
+            x: f(self.x),
+            y: f(self.y),
+        }
+    }
+}
+
 impl<T> Vector2D<T> {
     pub fn new(x: T, y: T) -> Self {
         Self { x, y }
@@ -61,6 +74,18 @@ impl<T: From<u8>> Vector2D<T> {
         Self {
             x: T::from(0),
             y: T::from(0),
+        }
+    }
+}
+
+impl<T> Vector2D<T> {
+    pub fn map_coords<F, U>(self, mut f: F) -> Vector2D<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        Vector2D {
+            x: f(self.x),
+            y: f(self.y),
         }
     }
 }
