@@ -77,18 +77,16 @@ impl<T: Default> Index<GridPoint> for Chunk<T> {
 
     #[inline(always)]
     fn index(&self, index: GridPoint) -> &Self::Output {
-        let xx = index.x - self.bounds.start.x;
-        let yy = index.y - self.bounds.start.y;
-        &self.cells[(xx as usize, yy as usize)]
+        let offset = index - self.bounds.start;
+        &self.cells[(offset.x as usize, offset.y as usize)]
     }
 }
 
 impl<T: Default> IndexMut<GridPoint> for Chunk<T> {
     #[inline(always)]
     fn index_mut(&mut self, index: GridPoint) -> &mut Self::Output {
-        let xx = index.x - self.bounds.start.x;
-        let yy = index.y - self.bounds.start.y;
-        &mut self.cells[(xx as usize, yy as usize)]
+        let offset = index - self.bounds.start;
+        &mut self.cells[(offset.x as usize, offset.y as usize)]
     }
 }
 
@@ -101,9 +99,8 @@ impl<T> Chunk<T> {
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: GridPoint) -> &T {
-        let xx = index.x - self.bounds.start.x;
-        let yy = index.y - self.bounds.start.y;
-        unsafe { self.cells.get_unchecked(xx as usize, yy as usize) }
+        let offset = index - self.bounds.start;
+        unsafe { self.cells.get_unchecked(offset.x as usize, offset.y as usize) }
     }
 
     /// # Safety
@@ -114,9 +111,8 @@ impl<T> Chunk<T> {
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: GridPoint) -> &mut T {
-        let xx = index.x - self.bounds.start.x;
-        let yy = index.y - self.bounds.start.y;
-        unsafe { self.cells.get_unchecked_mut(xx as usize, yy as usize) }
+        let offset = index - self.bounds.start;
+        unsafe { self.cells.get_unchecked_mut(offset.x as usize, offset.y as usize) }
     }
 }
 
