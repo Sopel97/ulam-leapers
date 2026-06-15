@@ -163,6 +163,44 @@ where
         self.collector.finalize(acc, (width, height))
     }
 
+    /// # Safety
+    ///
+    /// The subregion must be contained within the chunk and be aligned to the minification factor.
+    unsafe fn collect_subregion(
+        &self,
+        chunk: &Chunk<T>,
+        subregion: GridRect,
+    ) -> Array2D<TCollector::OutputType> {
+        assert!(subregion.is_aligned_to_pow2(self.minification));
+
+        let block_count = subregion
+            .extent()
+            .map_coords(|c| pow2::div_floor(c, self.minification));
+        let block_size: i32 = self.minification.as_u64() as i32;
+
+        let mut subregion_result: Array2D<TCollector::OutputType> =
+            Array2D::new(block_count.x as usize, block_count.y as usize);
+
+        for by in 0..block_count.y {
+            for bx in 0..block_count.x {
+                let cx = subregion.start.x + bx * block_size;
+                let cy = subregion.start.y + by * block_size;
+
+                // SAFETY: We are iterating within `bounds`,
+                //         which are taken directly from the chunk.
+                let v =
+                    unsafe { self.collect_block(chunk, cx..cx + block_size, cy..cy + block_size) };
+
+                // SAFETY: Explicitly iterating within the subregion.
+                unsafe {
+                    *subregion_result.get_unchecked_mut(bx as usize, by as usize) = v;
+                }
+            }
+        }
+
+        subregion_result
+    }
+
     pub fn par_sample_with_cache(
         &self,
         cache: &<Self as CacheEnabled>::CacheType,
@@ -186,33 +224,9 @@ where
                             || {
                                 let chunk = compressed_chunk.decompress();
 
-                                let block_count = bounds.extent().map_coords(|c| pow2::div_floor(c, self.minification));
-                                let block_size: i32 = self.minification.as_u64() as i32;
-
-                                let mut whole_chunk_result: Array2D<TCollector::OutputType> =
-                                    Array2D::new(block_count.x as usize, block_count.y as usize);
-
-                                for by in 0..block_count.y {
-                                    for bx in 0..block_count.x {
-                                        let cx = bounds.start.x + bx * block_size;
-                                        let cy = bounds.start.y + by * block_size;
-
-                                        // SAFETY: We are iterating within `bounds`,
-                                        //         which are taken directly from the chunk.
-                                        let v = unsafe {
-                                            self.collect_block(
-                                                &chunk,
-                                                cx..cx + block_size,
-                                                cy..cy + block_size,
-                                            )
-                                        };
-
-                                        // SAFETY: Explicitly iterating within the subregion.
-                                        unsafe {
-                                            *whole_chunk_result.get_unchecked_mut(bx as usize, by as usize) = v;
-                                        }
-                                    }
-                                }
+                                // SAFETY: We are explicitly using the chunk's bounds.
+                                let whole_chunk_result =
+                                    unsafe { self.collect_subregion(&chunk, *bounds) };
 
                                 let cost = whole_chunk_result.width()
                                     * whole_chunk_result.height()
@@ -229,9 +243,13 @@ where
 
                         assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                        let dst = (subregion.start - self.region.start).map_coords(|c| pow2::div_floor(c, self.minification));
-                        let src = (subregion.start - bounds.start).map_coords(|c| pow2::div_floor(c, self.minification));
-                        let size = subregion.extent().map_coords(|c| pow2::div_floor(c, self.minification));
+                        let dst = (subregion.start - self.region.start)
+                            .map_coords(|c| pow2::div_floor(c, self.minification));
+                        let src = (subregion.start - bounds.start)
+                            .map_coords(|c| pow2::div_floor(c, self.minification));
+                        let size = subregion
+                            .extent()
+                            .map_coords(|c| pow2::div_floor(c, self.minification));
 
                         tx.send((
                             Arc::clone(&whole_chunk_result),
@@ -290,37 +308,12 @@ where
 
                         let chunk = compressed_chunk.decompress();
 
-                        let block_count = subregion.extent().map_coords(|c| pow2::div_floor(c, self.minification));
-                        let block_size: i32 = self.minification.as_u64() as i32;
+                        // SAFETY: The subregion is an intersection of chunk bounds with another
+                        //         rectangle, so we know that subregion is contained within chunk bounds.
+                        let subregion_result = unsafe { self.collect_subregion(&chunk, subregion) };
 
-                        let mut subregion_result: Array2D<TCollector::OutputType> = Array2D::new(
-                            block_count.x as usize,
-                            block_count.y as usize,
-                        );
-
-                        for by in 0..block_count.y {
-                            for bx in 0..block_count.x {
-                                let cx = subregion.start.x + bx * block_size;
-                                let cy = subregion.start.y + by * block_size;
-
-                                // SAFETY: We are iterating within `bounds`,
-                                //         which are taken directly from the chunk.
-                                let v = unsafe {
-                                    self.collect_block(
-                                        &chunk,
-                                        cx..cx + block_size,
-                                        cy..cy + block_size,
-                                    )
-                                };
-
-                                // SAFETY: Explicitly iterating within the subregion.
-                                unsafe {
-                                    *subregion_result.get_unchecked_mut(bx as usize, by as usize) = v;
-                                }
-                            }
-                        }
-
-                        let dst = (subregion.start - self.region.start).map_coords(|c| pow2::div_floor(c, self.minification));
+                        let dst = (subregion.start - self.region.start)
+                            .map_coords(|c| pow2::div_floor(c, self.minification));
                         let width = subregion_result.width();
                         let height = subregion_result.height();
 
@@ -368,7 +361,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::panic::AssertUnwindSafe;
     use crate::compression::zstd::ZstdCompression;
     use crate::game::chunker::SquareChunker;
     use crate::game::grid::{FrozenGrid, Grid};
@@ -377,6 +369,7 @@ mod tests {
     use crate::math::pow2::Pow2;
     use crate::math::rect::GridRect;
     use crate::util::cache::CacheEnabled;
+    use std::panic::AssertUnwindSafe;
 
     fn point(x: i32, y: i32) -> GridPoint {
         GridPoint::new(x, y)
