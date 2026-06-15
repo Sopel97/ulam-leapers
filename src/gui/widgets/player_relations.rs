@@ -398,7 +398,7 @@ mod tests {
     fn test_json_rejects_invalid_player_ids() {
         let json = json!({
             "player_count": 3,
-            "is_enemy_map_symmetric": true,
+            "is_symmetric": true,
             "enemy_map": [
                 [1, 4] // invalid player id
             ]
@@ -415,7 +415,7 @@ mod tests {
     fn test_json_rejects_invalid_player_ids_zero() {
         let json = json!({
             "player_count": 3,
-            "is_enemy_map_symmetric": true,
+            "is_symmetric": true,
             "enemy_map": [
                 [1, 0] // invalid player id
             ]
@@ -432,7 +432,7 @@ mod tests {
     fn test_indexing_is_one_based_in_json() {
         let json = json!({
             "player_count": 3,
-            "is_enemy_map_symmetric": true,
+            "is_symmetric": true,
             "enemy_map": [
                 [1, 2]
             ]
