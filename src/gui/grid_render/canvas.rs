@@ -201,7 +201,7 @@ impl GridCanvas {
         ui.painter_at(grid_rect_to_egui(self.rect()))
     }
 
-    /// Creates a new canvas within the same viewport but different projection `camera`. 
+    /// Creates a new canvas within the same viewport but different projection `camera`.
     pub fn with_camera(&self, camera: GridCamera) -> Self {
         Self::new(camera, self.viewport)
     }

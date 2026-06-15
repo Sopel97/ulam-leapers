@@ -1,6 +1,6 @@
-﻿use std::ops::RangeInclusive;
-use eframe::egui;
+﻿use eframe::egui;
 use eframe::egui::Ui;
+use std::ops::RangeInclusive;
 
 pub fn scroll_delta_in_ui(ui: &Ui) -> i32 {
     ui.input(|i| {

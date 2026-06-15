@@ -3,7 +3,6 @@ use std::cmp;
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::ops::*;
-use crate::math::rect::Rect2D;
 
 /// Models a point in a 2-dimensional Cartesian coordinate system.
 /// Supports both integer and floating point coordinates.
@@ -265,9 +264,9 @@ pub fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
         GridVector::new(v.x, -v.y),
         GridVector::new(-v.y, -v.x),
     ]
-        .into_iter()
-        .collect::<HashSet<GridVector>>()
-        .into_iter()
+    .into_iter()
+    .collect::<HashSet<GridVector>>()
+    .into_iter()
 }
 
 impl<T> WriteTo for Point2D<T>

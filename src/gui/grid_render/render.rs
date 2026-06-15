@@ -6,7 +6,6 @@ use eframe::egui::{
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,7 +14,7 @@ use ulam_leapers::game::chunk::ChunkOrigin;
 use ulam_leapers::game::grid::FrozenGrid;
 use ulam_leapers::game::sampler::FrozenGridSampler;
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
-use ulam_leapers::math::pow2::{ceil_to_multiple, div_floor, floor_to_multiple, Pow2};
+use ulam_leapers::math::pow2::{div_floor, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
@@ -39,7 +38,7 @@ const PREDEFINED_COLORS: [Color32; 9] = [
 
 pub fn default_player_colors(max_id: PlayerId) -> Vec<Color32> {
     let color_count = max_id.index() + 1;
-    
+
     if color_count <= PREDEFINED_COLORS.len() {
         PREDEFINED_COLORS[0..color_count].to_vec()
     } else {
@@ -258,19 +257,27 @@ impl GridRenderer {
         let src = intersection.start - src_bounds.start;
         let dst = intersection.start - dst_bounds.start;
 
-        blit_array2d(mipmap, &mut res, &Blit2D {
-            src_x: src.x as usize,
-            src_y: src.y as usize,
-            dst_x: dst.x as usize,
-            dst_y: dst.y as usize,
-            width: intersection.width() as usize,
-            height: intersection.height() as usize,
-        });
+        blit_array2d(
+            mipmap,
+            &mut res,
+            &Blit2D {
+                src_x: src.x as usize,
+                src_y: src.y as usize,
+                dst_x: dst.x as usize,
+                dst_y: dst.y as usize,
+                width: intersection.width() as usize,
+                height: intersection.height() as usize,
+            },
+        );
 
         res
     }
 
-    pub fn render_to_rgba_samples(&self, world_bounds: GridRect, zoom: Zoom<Pow2>) -> Array2D<Color32> {
+    pub fn render_to_rgba_samples(
+        &self,
+        world_bounds: GridRect,
+        zoom: Zoom<Pow2>,
+    ) -> Array2D<Color32> {
         match zoom {
             Zoom::Magnification(_factor) => {
                 let colors = &self.colors;
@@ -339,13 +346,18 @@ impl GridRenderer {
         lowest_minification: Pow2,
         highest_minification: Pow2,
     ) -> MemSize {
-        let grid_bounds = self.grid.bounds().hull_aligned_to_pow2(highest_minification);
+        let grid_bounds = self
+            .grid
+            .bounds()
+            .hull_aligned_to_pow2(highest_minification);
 
         let pixels_at_no_minification =
             grid_bounds.width() as usize * grid_bounds.height() as usize;
         // lowest_minification squared we're reducing area
-        let pixels_at_lowest_minification =
-            div_floor(pixels_at_no_minification, lowest_minification * lowest_minification);
+        let pixels_at_lowest_minification = div_floor(
+            pixels_at_no_minification,
+            lowest_minification * lowest_minification,
+        );
 
         // 1 + 1/4 + 1/16 + 1/64 + ... converges to 4/3
         MemSize::sizes_of::<Color32>(pixels_at_lowest_minification * 4 / 3)
@@ -370,7 +382,10 @@ impl GridRenderer {
         // Strictly speaking we only require the width and height to be aligned to
         // the higher minification factor, but having this constraint on the whole rect
         // is very beneficial for how the Grid behaves.
-        let grid_bounds = self.grid.bounds().hull_aligned_to_pow2(highest_minification);
+        let grid_bounds = self
+            .grid
+            .bounds()
+            .hull_aligned_to_pow2(highest_minification);
 
         // Disallow zero-sized bounds
         assert!(grid_bounds.width() > 0);

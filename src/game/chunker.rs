@@ -371,12 +371,15 @@ impl Chunker for StripChunker {
     }
 
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin> {
-        let min_so = region.start.map_coords(|c| floor_to_multiple(c, self.strip_length));
+        let min_so = region
+            .start
+            .map_coords(|c| floor_to_multiple(c, self.strip_length));
 
         // All superchunks have the same amount of chunks.
         // Not all of them may actually intersect the region, but doesn't hurt
         // to allocate space for the worst case, the difference is small.
-        let superchunk_count = (region.end - min_so).map_coords(|c| div_floor(c, self.strip_length) as usize);
+        let superchunk_count =
+            (region.end - min_so).map_coords(|c| div_floor(c, self.strip_length) as usize);
         let chunk_count = superchunk_count.x * superchunk_count.y * self.num_chunks_in_superchunk();
         let mut origins = Vec::with_capacity(chunk_count);
 

@@ -1,5 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
+use crate::game::chunk::CompressedChunk;
 use crate::game::chunker::StripChunker;
 use crate::game::grid::{FrozenGrid, Grid};
 use crate::game::piece::LeaperAttacks;
@@ -15,7 +16,6 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use crate::game::chunk::CompressedChunk;
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);

@@ -3,7 +3,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zoom<T>
 where
-    T: Copy
+    T: Copy,
 {
     Magnification(T),
     Minification(T),

@@ -100,7 +100,10 @@ impl<T> Chunk<T> {
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, index: GridPoint) -> &T {
         let offset = index - self.bounds.start;
-        unsafe { self.cells.get_unchecked(offset.x as usize, offset.y as usize) }
+        unsafe {
+            self.cells
+                .get_unchecked(offset.x as usize, offset.y as usize)
+        }
     }
 
     /// # Safety
@@ -112,7 +115,10 @@ impl<T> Chunk<T> {
     #[inline(always)]
     pub unsafe fn get_unchecked_mut(&mut self, index: GridPoint) -> &mut T {
         let offset = index - self.bounds.start;
-        unsafe { self.cells.get_unchecked_mut(offset.x as usize, offset.y as usize) }
+        unsafe {
+            self.cells
+                .get_unchecked_mut(offset.x as usize, offset.y as usize)
+        }
     }
 }
 
