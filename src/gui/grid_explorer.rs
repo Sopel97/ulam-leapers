@@ -758,7 +758,7 @@ impl GridExplorer {
 
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
-            let mut encoder = png::Encoder::new(w, s as u32, s as u32);
+            let mut encoder = png::Encoder::new(w, image.width() as u32, image.height() as u32);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
 
