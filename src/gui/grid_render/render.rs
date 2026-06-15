@@ -19,6 +19,7 @@ use ulam_leapers::math::pow2::{ceil_to_multiple, div_floor, floor_to_multiple, P
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
+use ulam_leapers::util::blit::{blit_array2d, Blit2D};
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
@@ -250,6 +251,7 @@ impl GridRenderer {
         dst_bounds.end.x = div_floor(dst_bounds.end.x, factor);
         dst_bounds.end.y = div_floor(dst_bounds.end.y, factor);
 
+        // The intersection of the whole mipmap and the view is what we actually need to blit.
         let intersection = src_bounds.intersection(&dst_bounds).unwrap();
 
         let mut res = Array2D::<Color32>::new_aligned(
@@ -263,17 +265,14 @@ impl GridRenderer {
         let mipmaps = &self.mipmaps.get().unwrap().by_minification_factor;
         let mipmap = mipmaps.get(&factor).unwrap();
 
-        // Every index within the intersection is valid for both src and dst.
-        for y in intersection.start.y..intersection.end.y {
-            for x in intersection.start.x..intersection.end.x {
-                let src_x = (x - src_bounds.start.x) as usize;
-                let src_y = (y - src_bounds.start.y) as usize;
-                let dst_x = (x - dst_bounds.start.x) as usize;
-                let dst_y = (y - dst_bounds.start.y) as usize;
-
-                res[(dst_x, dst_y)] = mipmap[(src_x, src_y)];
-            }
-        }
+        blit_array2d(mipmap, &mut res, &Blit2D {
+            src_x: (intersection.start.x - src_bounds.start.x) as usize,
+            src_y: (intersection.start.y - src_bounds.start.y) as usize,
+            dst_x: (intersection.start.x - dst_bounds.start.x) as usize,
+            dst_y: (intersection.start.y - dst_bounds.start.y) as usize,
+            width: intersection.width() as usize,
+            height: intersection.height() as usize,
+        });
 
         res
     }
