@@ -447,6 +447,15 @@ impl GridExplorer {
             zoom_delta
         })
     }
+    
+    fn make_camera_position_bounds(&self) -> Rect2D<f32> {
+        let complete_shells = self.finalized_simulation.complete_shells();
+        let complete_shells_f32 = complete_shells as f32;
+        Rect2D::with_start_end(
+            Point2D::new(-complete_shells_f32, -complete_shells_f32),
+            Point2D::new(complete_shells_f32, complete_shells_f32),
+        )
+    }
 
     fn update_canvas_from_events(&mut self, ui: &mut Ui, canvas: &mut Canvas) {
         let response = ui.allocate_rect(
@@ -461,12 +470,7 @@ impl GridExplorer {
         );
 
         let zoom_range = self.zoom_range();
-        let complete_shells = self.finalized_simulation.complete_shells();
-        let complete_shells_f32 = complete_shells as f32;
-        let camera_position_bounds = Rect2D::with_start_end(
-            Point2D::new(-complete_shells_f32, -complete_shells_f32),
-            Point2D::new(complete_shells_f32, complete_shells_f32),
-        );
+        let camera_position_bounds = self.make_camera_position_bounds();
 
         let mut new_camera = BoundedCamera::from_camera(self.camera, zoom_range, camera_position_bounds);
 
