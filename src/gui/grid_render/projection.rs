@@ -1,5 +1,5 @@
 ﻿use std::cmp;
-use ulam_leapers::math::coords::GridPoint;
+use ulam_leapers::math::coords::{GridPoint, GridVector};
 use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
@@ -140,11 +140,16 @@ impl GridProjection {
     }
 
     pub fn world_to_screen_rect(&self, world_rect: GridRect) -> GridRect {
+        // Due to optional flipping of axes we have to be very careful, because
+        // if we provide `rect.end`, which is outside the rectangle's area, it may get
+        // flipped to be outside too but on the side we don't expect.
+        // To avoid this we first transform the coordinates to be within the rectangle,
+        // and then reform the actual `.end` based on the correct maximum coordinates.
         let p0 = self.world_to_screen(world_rect.start);
-        let p1 = self.world_to_screen(world_rect.end);
+        let p1 = self.world_to_screen(world_rect.end - GridVector::new(1, 1));
         GridRect::with_start_end(
             GridPoint::new(cmp::min(p0.x, p1.x), cmp::min(p0.y, p1.y)),
-            GridPoint::new(cmp::max(p0.x, p1.x), cmp::max(p0.y, p1.y)),
+            GridPoint::new(cmp::max(p0.x, p1.x), cmp::max(p0.y, p1.y)) + GridVector::new(1, 1),
         )
     }
 }
@@ -170,16 +175,11 @@ mod tests {
         let zoom = Zoom::Magnification(Pow2::from_exponent(1));
         let camera = GridPoint::new(50, 40);
 
-        let projection =
-            GridProjection::new(zoom, camera, screen_rect(), FlipAxis::None);
+        let projection = GridProjection::new(zoom, camera, screen_rect(), FlipAxis::None);
 
         assert_eq!(
             projection.world_rect(),
-            GridRect::with_size(
-                GridPoint::new(25, 20),
-                50,
-                40,
-            )
+            GridRect::with_size(GridPoint::new(25, 20), 50, 40,)
         );
     }
 
@@ -187,15 +187,10 @@ mod tests {
     fn magnification_world_to_screen_origin() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(1));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::None);
 
-        let screen =
-            projection.world_to_screen(GridPoint::new(25, 20));
+        let screen = projection.world_to_screen(GridPoint::new(25, 20));
 
         assert_eq!(screen, GridPoint::new(0, 0));
     }
@@ -204,15 +199,10 @@ mod tests {
     fn magnification_screen_to_world_origin() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(1));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::None);
 
-        let world =
-            projection.screen_to_world(GridPoint::new(0, 0));
+        let world = projection.screen_to_world(GridPoint::new(0, 0));
 
         assert_eq!(world, GridPoint::new(25, 20));
     }
@@ -223,12 +213,8 @@ mod tests {
         let zoom = Zoom::Magnification(factor);
 
         let screen_rect = screen_rect();
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect,
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect, FlipAxis::None);
         let world_rect = projection.world_rect();
 
         assert_eq!(world_rect.width(), div_floor(screen_rect.width(), factor));
@@ -241,31 +227,28 @@ mod tests {
         let zoom = Zoom::Minification(factor);
 
         let screen_rect = screen_rect();
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect,
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect, FlipAxis::None);
         let world_rect = projection.world_rect();
 
-        assert_eq!(world_rect.width(), screen_rect.width() * factor.as_u64() as i32);
-        assert_eq!(world_rect.height(), screen_rect.height() * factor.as_u64() as i32);
+        assert_eq!(
+            world_rect.width(),
+            screen_rect.width() * factor.as_u64() as i32
+        );
+        assert_eq!(
+            world_rect.height(),
+            screen_rect.height() * factor.as_u64() as i32
+        );
     }
 
     #[test]
     fn magnification_world_to_screen_scales_by_factor() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(1));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::None);
 
-        let screen =
-            projection.world_to_screen(GridPoint::new(26, 21));
+        let screen = projection.world_to_screen(GridPoint::new(26, 21));
 
         assert_eq!(screen, GridPoint::new(2, 2));
     }
@@ -274,12 +257,8 @@ mod tests {
     fn flip_x_reverses_horizontal_mapping() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(0));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::X,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::X);
 
         let left_world = projection.world_rect().start;
 
@@ -292,12 +271,8 @@ mod tests {
     fn flip_y_reverses_vertical_mapping() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(0));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::Y,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::Y);
 
         let top_world = projection.world_rect().start;
 
@@ -310,12 +285,8 @@ mod tests {
     fn flip_xy_reverses_both_axes() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(0));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::XY,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::XY);
 
         let corner = projection.world_rect().start;
 
@@ -348,17 +319,10 @@ mod tests {
     fn world_to_screen_rect_preserves_bounds() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(0));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::None);
 
-        let rect = GridRect::with_start_end(
-            GridPoint::new(10, 10),
-            GridPoint::new(20, 20),
-        );
+        let rect = GridRect::with_start_end(GridPoint::new(10, 10), GridPoint::new(20, 20));
 
         let projected = projection.world_to_screen_rect(rect);
 
@@ -370,12 +334,8 @@ mod tests {
     fn world_screen_world_round_trip_without_flips() {
         let zoom = Zoom::Magnification(Pow2::from_exponent(1));
 
-        let projection = GridProjection::new(
-            zoom,
-            GridPoint::new(50, 40),
-            screen_rect(),
-            FlipAxis::None,
-        );
+        let projection =
+            GridProjection::new(zoom, GridPoint::new(50, 40), screen_rect(), FlipAxis::None);
 
         let world = GridPoint::new(30, 25);
 
