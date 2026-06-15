@@ -24,7 +24,6 @@ use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
-use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 
 const MIN_ZOOM_POW2: i32 = -5;
@@ -66,31 +65,6 @@ pub struct GridExplorer {
     png_extent: i32,
 
     is_debug_ui_enabled: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GridRenderParameters {
-    bounds: GridRect,
-    zoom: Zoom<Pow2>,
-}
-
-impl GridRenderParameters {
-    pub fn new(bounds: GridRect, zoom: Zoom<Pow2>) -> Self {
-        Self { bounds, zoom }
-    }
-
-    pub fn bounds(&self) -> GridRect {
-        self.bounds
-    }
-}
-
-impl Default for GridRenderParameters {
-    fn default() -> Self {
-        GridRenderParameters {
-            bounds: GridRect::with_size(GridPoint::new(0, 0), 0, 0),
-            zoom: Zoom::Magnification(Pow2::try_from(1).unwrap()),
-        }
-    }
 }
 
 impl Subwindow for GridExplorer {
