@@ -6,6 +6,7 @@ use eframe::egui::{
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,18 +24,32 @@ use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
 
-pub fn default_player_colors() -> Vec<Color32> {
-    vec![
-        Color32::WHITE,
-        Color32::BLACK,
-        Color32::RED,
-        Color32::BLUE,
-        Color32::YELLOW,
-        Color32::GREEN,
-        Color32::CYAN,
-        Color32::MAGENTA,
-        Color32::BROWN,
-    ]
+const PREDEFINED_COLORS: [Color32; 9] = [
+    Color32::WHITE,
+    Color32::BLACK,
+    Color32::RED,
+    Color32::BLUE,
+    Color32::YELLOW,
+    Color32::GREEN,
+    Color32::CYAN,
+    Color32::MAGENTA,
+    Color32::BROWN,
+];
+
+pub fn default_player_colors(max_id: PlayerId) -> Vec<Color32> {
+    let color_count = max_id.index() + 1;
+    
+    if color_count <= PREDEFINED_COLORS.len() {
+        PREDEFINED_COLORS[0..color_count].to_vec()
+    } else {
+        let mut colors = Vec::with_capacity(color_count);
+        colors.extend_from_slice(&PREDEFINED_COLORS);
+        for i in PREDEFINED_COLORS.len()..color_count {
+            let c = i as u8;
+            colors.push(Color32::from_rgb(c, c, c));
+        }
+        colors
+    }
 }
 
 type CacheType = LockStepCache<(ChunkOrigin, Pow2), Array2D<Color32>>;

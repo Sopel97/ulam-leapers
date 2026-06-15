@@ -119,8 +119,9 @@ impl SimulationCreatorWorker {
         let _ = simulation.simulate(limits);
         let finalized = simulation.finalize();
         let frozen_grid = finalized.grid();
+        let max_id = finalized.highest_player_id();
 
-        let colors = default_player_colors();
+        let colors = default_player_colors(max_id);
         let bounds = GridRect::with_size(
             GridPoint::new(-(shells as i32), -(shells as i32)),
             (shells * 2 + 1) as i32,

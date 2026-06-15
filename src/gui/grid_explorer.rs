@@ -138,10 +138,10 @@ impl Subwindow for GridExplorer {
 
 impl GridExplorer {
     pub fn new(finalized_simulation: FinalizedSimulation) -> Self {
-        let grid_renderer =
-            GridRenderer::new(&finalized_simulation, default_player_colors().as_slice());
+        let max_id = finalized_simulation.highest_player_id();
 
-        let player_count = finalized_simulation.player_count();
+        let grid_renderer =
+            GridRenderer::new(&finalized_simulation, default_player_colors(max_id).as_slice());
 
         Self {
             grid_renderer,
@@ -151,7 +151,7 @@ impl GridExplorer {
 
             mipmap_generation_progress: None,
 
-            player_colors: default_player_colors()[..=player_count].to_vec(),
+            player_colors: default_player_colors(max_id).to_vec(),
             have_colors_changed: false,
             last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
