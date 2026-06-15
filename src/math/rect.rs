@@ -1,7 +1,7 @@
 ﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{Point2D, Vector2D};
+use crate::math::coords::{GridPoint, Point2D, Vector2D};
 use crate::math::pow2;
-use crate::math::pow2::Pow2;
+use crate::math::pow2::{floor_to_multiple, mod_floor, Pow2};
 use std::cmp;
 use std::io::{Read, Write};
 use std::ops::{Add, AddAssign, Shl, Shr, Sub};
@@ -61,6 +61,23 @@ where
             && pow2::is_multiple_of(self.start.y, align)
             && pow2::is_multiple_of(self.end.x, align)
             && pow2::is_multiple_of(self.end.y, align)
+    }
+}
+
+impl<T> Rect2D<T>
+where
+    T: Shl<Output = T> + Shr<Output = T> + Sub<Output = T> + Add<Output = T> + From<u8> + Eq + Clone + Copy,
+{
+    /// Returns a new `r = Rect2D<T>` contained within `self` such that
+    /// `r.is_aligned_to_pow2(align)` is true.
+    /// The returned rect is centered within the original rect as much as possible.
+    pub fn aligned_to_pow2_inside(&self, align: Pow2) -> Self {
+        let w = floor_to_multiple(self.width(), align);
+        let h = floor_to_multiple(self.height(), align);
+        let dx = mod_floor(self.width(), align) >> T::from(1);
+        let dy = mod_floor(self.height(), align) >> T::from(1);
+        let min = Point2D::new(self.start.x + dx, self.start.y + dy);
+        Self::with_size(min, w, h)
     }
 }
 

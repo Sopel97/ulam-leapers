@@ -125,7 +125,7 @@ impl Subwindow for GridExplorer {
             // The projection will give us a more restricted viewport.
             let proj = Self::make_projection(
                 self.zoom_pow2,
-                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                self.origin(),
                 egui_to_grid_rect(ui.clip_rect()),
             );
             let rect = proj.screen_rect();
@@ -255,7 +255,7 @@ impl GridExplorer {
             let chunk_bounds = chunk.bounds();
             let proj = Self::make_projection(
                 self.zoom_pow2,
-                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                self.origin(),
                 viewport,
             );
             let chunk_bounds_screen_space = proj.world_to_screen_rect(*chunk_bounds);
@@ -296,6 +296,10 @@ impl GridExplorer {
             self.min_zoom_pow2..=self.max_zoom_pow2
         }
     }
+    
+    pub fn origin(&self) -> GridPoint {
+        GridPoint::new(self.origin_x as i32, self.origin_y as i32)
+    }
 
     pub fn make_projection(
         zoom_pow2: i32,
@@ -305,12 +309,7 @@ impl GridExplorer {
         if zoom_pow2 > 0 {
             // Restrict viewport to bounds compatible with the alignment required by the zoom.
             let factor = Pow2::from_exponent(zoom_pow2 as u8);
-            let w = floor_to_multiple(rect.width(), factor);
-            let h = floor_to_multiple(rect.height(), factor);
-            let dx = mod_floor(rect.width(), factor) / 2;
-            let dy = mod_floor(rect.height(), factor) / 2;
-            let min = GridPoint::new(rect.start.x + dx, rect.start.y + dy);
-            rect = GridRect::with_size(min, w, h);
+            rect = rect.aligned_to_pow2_inside(factor);
         }
 
         ScreenWorldDiscrete2D::new(zoom_pow2, origin_world, rect, SCREEN_TO_WORLD_AXIS_FLIP)
@@ -321,10 +320,7 @@ impl GridExplorer {
         origin_world: GridPoint,
         rect: GridRect,
     ) -> GridRenderParameters {
-        let zoom = match zoom_pow2 {
-            e @ 0.. => Zoom::Magnification(Pow2::from_exponent(e as u8)),
-            e @ ..0 => Zoom::Minification(Pow2::from_exponent((-e) as u8)),
-        };
+        let zoom = Zoom::from_exponent(zoom_pow2);
         let proj = Self::make_projection(zoom_pow2, origin_world, rect);
         let bounds = proj.world_rect();
         GridRenderParameters::new(bounds, zoom)
@@ -333,7 +329,7 @@ impl GridExplorer {
     pub fn to_render_params(&self, viewport: GridRect) -> GridRenderParameters {
         Self::render_params(
             self.zoom_pow2,
-            GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+            self.origin(),
             viewport,
         )
     }
@@ -367,7 +363,7 @@ impl GridExplorer {
 
             let proj = Self::make_projection(
                 self.zoom_pow2,
-                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                self.origin(),
                 viewport,
             );
             self.last_pointed_coords =
@@ -376,7 +372,7 @@ impl GridExplorer {
             if new_zoom_pow2 != self.zoom_pow2 {
                 let proj_new = Self::make_projection(
                     new_zoom_pow2,
-                    GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                    self.origin(),
                     viewport,
                 );
 
@@ -633,7 +629,7 @@ impl GridExplorer {
             let s = self.png_extent;
             let render_params = Self::render_params(
                 self.zoom_pow2_png,
-                GridPoint::new(self.origin_x as i32, self.origin_y as i32),
+                self.origin(),
                 GridRect::with_size(GridPoint::zero(), s, s),
             );
             let image = self
