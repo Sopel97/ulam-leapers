@@ -29,7 +29,7 @@ use ulam_leapers::util::memory::MemSize;
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
 const DEFAULT_ZOOM_POW2: i32 = 0;
-const MAX_ZOOM_POW2: i32 = 3;
+const MAX_ZOOM_POW2: i32 = 5;
 
 const MIP_LOWEST_MINIFICATION: Pow2 = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
 const MIP_HIGHEST_MINIFICATION: Pow2 = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
