@@ -1,4 +1,4 @@
-﻿use crate::gui::conv::grid_rect_to_egui;
+﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 use crate::gui::grid_explorer::GridRenderParameters;
 use eframe::egui::{Painter, Ui};
 use std::ops::RangeInclusive;
@@ -126,6 +126,11 @@ pub struct GridCanvas {
 }
 
 impl GridCanvas {
+    pub fn in_ui(ui: &Ui, camera: GridCamera) -> Self {
+        let viewport = egui_to_grid_rect(ui.clip_rect());
+        Self::new(camera, viewport)
+    }
+    
     pub fn new(camera: GridCamera, viewport: GridRect) -> Self {
         let rect = if camera.zoom_pow2 > 0 {
             // Restrict viewport to bounds compatible with the alignment required by the zoom.

@@ -119,7 +119,7 @@ impl Subwindow for GridExplorer {
             }
 
             // The projection will give us a more restricted viewport.
-            let mut canvas = self.make_canvas(egui_to_grid_rect(ui.clip_rect()));
+            let mut canvas = GridCanvas::in_ui(ui, self.camera);
 
             if canvas.width() >= MIN_CANVAS_WIDTH && canvas.height() >= MIN_CANVAS_HEIGHT {
                 self.update_canvas_from_events(ui, &mut canvas);
@@ -273,10 +273,6 @@ impl GridExplorer {
         } else {
             MIN_ZOOM_POW2..=MAX_ZOOM_POW2
         }
-    }
-
-    fn make_canvas(&self, rect: GridRect) -> GridCanvas {
-        GridCanvas::new(self.camera, rect)
     }
 
     fn scroll_delta_from_input(ui: &Ui) -> i32 {
