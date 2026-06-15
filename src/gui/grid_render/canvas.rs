@@ -156,6 +156,10 @@ impl GridCanvas {
             viewport,
         }
     }
+    
+    pub fn is_zero_area(&self) -> bool {
+        self.width() == 0 || self.height() == 0
+    }
 
     pub fn make_painter(&self, ui: &mut Ui) -> Painter {
         ui.painter_at(grid_rect_to_egui(self.rect()))

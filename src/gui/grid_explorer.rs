@@ -40,9 +40,6 @@ const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
 const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
 
-const MIN_CANVAS_WIDTH: i32 = 1;
-const MIN_CANVAS_HEIGHT: i32 = 1;
-
 #[derive(Debug)]
 pub enum SaveState {
     NotSaved,
@@ -121,11 +118,11 @@ impl Subwindow for GridExplorer {
             // The projection will give us a more restricted viewport.
             let mut canvas = GridCanvas::in_ui(ui, self.camera);
 
-            if canvas.width() >= MIN_CANVAS_WIDTH && canvas.height() >= MIN_CANVAS_HEIGHT {
-                self.update_canvas_from_events(ui, &mut canvas);
-                self.maybe_update_canvas_texture(ui, &canvas);
-                self.draw_canvas_texture(ui, &canvas);
-            }
+            self.update_canvas_from_events(ui, &mut canvas);
+
+            self.maybe_update_canvas_texture(ui, &canvas);
+            self.draw_canvas_texture(ui, &canvas);
+
             if self.is_debug_ui_enabled {
                 self.show_debug_ui(ui, &canvas);
             }
@@ -177,6 +174,10 @@ impl GridExplorer {
     }
 
     fn draw_canvas_texture(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
+        if canvas.is_zero_area() {
+            return;
+        }
+
         let painter = canvas.make_painter(ui);
         let rect = painter.clip_rect();
 
@@ -198,6 +199,10 @@ impl GridExplorer {
         // For the caching to be effective there needs to space for at least a few
         // framebuffers worth of data.
         const CACHE_FRAMEBUFFERS_WORTH: usize = 16;
+
+        if canvas.is_zero_area() {
+            return;
+        }
 
         let framebuffer_size =
             canvas.width() as usize * canvas.height() as usize * size_of::<Color32>();
@@ -230,6 +235,10 @@ impl GridExplorer {
     }
 
     fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
+        if canvas.is_zero_area() {
+            return;
+        }
+
         let pointed_coords = self.last_pointed_coords();
         let chunk = self
             .finalized_simulation
@@ -297,6 +306,10 @@ impl GridExplorer {
     }
 
     fn update_canvas_from_events(&mut self, ui: &mut Ui, canvas: &mut GridCanvas) {
+        if canvas.is_zero_area() {
+            return;
+        }
+
         let response = ui.allocate_rect(
             grid_rect_to_egui(canvas.rect()),
             Sense::drag() | Sense::hover() | Sense::click(),
@@ -455,7 +468,7 @@ impl GridExplorer {
         }
     }
 
-    fn show_zoom_origin_ui(&mut self, ui: &mut Ui) {
+    fn show_camera_ui(&mut self, ui: &mut Ui) {
         let complete_shells = self.finalized_simulation.complete_shells();
         let zoom_range = self.zoom_range();
 
@@ -586,7 +599,7 @@ impl GridExplorer {
         ui.heading("Controls");
 
         self.show_mipmaps_ui(ui);
-        self.show_zoom_origin_ui(ui);
+        self.show_camera_ui(ui);
         self.show_player_colors_ui(ui);
 
         ui.heading("Screenshots ❓")
