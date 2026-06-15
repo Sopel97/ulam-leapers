@@ -9,6 +9,11 @@ use ulam_leapers::math::zoom::Zoom;
 
 const SCREEN_TO_WORLD_AXIS_FLIP: FlipAxis = FlipAxis::Y;
 
+/// A simple structure representing a camera looking onto a discrete grid.
+/// `zoom_pow2` allows minification (negative values),
+/// magnification (positive values), and no zoom (zero).
+/// Despite being intended for discrete grids the camera position is
+/// a floating-point number to allow for finer control on user interaction.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct GridCamera {
     pub zoom_pow2: i32,
@@ -16,6 +21,7 @@ pub struct GridCamera {
 }
 
 impl GridCamera {
+    /// Creates a new camera with given `zoom_pow2` and looking at `position` in world coordinates.
     pub fn new(zoom_pow2: i32, position: Point2D<f32>) -> Self {
         Self {
             zoom_pow2,
@@ -34,6 +40,8 @@ impl GridCamera {
         Zoom::from_exponent(self.zoom_pow2)
     }
 
+    /// Creates a new [RestrictedGridCamera] from this camera and provided bounds.
+    /// Equivalent to [RestrictedGridCamera::from_camera]
     pub fn restricted(
         &self,
         zoom_pow2_range: RangeInclusive<i32>,
@@ -43,6 +51,7 @@ impl GridCamera {
     }
 }
 
+/// A simple structure representing a [GridCamera] with additional constraints.
 #[derive(Debug, Clone)]
 pub struct RestrictedGridCamera {
     camera: GridCamera,
@@ -51,6 +60,8 @@ pub struct RestrictedGridCamera {
 }
 
 impl RestrictedGridCamera {
+    /// Creates a new [RestrictedGridCamera] from this camera and provided bounds.
+    /// Equivalent to [GridCamera::restricted]
     pub fn from_camera(
         camera: GridCamera,
         zoom_pow2_range: RangeInclusive<i32>,
@@ -66,10 +77,15 @@ impl RestrictedGridCamera {
         }
     }
 
+    /// Converts this camera into [GridCamera], dropping constraints.
     pub fn to_camera(&self) -> GridCamera {
         self.camera
     }
 
+    /// Changes this camera's zoom by `zoom_delta`, with subject to constraints.
+    /// The position is attempted to be remapped such that the screen-space
+    /// point `invariant_point` will preserve its screen-space position on `canvas`.
+    /// Note, that position constraints are preserved, so this is not always possible.
     pub fn add_zoom_with_invariant_point(
         &mut self,
         canvas: &GridCanvas,
@@ -96,6 +112,8 @@ impl RestrictedGridCamera {
         self.camera.zoom_pow2 = new_zoom_pow2;
     }
 
+    /// Moves the camera position as if dragged itself by `(dx, dy)`,
+    /// impacting the looked at position by a factor depending on the current zoom.
     pub fn drag(&mut self, dx: f32, dy: f32) {
         let zoom_scale = 0.5f32.powf(self.camera.zoom_pow2 as f32);
         self.camera.position = Self::clamped_position(
@@ -104,6 +122,10 @@ impl RestrictedGridCamera {
         );
     }
 
+    /// Sets the position by interpolating using provided factors `tx` and `ty`
+    /// within the allowed position bounds.
+    /// In particular, factor of `0` means the start of the position range, and factor
+    /// of `1` means the end of the position range.
     pub fn set_position_proportional_within_bounds(&mut self, tx: f32, ty: f32) {
         self.camera.position = Self::clamped_position(
             Point2D::new(
@@ -137,11 +159,15 @@ pub struct GridCanvas {
 }
 
 impl GridCanvas {
+    /// Creates a new canvas encompassing the whole clip rect of this `ui`,
+    /// with a projection using the `camera`.
+    /// The canvas is NOT attached to `ui`.
     pub fn in_ui(ui: &Ui, camera: GridCamera) -> Self {
         let viewport = egui_to_grid_rect(ui.clip_rect());
         Self::new(camera, viewport)
     }
 
+    /// Creates a new canvas within `viewport` and with a projection using `camera`.
     pub fn new(camera: GridCamera, viewport: GridRect) -> Self {
         let rect = match camera.zoom() {
             Zoom::Magnification(factor) => viewport.aligned_to_pow2_inside(factor),
@@ -160,42 +186,52 @@ impl GridCanvas {
         }
     }
 
+    /// Whether the screen-space rect of this canvas has zero area.
     pub fn is_zero_area(&self) -> bool {
         self.width() == 0 || self.height() == 0
     }
 
+    /// Creates an egui rect with provided senses at this canvas' screen rect.
     pub fn make_sense(&self, ui: &mut Ui, sense: Sense) -> Response {
         ui.allocate_rect(grid_rect_to_egui(self.rect()), sense)
     }
 
+    /// Creates an egui painter at this canvas' screen rect.
     pub fn make_painter(&self, ui: &mut Ui) -> Painter {
         ui.painter_at(grid_rect_to_egui(self.rect()))
     }
 
+    /// Creates a new canvas within the same viewport but different projection `camera`. 
     pub fn with_camera(&self, camera: GridCamera) -> Self {
         Self::new(camera, self.viewport)
     }
 
+    /// Creates a new canvas within the same viewport but different `zoom_pow2` in the camera.
     pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
         Self::new(self.camera.with_zoom(zoom_pow2), self.viewport)
     }
 
+    /// Returns the current camera zoom.
     pub fn zoom(&self) -> Zoom<Pow2> {
         self.projection.zoom()
     }
 
+    /// Returns the world-space rect that the canvas currently maps the screen-space rect into.
     pub fn world_rect(&self) -> GridRect {
         self.projection.world_rect()
     }
 
+    /// Returns the screen-space rect of this canvas.
     pub fn rect(&self) -> GridRect {
         self.projection.screen_rect()
     }
 
+    /// Returns the width of the screen-space rect of this canvas.
     pub fn width(&self) -> i32 {
         self.projection.screen_rect().width()
     }
 
+    /// Returns the height of the screen-space rect of this canvas.
     pub fn height(&self) -> i32 {
         self.projection.screen_rect().height()
     }
