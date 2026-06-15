@@ -460,9 +460,6 @@ impl GridExplorer {
                 .unwrap_or_else(|| (response.rect.max - response.rect.min.to_vec2()) * 0.5f32),
         );
 
-        let mouse_world = canvas.screen_to_world(mouse_pos);
-        self.last_pointed_coords = mouse_world;
-
         let zoom_range = self.zoom_range();
         let complete_shells = self.finalized_simulation.complete_shells();
         let complete_shells_f32 = complete_shells as f32;
@@ -508,6 +505,8 @@ impl GridExplorer {
                 self.camera
             );
         }
+
+        self.last_pointed_coords = canvas.screen_to_world(mouse_pos);
     }
 
     pub fn is_saved(&self) -> bool {
