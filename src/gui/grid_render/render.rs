@@ -69,6 +69,41 @@ impl MipmapGenerationProgress {
     }
 }
 
+pub struct GridRender {
+    texture: TextureHandle,
+
+    world_bounds: GridRect,
+    zoom: Zoom<Pow2>,
+    colors: Vec<Color32>,
+}
+
+impl GridRender {
+    pub fn texture(&self) -> &TextureHandle {
+        &self.texture
+    }
+
+    pub fn world_bounds(&self) -> GridRect {
+        self.world_bounds
+    }
+
+    pub fn zoom(&self) -> Zoom<Pow2> {
+        self.zoom
+    }
+
+    pub fn colors(&self) -> &[Color32] {
+        &self.colors
+    }
+
+    pub fn is_outdated(
+        &self,
+        renderer: &GridRenderer,
+        world_bounds: GridRect,
+        zoom: Zoom<Pow2>,
+    ) -> bool {
+        zoom != self.zoom || world_bounds != self.world_bounds || renderer.colors != self.colors
+    }
+}
+
 impl GridRenderer {
     pub fn new(sim: &FinalizedSimulation, colors: &[Color32]) -> Self {
         let highest_player_id = sim.highest_player_id();
@@ -134,7 +169,7 @@ impl GridRenderer {
 
     fn make_sampler_for_minification(
         &self,
-        bounds: &GridRect,
+        world_bounds: GridRect,
         factor: Pow2,
     ) -> FrozenGridSampler<'_, PlayerId, AvgMapColor32Collector> {
         // u32 is enough for 4096x4096 worst case
@@ -146,7 +181,7 @@ impl GridRenderer {
 
         FrozenGridSampler::new_with_minification(
             &self.grid,
-            *bounds,
+            world_bounds,
             factor,
             self.colors[0],
             AvgMapColor32Collector::new(self.colors.as_slice()),
@@ -155,10 +190,10 @@ impl GridRenderer {
 
     fn render_to_rgba_samples_for_minification_direct(
         &self,
-        bounds: &GridRect,
+        world_bounds: GridRect,
         factor: Pow2,
     ) -> Array2D<Color32> {
-        let sampler = self.make_sampler_for_minification(bounds, factor);
+        let sampler = self.make_sampler_for_minification(world_bounds, factor);
 
         if let Some(cache) = &self.cache {
             let res = sampler.par_sample_with_cache(&*cache.borrow());
@@ -172,10 +207,10 @@ impl GridRenderer {
 
     fn render_to_rgba_samples_for_minification_using_mipmaps(
         &self,
-        bounds: &GridRect,
+        world_bounds: GridRect,
         factor: Pow2,
     ) -> Array2D<Color32> {
-        if !bounds.is_aligned_to_pow2(factor) {
+        if !world_bounds.is_aligned_to_pow2(factor) {
             panic!("Region is not aligned to the minification factor.");
         }
 
@@ -194,7 +229,7 @@ impl GridRenderer {
         src_bounds.end.x = div_floor(src_bounds.end.x, factor);
         src_bounds.end.y = div_floor(src_bounds.end.y, factor);
 
-        let mut dst_bounds = *bounds;
+        let mut dst_bounds = world_bounds;
         dst_bounds.start.x = div_floor(dst_bounds.start.x, factor);
         dst_bounds.start.y = div_floor(dst_bounds.start.y, factor);
         dst_bounds.end.x = div_floor(dst_bounds.end.x, factor);
@@ -228,13 +263,13 @@ impl GridRenderer {
         res
     }
 
-    pub fn render_to_rgba_samples(&self, bounds: &GridRect, zoom: Zoom<Pow2>) -> Array2D<Color32> {
+    pub fn render_to_rgba_samples(&self, world_bounds: GridRect, zoom: Zoom<Pow2>) -> Array2D<Color32> {
         match zoom {
             Zoom::Magnification(_factor) => {
                 let colors = &self.colors;
                 let sampler = FrozenGridSampler::new(
                     &self.grid,
-                    *bounds,
+                    world_bounds,
                     colors[0],
                     MapLastCollector::new(colors),
                 );
@@ -244,9 +279,9 @@ impl GridRenderer {
             }
             Zoom::Minification(factor) => {
                 if self.has_mipmap(factor) {
-                    self.render_to_rgba_samples_for_minification_using_mipmaps(bounds, factor)
+                    self.render_to_rgba_samples_for_minification_using_mipmaps(world_bounds, factor)
                 } else {
-                    self.render_to_rgba_samples_for_minification_direct(bounds, factor)
+                    self.render_to_rgba_samples_for_minification_direct(world_bounds, factor)
                 }
             }
         }
@@ -254,8 +289,8 @@ impl GridRenderer {
 
     // The caller to this function must guarantee that there are enough colors in
     // params.colors to facilitate every cell. Otherwise, the behavior is undefined.
-    pub fn render_to_rgba_image(&self, bounds: &GridRect, zoom: Zoom<Pow2>) -> ColorImage {
-        let samples = self.render_to_rgba_samples(bounds, zoom);
+    pub fn render_to_rgba_image(&self, world_bounds: GridRect, zoom: Zoom<Pow2>) -> ColorImage {
+        let samples = self.render_to_rgba_samples(world_bounds, zoom);
         ColorImage::new(
             [samples.width(), samples.height()],
             samples.as_flat_slice().to_vec(),
@@ -265,9 +300,9 @@ impl GridRenderer {
     pub fn render_texture(
         &mut self,
         ctx: &egui::Context,
-        bounds: &GridRect,
+        world_bounds: GridRect,
         zoom: Zoom<Pow2>,
-    ) -> TextureHandle {
+    ) -> GridRender {
         let texture_options = TextureOptions {
             magnification: TextureFilter::Nearest,
             minification: TextureFilter::Linear,
@@ -275,8 +310,14 @@ impl GridRenderer {
             mipmap_mode: None,
         };
 
-        let image = self.render_to_rgba_image(bounds, zoom);
-        ctx.load_texture("name", image, texture_options)
+        let image = self.render_to_rgba_image(world_bounds, zoom);
+        let texture = ctx.load_texture("name", image, texture_options);
+        GridRender {
+            texture,
+            world_bounds,
+            zoom,
+            colors: self.colors.clone(),
+        }
     }
 
     pub fn has_mipmap(&self, factor: Pow2) -> bool {

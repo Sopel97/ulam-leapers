@@ -1,14 +1,14 @@
 ﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
 use crate::gui::grid_render::canvas::{GridCamera, GridCanvas, RestrictedGridCamera};
 use crate::gui::grid_render::render::{
-    default_player_colors, GridRenderer, MipmapGenerationProgress,
+    default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
 use eframe::egui::{
-    Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, TextureHandle, Ui,
+    Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -49,8 +49,7 @@ pub enum SaveState {
 pub struct GridExplorer {
     finalized_simulation: FinalizedSimulation,
     grid_renderer: GridRenderer,
-    grid_render_texture: Option<TextureHandle>,
-    last_grid_render_params: GridRenderParameters,
+    grid_render: Option<GridRender>,
     is_debug_ui_enabled: bool,
 
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
@@ -145,8 +144,7 @@ impl GridExplorer {
         Self {
             grid_renderer,
             finalized_simulation,
-            grid_render_texture: None,
-            last_grid_render_params: Default::default(),
+            grid_render: None,
             is_debug_ui_enabled: false,
 
             mipmap_generation_progress: None,
@@ -183,10 +181,10 @@ impl GridExplorer {
         // background
         painter.rect_filled(rect, 0.0, self.player_colors[0]);
 
-        if let Some(handle) = &self.grid_render_texture {
+        if let Some(render) = &self.grid_render {
             // y-flip via uv
             painter.image(
-                handle.id(),
+                render.texture().id(),
                 rect,
                 Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
                 Color32::WHITE,
@@ -203,33 +201,37 @@ impl GridExplorer {
             return;
         }
 
-        let framebuffer_size =
-            canvas.width() as usize * canvas.height() as usize * size_of::<Color32>();
+        // Check for changed colors and notify the renderer.
+        // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
+        //       The control panel must ensure the controls are disabled.
+        if self.have_colors_changed {
+            self.grid_renderer.set_colors(self.player_colors.as_slice());
 
-        self.grid_renderer
-            .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
+            // Do not forget to reset the colors changed flag.
+            self.have_colors_changed = false;
+        }
 
-        let curr_grid_render_params = GridRenderParameters::new(canvas.world_rect(), canvas.zoom());
+        let world_bounds = canvas.world_rect();
+        let zoom = canvas.zoom();
 
-        if self.last_grid_render_params != curr_grid_render_params || self.have_colors_changed {
-            // Check for changed colors and notify the renderer.
-            // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
-            //       The control panel must ensure the controls are disabled.
-            if self.have_colors_changed {
-                self.grid_renderer.set_colors(self.player_colors.as_slice());
+        if self.grid_render.is_none()
+            || self.grid_render.as_ref().unwrap().is_outdated(
+                &self.grid_renderer,
+                world_bounds,
+                zoom,
+            )
+        {
+            let framebuffer_size =
+                canvas.width() as usize * canvas.height() as usize * size_of::<Color32>();
 
-                // Do not forget to reset the colors changed flag.
-                self.have_colors_changed = false;
-            }
+            self.grid_renderer
+                .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
-            self.grid_render_texture = Some(self.grid_renderer.render_texture(
+            self.grid_render = Some(self.grid_renderer.render_texture(
                 ui.ctx(),
-                &curr_grid_render_params.bounds,
-                curr_grid_render_params.zoom,
+                world_bounds,
+                zoom,
             ));
-
-            // Do not forget to update grid params.
-            self.last_grid_render_params = curr_grid_render_params;
         }
     }
 
@@ -561,10 +563,9 @@ impl GridExplorer {
                 self.camera.with_zoom(self.zoom_pow2_png),
                 GridRect::with_size(GridPoint::zero(), s, s),
             );
-            let render_params = GridRenderParameters::new(canvas.world_rect(), canvas.zoom());
             let image = self
                 .grid_renderer
-                .render_to_rgba_image(&render_params.bounds, render_params.zoom);
+                .render_to_rgba_image(canvas.world_rect(), canvas.zoom());
 
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
