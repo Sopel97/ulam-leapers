@@ -59,7 +59,6 @@ pub struct GridExplorer {
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
     player_colors: Vec<Color32>,
-    have_colors_changed: bool,
     last_pointed_coords: GridPoint,
     save_state: SaveState,
 
@@ -156,7 +155,6 @@ impl GridExplorer {
             mipmap_generation_progress: None,
 
             player_colors: default_player_colors(max_id).to_vec(),
-            have_colors_changed: false,
             last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
 
@@ -225,16 +223,6 @@ impl GridExplorer {
 
         if canvas.is_zero_area() {
             return;
-        }
-
-        // Check for changed colors and notify the renderer.
-        // NOTE: After generating mipmaps the renderer cannot change colors,it will panic.
-        //       The control panel must ensure the controls are disabled.
-        if self.have_colors_changed {
-            self.grid_renderer.set_colors(self.player_colors.as_slice());
-
-            // Do not forget to reset the colors changed flag.
-            self.have_colors_changed = false;
         }
 
         let world_bounds = canvas.world_rect();
@@ -476,7 +464,7 @@ impl GridExplorer {
             )
             .text("X"),
         );
-        
+
         ui.add(
             egui::Slider::new(
                 &mut self.camera.position.y,
@@ -500,7 +488,7 @@ impl GridExplorer {
                     if srgb_color_button(ui, &mut self.player_colors[player_id], allow_color_change)
                         .changed()
                     {
-                        self.have_colors_changed = true;
+                        self.grid_renderer.set_colors(self.player_colors.as_slice())
                     }
 
                     if player_id == 0 {
