@@ -310,15 +310,12 @@ impl GridExplorer {
             return;
         }
 
-        let response = ui.allocate_rect(
-            grid_rect_to_egui(canvas.rect()),
-            Sense::drag() | Sense::hover() | Sense::click(),
-        );
+        let response = canvas.make_sense(ui, Sense::drag() | Sense::hover() | Sense::click());
 
         let mouse_pos = egui_to_grid_point(
             response
                 .hover_pos()
-                .unwrap_or_else(|| (response.rect.max - response.rect.min.to_vec2()) * 0.5f32),
+                .unwrap_or_else(|| response.rect.min - response.rect.size() * 0.5),
         );
 
         let zoom_range = self.zoom_range();

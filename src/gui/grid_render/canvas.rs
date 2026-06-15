@@ -1,6 +1,6 @@
 ﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
 use crate::gui::grid_explorer::GridRenderParameters;
-use eframe::egui::{Painter, Ui};
+use eframe::egui::{Painter, Response, Sense, Ui};
 use std::ops::RangeInclusive;
 use ulam_leapers::math::coords::{GridPoint, Point2D, Vector2D};
 use ulam_leapers::math::pow2::Pow2;
@@ -159,6 +159,13 @@ impl GridCanvas {
     
     pub fn is_zero_area(&self) -> bool {
         self.width() == 0 || self.height() == 0
+    }
+    
+    pub fn make_sense(&self, ui: &mut Ui, sense: Sense) -> Response {
+        ui.allocate_rect(
+            grid_rect_to_egui(self.rect()),
+            sense,
+        )
     }
 
     pub fn make_painter(&self, ui: &mut Ui) -> Painter {
