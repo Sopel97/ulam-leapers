@@ -8,9 +8,7 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{
-    Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui,
-};
+use eframe::egui::{vec2, Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -276,7 +274,10 @@ impl GridExplorer {
                     chunk_bounds.end.y,
                     chunk.memory_usage().display().si()
                 );
-                painter.debug_text(egui_mouse_pos, Align2::LEFT_TOP, Color32::BLACK, text);
+
+                // Offsets slightly to prevent occlusion by the cursor.
+                let offset = vec2(16.0, 24.0);
+                painter.debug_text(egui_mouse_pos + offset, Align2::LEFT_TOP, Color32::BLACK, text);
             }
         }
     }
