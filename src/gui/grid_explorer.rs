@@ -7,9 +7,7 @@ use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::misc::srgb_color_button;
 use eframe::egui;
-use eframe::egui::{
-    Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui,
-};
+use eframe::egui::{Align2, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -30,6 +28,9 @@ const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
 const DEFAULT_ZOOM_POW2: i32 = 0;
 const MAX_ZOOM_POW2: i32 = 3;
+
+const MIP_LOWEST_MINIFICATION: Pow2 = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
+const MIP_HIGHEST_MINIFICATION: Pow2 = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
 
 const MIN_PNG_EXTENT: i32 = 256;
 const DEFAULT_PNG_EXTENT: i32 = 2048;
@@ -276,6 +277,19 @@ impl GridExplorer {
                 Stroke::new(1.0, Color32::GREEN),
                 StrokeKind::Outside,
             );
+
+            if let Some(mouse_pos) = ui.pointer_hover_pos() {
+                let text = format!(
+                    "Bounds: ({}, {}), ({}, {})\n\
+                    Memsize: {}",
+                    chunk_bounds.start.x,
+                    chunk_bounds.start.y,
+                    chunk_bounds.end.x,
+                    chunk_bounds.end.y,
+                    chunk.memory_usage().display().si()
+                );
+                painter.debug_text(mouse_pos, Align2::LEFT_TOP, Color32::BLACK, text);
+            }
         }
     }
 
@@ -389,11 +403,9 @@ impl GridExplorer {
         if self.grid_renderer.has_mipmaps() {
             ui.label("Mipmaps are generated.");
         } else if self.grid_renderer.can_generate_mipmaps() {
-            let lowest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2 + 1) as u8);
-            let highest_minification = Pow2::from_exponent((-MIN_ZOOM_POW2_MIPS) as u8);
             let estimated_mipmaps_memory_requirement = self
                 .grid_renderer
-                .estimate_mipmaps_memory_requirement(lowest_minification, highest_minification);
+                .estimate_mipmaps_memory_requirement(MIP_LOWEST_MINIFICATION, MIP_HIGHEST_MINIFICATION);
             let on_hover_text = if estimated_mipmaps_memory_requirement
                 >= MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING
             {
@@ -401,13 +413,13 @@ impl GridExplorer {
                     "WARNING: While this will enable up to {}x minification \
                 it does require roughly {} of RAM and may take a long time.\
                 This process is asynchronous.",
-                    highest_minification,
+                    MIP_HIGHEST_MINIFICATION,
                     estimated_mipmaps_memory_requirement.display().si(),
                 )
             } else {
                 format!(
                     "This will enable up to {}x minification.",
-                    highest_minification
+                    MIP_LOWEST_MINIFICATION
                 )
             };
 
@@ -418,7 +430,7 @@ impl GridExplorer {
             {
                 self.mipmap_generation_progress = Some(
                     self.grid_renderer
-                        .generate_mipmaps_async(lowest_minification, highest_minification),
+                        .generate_mipmaps_async(MIP_LOWEST_MINIFICATION, MIP_HIGHEST_MINIFICATION),
                 );
             }
         } else
