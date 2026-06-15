@@ -209,7 +209,7 @@ impl GridExplorer {
         self.grid_renderer
             .set_cache_size(framebuffer_size * CACHE_FRAMEBUFFERS_WORTH);
 
-        let curr_grid_render_params = canvas.to_render_params();
+        let curr_grid_render_params = GridRenderParameters::new(canvas.world_rect(), canvas.zoom());
 
         if self.last_grid_render_params != curr_grid_render_params || self.have_colors_changed {
             // Check for changed colors and notify the renderer.
@@ -258,15 +258,6 @@ impl GridExplorer {
 
     fn show_debug_ui(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
         self.show_pointed_chunk_overlay(ui, canvas);
-    }
-}
-
-fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
-    let n = n.round() as i32;
-    if n >= 0 {
-        format!("{}x", 1 << n)
-    } else {
-        format!("1/{}x", 1 << -n)
     }
 }
 
@@ -566,11 +557,11 @@ impl GridExplorer {
                 .save_file()
         {
             let s = self.png_extent;
-            let render_params = GridCanvas::new(
+            let canvas = GridCanvas::new(
                 self.camera.with_zoom(self.zoom_pow2_png),
                 GridRect::with_size(GridPoint::zero(), s, s),
-            )
-            .to_render_params();
+            );
+            let render_params = GridRenderParameters::new(canvas.world_rect(), canvas.zoom());
             let image = self
                 .grid_renderer
                 .render_to_rgba_image(&render_params.bounds, render_params.zoom);
@@ -603,5 +594,14 @@ impl GridExplorer {
             Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
 
         self.show_screenshots_ui(ui);
+    }
+}
+
+fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
+    let n = n.round() as i32;
+    if n >= 0 {
+        format!("{}x", 1 << n)
+    } else {
+        format!("1/{}x", 1 << -n)
     }
 }

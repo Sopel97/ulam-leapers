@@ -1,5 +1,4 @@
 ﻿use crate::gui::conv::{egui_to_grid_rect, grid_rect_to_egui};
-use crate::gui::grid_explorer::GridRenderParameters;
 use crate::gui::grid_render::projection::{FlipAxis, GridProjection};
 use eframe::egui::{Painter, Response, Sense, Ui};
 use std::ops::RangeInclusive;
@@ -171,10 +170,6 @@ impl GridCanvas {
 
     pub fn with_zoom(&self, zoom_pow2: i32) -> Self {
         Self::new(self.camera.with_zoom(zoom_pow2), self.viewport)
-    }
-
-    pub fn to_render_params(&self) -> GridRenderParameters {
-        GridRenderParameters::new(self.world_rect(), self.zoom())
     }
 
     pub fn zoom(&self) -> Zoom<Pow2> {
