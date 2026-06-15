@@ -1,8 +1,8 @@
 ﻿use std::cmp;
-use crate::math::coords::GridPoint;
-use crate::math::pow2::{div_floor, floor_to_multiple, Pow2};
-use crate::math::rect::GridRect;
-use crate::math::zoom::Zoom;
+use ulam_leapers::math::coords::GridPoint;
+use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
+use ulam_leapers::math::rect::GridRect;
+use ulam_leapers::math::zoom::Zoom;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum FlipAxis {
@@ -21,7 +21,7 @@ impl FlipAxis {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct ScreenWorldDiscrete2D {
+pub struct GridProjection {
     zoom_pow2: i32,
     screen_rect: GridRect,
     world_rect: GridRect,
@@ -29,13 +29,13 @@ pub struct ScreenWorldDiscrete2D {
     flip_y: bool,
 }
 
-impl ScreenWorldDiscrete2D {
+impl GridProjection {
     pub fn new(
         zoom_pow2: i32,
         camera_position: GridPoint,
         screen_rect: GridRect,
         flip_axis: FlipAxis,
-    ) -> ScreenWorldDiscrete2D {
+    ) -> GridProjection {
         let world_rect = match zoom_pow2 {
             e @ 0.. => {
                 let factor = Pow2::from_exponent(e as u8);
@@ -67,7 +67,7 @@ impl ScreenWorldDiscrete2D {
 
         let (flip_x, flip_y) = flip_axis.as_bools();
 
-        ScreenWorldDiscrete2D {
+        GridProjection {
             screen_rect,
             zoom_pow2,
             world_rect,

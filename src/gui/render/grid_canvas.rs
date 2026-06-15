@@ -4,7 +4,7 @@ use eframe::egui::{Painter, Ui};
 use std::ops::RangeInclusive;
 use ulam_leapers::math::coords::{GridPoint, Point2D, Vector2D};
 use ulam_leapers::math::pow2::Pow2;
-use ulam_leapers::math::projection::{FlipAxis, ScreenWorldDiscrete2D};
+use crate::gui::render::grid_projection::{FlipAxis, GridProjection};
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 
@@ -122,7 +122,7 @@ impl RestrictedGridCamera {
 pub struct GridCanvas {
     camera: GridCamera,
     viewport: GridRect,
-    projection: ScreenWorldDiscrete2D,
+    projection: GridProjection,
 }
 
 impl GridCanvas {
@@ -130,7 +130,7 @@ impl GridCanvas {
         let viewport = egui_to_grid_rect(ui.clip_rect());
         Self::new(camera, viewport)
     }
-    
+
     pub fn new(camera: GridCamera, viewport: GridRect) -> Self {
         let rect = if camera.zoom_pow2 > 0 {
             // Restrict viewport to bounds compatible with the alignment required by the zoom.
@@ -141,7 +141,7 @@ impl GridCanvas {
         };
 
         Self {
-            projection: ScreenWorldDiscrete2D::new(
+            projection: GridProjection::new(
                 camera.zoom_pow2,
                 GridPoint::new(camera.position.x as i32, camera.position.y as i32),
                 rect,
