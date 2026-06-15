@@ -59,7 +59,6 @@ pub struct GridExplorer {
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
     player_colors: Vec<Color32>,
-    last_pointed_coords: GridPoint,
     save_state: SaveState,
 
     zoom_pow2_png: i32,
@@ -155,7 +154,6 @@ impl GridExplorer {
             mipmap_generation_progress: None,
 
             player_colors: default_player_colors(max_id).to_vec(),
-            last_pointed_coords: GridPoint::new(0, 0),
             save_state: SaveState::NotSaved,
 
             zoom_pow2_png: DEFAULT_ZOOM_POW2,
@@ -180,10 +178,6 @@ impl GridExplorer {
 
     fn assume_saved(&mut self) {
         self.save_state = SaveState::Saved;
-    }
-
-    fn last_pointed_coords(&self) -> GridPoint {
-        self.last_pointed_coords
     }
 
     fn zoom_range(&self) -> RangeInclusive<i32> {
@@ -252,33 +246,37 @@ impl GridExplorer {
             return;
         }
 
-        let pointed_coords = self.last_pointed_coords();
-        let chunk = self
-            .finalized_simulation
-            .get_chunk_containing(&pointed_coords);
-        if let Some(chunk) = chunk {
-            let chunk_bounds = chunk.bounds();
-            let chunk_bounds_screen_space = canvas.world_to_screen_rect(*chunk_bounds);
-            let painter = canvas.make_painter(ui);
-            painter.rect(
-                grid_rect_to_egui(chunk_bounds_screen_space),
-                0,
-                Color32::TRANSPARENT,
-                Stroke::new(1.0, Color32::GREEN),
-                StrokeKind::Outside,
-            );
+        if let Some(egui_mouse_pos) = ui.pointer_latest_pos() {
+            let mouse_pos = egui_to_grid_point(egui_mouse_pos);
+            let pointed_coords = canvas.screen_to_world(mouse_pos);
+            let chunk = self
+                .finalized_simulation
+                .get_chunk_containing(&pointed_coords);
+            if let Some(chunk) = chunk {
+                let chunk_bounds = chunk.bounds();
+                let chunk_bounds_screen_space = canvas.world_to_screen_rect(*chunk_bounds);
+                let painter = canvas.make_painter(ui);
+                painter.rect(
+                    grid_rect_to_egui(chunk_bounds_screen_space),
+                    0,
+                    Color32::TRANSPARENT,
+                    Stroke::new(1.0, Color32::GREEN),
+                    StrokeKind::Outside,
+                );
 
-            if let Some(mouse_pos) = ui.pointer_hover_pos() {
                 let text = format!(
-                    "Bounds: ({}, {}), ({}, {})\n\
+                    "Cursor: ({}, {})\n\
+                    Bounds: ({}, {}), ({}, {})\n\
                     Memsize: {}",
+                    pointed_coords.x,
+                    pointed_coords.y,
                     chunk_bounds.start.x,
                     chunk_bounds.start.y,
                     chunk_bounds.end.x,
                     chunk_bounds.end.y,
                     chunk.memory_usage().display().si()
                 );
-                painter.debug_text(mouse_pos, Align2::LEFT_TOP, Color32::BLACK, text);
+                painter.debug_text(egui_mouse_pos, Align2::LEFT_TOP, Color32::BLACK, text);
             }
         }
     }
@@ -346,8 +344,6 @@ impl GridExplorer {
             self.camera = new_camera;
             *canvas = canvas.with_camera(self.camera);
         }
-
-        self.last_pointed_coords = canvas.screen_to_world(mouse_pos);
     }
 
     fn try_save(&mut self) {
@@ -514,10 +510,6 @@ impl GridExplorer {
         ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
         ui.label(format!("Number of chunks: {}", chunks));
         ui.label(format!("Size in memory: {}", memory_usage.display().si()));
-        ui.label(format!(
-            "Pointer: {}, {}",
-            self.last_pointed_coords.x, self.last_pointed_coords.y
-        ));
     }
 
     fn show_screenshots_ui(&mut self, ui: &mut Ui) {
