@@ -217,7 +217,8 @@ impl<T: Default + Clone + Copy> CompressedChunk<T> {
             CompressedChunkTransform::None => {
                 assert_eq!(
                     self.data.decompress_to_buffer(raw_cells).unwrap(),
-                    raw_cells.len()
+                    raw_cells.len(),
+                    "Expected more cells than actually decompressed. If this simulation comes from untrusted source it may be corrupted.",
                 );
             }
             CompressedChunkTransform::Transposition => {
@@ -233,7 +234,8 @@ impl<T: Default + Clone + Copy> CompressedChunk<T> {
                     self.data
                         .decompress_to_buffer(raw_uncompressed_transposed,)
                         .unwrap(),
-                    raw_uncompressed_transposed.len()
+                    raw_uncompressed_transposed.len(),
+                    "Expected more cells than actually decompressed. If this simulation comes from untrusted source it may be corrupted.",
                 );
                 transpose_u8(
                     raw_uncompressed_transposed,
@@ -285,11 +287,14 @@ impl<PlayerId> CompressedChunk<PlayerId> {
 
         let transform = CompressedChunkTransform::from(uls_transform);
         let compression_kind = CompressionKind::from(uls_compression_kind);
+        // We do not verify whether the decompressed data is of correct size because it would
+        // be too costly. We have, however, already verified in `UlsChunk` that there are
+        // no player ids outside allowed range.
         let data = match uls_compressed_data {
             Cow::Owned(compressed_data) => {
                 CompressedBlob::from_raw_parts(compression_kind, compressed_data.into_boxed_slice())
             }
-            Cow::Borrowed(compressed_data) => {
+            Cow::Borrowed(_) => {
                 panic!("Expected owned during deserialization.")
             }
         };

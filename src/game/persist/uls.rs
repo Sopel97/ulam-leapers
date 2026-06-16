@@ -623,6 +623,13 @@ impl UlsChunk<'_> {
         Ok(())
     }
 
+    /// # Important note
+    /// 
+    /// The compressed data is NOT validated. In particular, it is possible that it will
+    /// cause and error during decompression or decompress to a different number of bytes
+    /// than expected. This behavior has been chosen because validating decompression
+    /// is deemed too costly, and would largely defeat the point of using compression
+    /// in the first place.
     pub fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let origin_x = read_i32_le(reader)?;
         let origin_y = read_i32_le(reader)?;
@@ -637,6 +644,8 @@ impl UlsChunk<'_> {
             .into());
         }
 
+        // NOTE: We do not verify if the data actually decompresses to exactly fill the chunk,
+        //       because it would be too costly.
         let mut buf = Box::new_uninit_slice(compressed_data_len as usize);
         // SAFETY: We know the exact size of the buffer..
         let raw_buf = unsafe { view_as_bytes_mut(&mut buf) };
@@ -797,6 +806,14 @@ impl UlsSimulation<'_> {
         Ok(uls_chunk)
     }
 
+    /// # Important note
+    /// 
+    /// `UlsChunk` entries are not fully validated, see [UlsChunk::read_from] for details.
+    /// However, the validity of the `PlayerId`s in the decompressed chunk stream (provided
+    /// it can be decompressed in the first place) IS verified. This is achieved via
+    /// compressed bitstream inspection of the literal sections - no data is decompressed.
+    /// This validation is performed so that there's fewer costly last-moment checks
+    /// required when sampling the grid.
     pub fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let mut magic = [0u8; ULS_MAGIC_FORMAT_SIGNATURE.len()];
         reader.read_exact(&mut magic)?;
