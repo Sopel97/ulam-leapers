@@ -482,9 +482,9 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
         }
 
         let turn_count = simulation.complete_turns();
-        if turn_count as u64 > ULS_MAX_TURN_COUNT {
+        if turn_count > ULS_MAX_TURN_COUNT {
             return Err(UlsCompatibilityError::TooManyTurns {
-                actual: turn_count as u64,
+                actual: turn_count,
             });
         }
 
@@ -515,7 +515,7 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
 
         Ok(Self {
             chunks,
-            turn_count: turn_count as u64,
+            turn_count,
             chunker: uls_chunker,
             players: uls_players,
         })
@@ -624,7 +624,7 @@ impl UlsChunk<'_> {
     }
 
     /// # Important note
-    /// 
+    ///
     /// The compressed data is NOT validated. In particular, it is possible that it will
     /// cause and error during decompression or decompress to a different number of bytes
     /// than expected. This behavior has been chosen because validating decompression
@@ -670,7 +670,7 @@ impl UlsChunk<'_> {
             )),
             UlsCompressionKind::Zstd => match max_byte_in_zstd_stream(&self.compressed_data) {
                 Ok(v) => Ok(PlayerId::new(v)),
-                Err(err) => return Err(UlsCompatibilityError::ZstdInspectError(err).into()),
+                Err(err) => Err(UlsCompatibilityError::ZstdInspectError(err)),
             },
         }
     }
@@ -781,7 +781,7 @@ impl UlsSimulation<'_> {
 
         let highest_player_id_in_chunk = uls_chunk
             .highest_player_id()
-            .map_err(|err| std::io::Error::from(err))?;
+            .map_err(std::io::Error::from)?;
         if highest_player_id_in_chunk > highest_player_id {
             return Err(UlsCompatibilityError::PlayerIdInCellTooHigh {
                 actual: highest_player_id_in_chunk,
@@ -807,7 +807,7 @@ impl UlsSimulation<'_> {
     }
 
     /// # Important note
-    /// 
+    ///
     /// `UlsChunk` entries are not fully validated, see [UlsChunk::read_from] for details.
     /// However, the validity of the `PlayerId`s in the decompressed chunk stream (provided
     /// it can be decompressed in the first place) IS verified. This is achieved via
