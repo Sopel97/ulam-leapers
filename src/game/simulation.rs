@@ -11,7 +11,7 @@ use crate::math::rect::GridRect;
 use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::util::memory::MemSize;
 use std::cmp::{max, min};
-use std::io::{ErrorKind, Read, Write};
+use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -57,7 +57,7 @@ impl PlayerIdSet {
     pub fn highest_player_id(&self) -> PlayerId {
         PlayerId::new((63 - self.bits.leading_zeros() as i32).max(0) as u8)
     }
-    
+
     pub fn as_u64_mask(self) -> u64 {
         self.bits
     }
@@ -153,15 +153,15 @@ impl Player {
     pub fn id(&self) -> PlayerId {
         self.id
     }
-    
+
     pub fn enemies(&self) -> PlayerIdSet {
         self.enemies
     }
-    
+
     pub fn cursor(&self) -> &UlamSpiralCursor {
         &self.cursor
     }
-    
+
     pub fn attacks(&self) -> &LeaperAttacks {
         &self.attacks
     }
@@ -169,19 +169,21 @@ impl Player {
 
 impl Player {
     fn from_uls(uls_player: UlsPlayer, pid: PlayerId) -> Self {
-        let UlsPlayer { 
-            attack_vectors: uls_attack_vectors, 
-            enemies_mask: uls_enemies_mask, 
-            spiral_position: uls_spiral_position 
+        let UlsPlayer {
+            attack_vectors: uls_attack_vectors,
+            enemies_mask: uls_enemies_mask,
+            spiral_position: uls_spiral_position,
         } = uls_player;
-        
-        let enemies = PlayerIdSet { bits: uls_enemies_mask };
-        
+
+        let enemies = PlayerIdSet {
+            bits: uls_enemies_mask,
+        };
+
         let mut cursor = UlamSpiralCursor::new();
         cursor.advance_to(UlamSpiralPoint::new(uls_spiral_position));
-        
+
         let attacks = LeaperAttacks::from_uls(uls_attack_vectors);
-        
+
         Self {
             enemies,
             id: pid,
@@ -244,7 +246,7 @@ impl FinalizedSimulation {
     pub fn grid(&self) -> Arc<FrozenGrid<PlayerId>> {
         Arc::clone(&self.grid)
     }
-    
+
     pub fn grid_ref(&self) -> &FrozenGrid<PlayerId> {
         &self.grid
     }
@@ -711,8 +713,9 @@ impl Simulation {
                     // overall memory usage is low at the beginning.
                     // Ideally we would use the chunker here with `new_cell` but the `grid`
                     // is not available at this point.
-                    let estimated_new_memory_before_next_check =
-                        MemSize::sizes_of::<PlayerId>(maximum_cells_created_between_compressions as usize);
+                    let estimated_new_memory_before_next_check = MemSize::sizes_of::<PlayerId>(
+                        maximum_cells_created_between_compressions as usize,
+                    );
                     total + estimated_new_memory_before_next_check >= limit
                 }) {
                     // No limit, force all eligible chunks to be frozen.
@@ -730,8 +733,7 @@ impl Simulation {
                 last_compression_farthest_cell = farthest_cell;
             }
 
-            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS
-            {
+            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
                 progress.memory_usage = total;
@@ -797,19 +799,21 @@ impl Default for Simulation {
 
 impl From<UlsSimulation<'_>> for FinalizedSimulation {
     fn from(uls_sim: UlsSimulation) -> Self {
-        let UlsSimulation { 
-            chunker: uls_chunker, 
-            chunks: uls_chunks, 
-            players: uls_players, 
-            turn_count: simulated_turns, 
+        let UlsSimulation {
+            chunker: uls_chunker,
+            chunks: uls_chunks,
+            players: uls_players,
+            turn_count: simulated_turns,
         } = uls_sim;
-        
-        let players = uls_players.into_iter().enumerate().map(|(i, player)| {
-            Player::from_uls(player, PlayerId::new((i + 1) as u8))
-        }).collect();
-        
+
+        let players = uls_players
+            .into_iter()
+            .enumerate()
+            .map(|(i, player)| Player::from_uls(player, PlayerId::new((i + 1) as u8)))
+            .collect();
+
         let grid = Arc::new(FrozenGrid::from_uls(uls_chunker, uls_chunks));
-        
+
         Self {
             players,
             simulated_turns,

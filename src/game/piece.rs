@@ -1,8 +1,8 @@
-﻿use crate::math::coords::{symmetries, GridPoint, GridVector};
+﻿use crate::game::persist::uls::{UlsAttackVector, ULS_MAX_ATTACK_VECTOR_COORD};
+use crate::math::coords::{symmetries, GridPoint, GridVector};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
-use crate::game::persist::uls::{UlsAttackVector, ULS_MAX_ATTACK_VECTOR_COORD};
 
 static LEAPER_NAMES: std::sync::LazyLock<BTreeMap<(i32, i32), &str>> =
     std::sync::LazyLock::new(|| {
@@ -64,7 +64,7 @@ impl LeaperAttacks {
     pub fn get_attacks_from(&self, base: &GridPoint) -> impl Iterator<Item = GridPoint> {
         self.attack_vectors.iter().map(move |&v| *base + v)
     }
-    
+
     pub fn attack_vectors(&self) -> &[GridVector] {
         self.attack_vectors.as_slice()
     }
@@ -72,15 +72,12 @@ impl LeaperAttacks {
 
 impl LeaperAttacks {
     pub fn from_uls(uls_attack_vectors: Vec<UlsAttackVector>) -> Self {
-        let attack_vectors = uls_attack_vectors.into_iter().map(
-            |v| {
-                GridVector::new(v.x as i32, v.y as i32)
-            }
-        ).collect();
-        
-        Self {
-            attack_vectors
-        }
+        let attack_vectors = uls_attack_vectors
+            .into_iter()
+            .map(|v| GridVector::new(v.x as i32, v.y as i32))
+            .collect();
+
+        Self { attack_vectors }
     }
 }
 

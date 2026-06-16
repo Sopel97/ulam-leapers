@@ -1,9 +1,9 @@
 ﻿use crate::game::chunk::ChunkOrigin;
-use crate::game::persist::uls::{UlsChunker, ULS_MAX_CHUNK_EXTENT, ULS_MAX_CHUNK_SIZE, ULS_MIN_CHUNK_ALIGNMENT};
+use crate::game::persist::uls::UlsChunker;
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{Read, Write};
 
 pub trait Chunker: Send + Sync {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin;
@@ -78,7 +78,9 @@ impl Chunker for SquareChunker {
     }
 
     fn as_strip_chunker(&self) -> Option<StripChunker> {
-        Some(StripChunker::with_strip_length_and_thickness(self.size, self.size))
+        Some(StripChunker::with_strip_length_and_thickness(
+            self.size, self.size,
+        ))
     }
 }
 
@@ -193,15 +195,15 @@ impl StripChunker {
     fn num_chunks_in_superchunk(&self) -> usize {
         (self.strip_length / self.strip_thickness).as_u64() as usize
     }
-    
+
     pub fn strip_length(&self) -> Pow2 {
         self.strip_length
     }
-    
+
     pub fn strip_thickness(&self) -> Pow2 {
         self.strip_thickness
     }
-    
+
     pub fn chunk_size(&self) -> Pow2 {
         self.strip_length * self.strip_thickness
     }
@@ -341,8 +343,10 @@ impl Chunker for StripChunker {
 impl From<UlsChunker> for StripChunker {
     fn from(chunker: UlsChunker) -> Self {
         StripChunker::with_strip_length_and_thickness(
-            Pow2::try_from(chunker.strip_length as u64).expect("UlsChunker should only allow powers of two"),
-            Pow2::try_from(chunker.strip_thickness as u64).expect("UlsChunker should only allow powers of two"),
+            Pow2::try_from(chunker.strip_length as u64)
+                .expect("UlsChunker should only allow powers of two"),
+            Pow2::try_from(chunker.strip_thickness as u64)
+                .expect("UlsChunker should only allow powers of two"),
         )
     }
 }

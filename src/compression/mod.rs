@@ -2,9 +2,9 @@
 pub mod zstd;
 
 use crate::compression::zstd::ZstdCompression;
+use crate::game::persist::uls::UlsCompressionKind;
 use std::fmt;
 use std::io::{Read, Write};
-use crate::game::persist::uls::UlsCompressionKind;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum CompressionKind {
@@ -199,7 +199,7 @@ impl CompressedBlob {
     pub fn bytes(&self) -> &[u8] {
         self.data.as_ref()
     }
-    
+
     pub fn compression_kind(&self) -> CompressionKind {
         self.kind
     }

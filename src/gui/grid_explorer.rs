@@ -348,9 +348,7 @@ impl GridExplorer {
         {
             let mut writer = BufWriter::new(File::create(path).unwrap());
             match UlsSimulation::try_from(&self.finalized_simulation) {
-                Err(err) => {
-                    self.save_state = SaveState::Incompatible(err)
-                } 
+                Err(err) => self.save_state = SaveState::Incompatible(err),
                 Ok(uls_sim) => {
                     if let Err(e) = uls_sim.write_to(&mut writer) {
                         eprintln!("Failed to save simulation: {}", e);

@@ -1,6 +1,6 @@
 ﻿use crate::math::coords::{GridPoint, GridVector, Point2D};
 use std::cmp::Ordering;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{Read, Write};
 use std::ops::{Add, AddAssign, Sub};
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]

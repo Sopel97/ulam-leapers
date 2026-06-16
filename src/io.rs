@@ -6,7 +6,7 @@ macro_rules! impl_write_int_le {
         pub fn $name(writer: &mut impl Write, val: $t) -> std::io::Result<()> {
             writer.write_all(&val.to_le_bytes())
         }
-    }
+    };
 }
 
 impl_write_int_le!(i8, write_i8_le);
@@ -27,7 +27,7 @@ macro_rules! impl_read_int_le {
             reader.read_exact(&mut buf)?;
             Ok($t::from_le_bytes(buf))
         }
-    }
+    };
 }
 
 impl_read_int_le!(i8, read_i8_le);

@@ -1,7 +1,7 @@
-﻿use std::error::Error;
-use std::fmt::Display;
-use crate::util::bitstream::LittleEndianBitReader;
+﻿use crate::util::bitstream::LittleEndianBitReader;
 use crate::util::bytestream::{ByteReader, ByteReaderError};
+use std::error::Error;
+use std::fmt::Display;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum ZstdInspectError {

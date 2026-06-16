@@ -7,13 +7,13 @@ use crate::io::{
     read_i32_le, read_i8_le, read_u16_le, read_u32_le, read_u64_le, read_u8_le, write_i32_le,
     write_i8_le, write_u16_le, write_u32_le, write_u64_le, write_u8_le,
 };
+use crate::math::coords::GridPoint;
 use crate::util::memory::view_as_bytes_mut;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::{ErrorKind, Read, Write};
-use crate::math::coords::GridPoint;
 
 // Constraints for the ULS (Ulam Leapers Simulation) persistence format.
 pub const ULS_MIN_CHUNK_ALIGNMENT: u64 = 64;
@@ -254,13 +254,17 @@ impl Display for UlsCompatibilityError {
                 write!(f, "Player id too high: {actual_index} > {highest_index}")
             }
             UlsCompatibilityError::InvalidChunkOrigin {
-                actual_x, actual_y, expected_x, expected_y
+                actual_x,
+                actual_y,
+                expected_x,
+                expected_y,
             } => {
-                write!(f, "Invalid chunk origin: actual ({actual_x}, {actual_y}) != expected ({expected_x}, {expected_y})")
+                write!(
+                    f,
+                    "Invalid chunk origin: actual ({actual_x}, {actual_y}) != expected ({expected_x}, {expected_y})"
+                )
             }
-            UlsCompatibilityError::DuplicateAttackVectors{
-                duplicate_count
-            } => {
+            UlsCompatibilityError::DuplicateAttackVectors { duplicate_count } => {
                 write!(f, "{duplicate_count} duplicate attack vectors")
             }
             UlsCompatibilityError::ZstdInspectError(err) => {
@@ -560,16 +564,13 @@ impl UlsChunker {
                 .into(),
             );
         }
-        
-        if !strip_length.is_power_of_two()
-            || !strip_thickness.is_power_of_two()
-        {
-            return Err(
-                UlsCompatibilityError::ChunkerChunkExtentNotPow2 {
-                    actual_strip_length: strip_length as u64,
-                    actual_strip_thickness: strip_thickness as u64,
-                }.into(),
-            );
+
+        if !strip_length.is_power_of_two() || !strip_thickness.is_power_of_two() {
+            return Err(UlsCompatibilityError::ChunkerChunkExtentNotPow2 {
+                actual_strip_length: strip_length as u64,
+                actual_strip_thickness: strip_thickness as u64,
+            }
+            .into());
         }
 
         if (strip_length as u64) < ULS_MIN_CHUNK_ALIGNMENT {
@@ -652,12 +653,12 @@ impl UlsChunk<'_> {
             compressed_data,
         })
     }
-    
+
     pub fn highest_player_id(&self) -> Result<PlayerId, UlsCompatibilityError> {
         match self.compression_kind {
-            UlsCompressionKind::None => {
-                Ok(PlayerId::new(*self.compressed_data.iter().max().unwrap_or(&0u8)))
-            }
+            UlsCompressionKind::None => Ok(PlayerId::new(
+                *self.compressed_data.iter().max().unwrap_or(&0u8),
+            )),
             UlsCompressionKind::Zstd => match max_byte_in_zstd_stream(&self.compressed_data) {
                 Ok(v) => Ok(PlayerId::new(v)),
                 Err(err) => return Err(UlsCompatibilityError::ZstdInspectError(err).into()),
@@ -718,12 +719,13 @@ impl UlsPlayer {
         let attack_vectors = (0..attack_vectors_len)
             .map(|_| UlsAttackVector::read_from(reader))
             .collect::<Result<Vec<_>, _>>()?;
-        
+
         let attack_vectors_unique: BTreeSet<_> = attack_vectors.iter().collect();
         if attack_vectors_unique.len() != attack_vectors.len() {
             return Err(UlsCompatibilityError::DuplicateAttackVectors {
                 duplicate_count: (attack_vectors.len() - attack_vectors_unique.len()) as u64,
-            }.into());
+            }
+            .into());
         }
 
         Ok(Self {
@@ -760,31 +762,38 @@ impl UlsSimulation<'_> {
 
         Ok(())
     }
-    
-    fn read_chunk<'a>(reader: &mut impl Read, chunker: &StripChunker, highest_player_id: PlayerId) -> std::io::Result<UlsChunk<'a>> {
+
+    fn read_chunk<'a>(
+        reader: &mut impl Read,
+        chunker: &StripChunker,
+        highest_player_id: PlayerId,
+    ) -> std::io::Result<UlsChunk<'a>> {
         let uls_chunk = UlsChunk::read_from(reader)?;
 
-        let highest_player_id_in_chunk = uls_chunk.highest_player_id().map_err(|err| std::io::Error::from(err))?;
+        let highest_player_id_in_chunk = uls_chunk
+            .highest_player_id()
+            .map_err(|err| std::io::Error::from(err))?;
         if highest_player_id_in_chunk > highest_player_id {
             return Err(UlsCompatibilityError::PlayerIdInCellTooHigh {
                 actual: highest_player_id_in_chunk,
                 highest: highest_player_id,
             }
-                .into());
+            .into());
         }
-        
-        let expected_origin = chunker.resolve_chunk_origin(&GridPoint::new(uls_chunk.origin_x, uls_chunk.origin_y)).point();
-        if expected_origin.x != uls_chunk.origin_x
-            || expected_origin.y != uls_chunk.origin_y
-        {
+
+        let expected_origin = chunker
+            .resolve_chunk_origin(&GridPoint::new(uls_chunk.origin_x, uls_chunk.origin_y))
+            .point();
+        if expected_origin.x != uls_chunk.origin_x || expected_origin.y != uls_chunk.origin_y {
             return Err(UlsCompatibilityError::InvalidChunkOrigin {
                 actual_x: uls_chunk.origin_x,
                 actual_y: uls_chunk.origin_y,
                 expected_x: expected_origin.x,
                 expected_y: expected_origin.y,
-            }.into());
+            }
+            .into());
         }
-        
+
         Ok(uls_chunk)
     }
 
@@ -835,7 +844,7 @@ impl UlsSimulation<'_> {
                     .collect::<Result<Vec<_>, _>>()?
             }
         };
-        
+
         Ok(Self {
             turn_count,
             players,
@@ -893,12 +902,24 @@ mod tests {
         assert_eq!(uls_sim.players[0].enemies_mask, 0);
         assert_eq!(uls_sim.players[0].spiral_position, 0);
         assert_eq!(uls_sim.players[0].attack_vectors.len(), 2);
-        assert!(uls_sim.players[0].attack_vectors.contains(&UlsAttackVector { x: 1, y: 1 }));
-        assert!(uls_sim.players[0].attack_vectors.contains(&UlsAttackVector { x: 1, y: 3 }));
+        assert!(
+            uls_sim.players[0]
+                .attack_vectors
+                .contains(&UlsAttackVector { x: 1, y: 1 })
+        );
+        assert!(
+            uls_sim.players[0]
+                .attack_vectors
+                .contains(&UlsAttackVector { x: 1, y: 3 })
+        );
         assert_eq!(uls_sim.players[1].enemies_mask, 0);
         assert_eq!(uls_sim.players[1].spiral_position, 0);
         assert_eq!(uls_sim.players[1].attack_vectors.len(), 1);
-        assert!(uls_sim.players[1].attack_vectors.contains(&UlsAttackVector { x: 1, y: 2 }));
+        assert!(
+            uls_sim.players[1]
+                .attack_vectors
+                .contains(&UlsAttackVector { x: 1, y: 2 })
+        );
         assert_eq!(uls_sim.chunks.len(), 0);
         assert_eq!(uls_sim.chunker.strip_length, 256);
         assert_eq!(uls_sim.chunker.strip_thickness, 64);
@@ -910,7 +931,8 @@ mod tests {
         let _p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let _p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
-        sim.simulate(SimulationLimits::new().with_turn_limit(5)).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(5))
+            .unwrap();
         let fin_sim = sim.finalize();
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
@@ -933,7 +955,8 @@ mod tests {
         let _p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let _p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
-        sim.simulate(SimulationLimits::new().with_turn_limit(5)).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(5))
+            .unwrap();
         let fin_sim = sim.finalize();
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
