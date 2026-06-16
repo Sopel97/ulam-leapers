@@ -58,7 +58,7 @@ impl GridProjection {
 
                 GridRect::with_extent(
                     camera_position.map_coords(|c| floor_to_multiple(c, factor))
-                        - screen_rect.extent() * (factor_i32 / 2),
+                        - screen_rect.extent().map_coords(|c| c / 2) * factor_i32,
                     screen_rect.extent() * factor_i32,
                 )
             }
