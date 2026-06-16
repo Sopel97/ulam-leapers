@@ -1,5 +1,4 @@
-﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{Point2D, Vector2D};
+﻿use crate::math::coords::{Point2D, Vector2D};
 use crate::math::pow2;
 use crate::math::pow2::{ceil_to_multiple, floor_to_multiple, mod_floor, Pow2};
 use std::cmp;
@@ -215,29 +214,6 @@ where
             start: self.start + offset,
             end: self.end + offset,
         }
-    }
-}
-
-impl<T> WriteTo for Rect2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.start.write_to(writer)?;
-        self.end.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Rect2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Rect2D {
-            start: Point2D::<T>::read_from(reader)?,
-            end: Point2D::<T>::read_from(reader)?,
-        })
     }
 }
 

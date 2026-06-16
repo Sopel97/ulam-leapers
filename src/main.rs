@@ -1,9 +1,9 @@
 use crate::gui::app::App;
 use eframe::wgpu::PresentMode;
 use std::io::Read;
+use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::piece::LeaperAttacks;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game, Simulation, SimulationLimits};
-use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::GridVector;
 use ulam_leapers::util::memory::MemSize;
 
@@ -61,11 +61,13 @@ fn main() {
         );
 
         let mut serialized = Vec::<u8>::with_capacity(1024);
-        finalized_sim.write_to(&mut serialized).unwrap();
+        let uls_sim = UlsSimulation::try_from(&finalized_sim).unwrap();
+        uls_sim.write_to(&mut serialized).unwrap();
         println!("{}", serialized.len());
         println!("{:?}", serialized[..128].bytes());
 
-        let deserialized = FinalizedSimulation::read_from(&mut serialized.as_slice()).unwrap();
+        let uls_deserialized = UlsSimulation::read_from(&mut serialized.as_slice()).unwrap();
+        let deserialized = FinalizedSimulation::from(uls_deserialized);
         println!(
             "{} {}",
             deserialized.memory_usage().display().si(),

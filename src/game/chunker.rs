@@ -1,85 +1,9 @@
 ﻿use crate::game::chunk::ChunkOrigin;
 use crate::game::persist::uls::{UlsChunker, ULS_MAX_CHUNK_EXTENT, ULS_MAX_CHUNK_SIZE, ULS_MIN_CHUNK_ALIGNMENT};
-use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
 use std::io::{ErrorKind, Read, Write};
-
-/// # NOTE
-///
-/// To maintain invariants for the ULS format instances of this type
-/// should be made via StandardChunker::try_* instead.
-/// This is a limitation of Rust that there is no way to validate enum
-/// values directly. May change with a more convoluted abstraction in the future.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub enum StandardChunker {
-    SquareChunker {
-        chunk_size_pow2: u8,
-    },
-    StripChunker {
-        strip_length_pow2: u8,
-        strip_thickness_pow2: u8,
-    },
-}
-
-impl StandardChunker {
-    pub fn try_new_square_chunker(size: Pow2) -> Option<Self> {
-        if size.as_u64() < ULS_MIN_CHUNK_ALIGNMENT
-            || size.as_u64() > ULS_MAX_CHUNK_EXTENT
-            || size.as_u64().pow(2) > ULS_MAX_CHUNK_SIZE
-        {
-            None
-        } else {
-            Some(StandardChunker::SquareChunker {
-                chunk_size_pow2: size.exponent(),
-            })
-        }
-    }
-
-    pub fn try_new_flat_chunker(strip_length: Pow2, strip_thickness: Pow2) -> Option<Self> {
-        if strip_thickness > strip_length {
-            return None;
-        }
-
-        if strip_thickness.as_u64() < ULS_MIN_CHUNK_ALIGNMENT
-            || strip_length.as_u64() > ULS_MAX_CHUNK_EXTENT
-            || (strip_thickness * strip_length).as_u64() > ULS_MAX_CHUNK_SIZE
-        {
-            None
-        } else {
-            Some(StandardChunker::StripChunker {
-                strip_length_pow2: strip_length.exponent(),
-                strip_thickness_pow2: strip_thickness.exponent(),
-            })
-        }
-    }
-}
-
-impl TryFrom<&SquareChunker> for StandardChunker {
-    type Error = ();
-
-    fn try_from(chunker: &SquareChunker) -> Result<Self, Self::Error> {
-        StandardChunker::try_new_square_chunker(chunker.size).ok_or(())
-    }
-}
-
-impl StandardChunker {
-    pub fn into_chunker(self) -> Box<dyn Chunker> {
-        match self {
-            StandardChunker::SquareChunker { chunk_size_pow2 } => {
-                Box::new(SquareChunker::new(Pow2::from_exponent(chunk_size_pow2)))
-            }
-            StandardChunker::StripChunker {
-                strip_length_pow2,
-                strip_thickness_pow2,
-            } => Box::new(StripChunker::with_strip_length_and_thickness(
-                Pow2::from_exponent(strip_length_pow2),
-                Pow2::from_exponent(strip_thickness_pow2),
-            )),
-        }
-    }
-}
 
 pub trait Chunker: Send + Sync {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin;
@@ -91,7 +15,6 @@ pub trait Chunker: Send + Sync {
     fn average_cell_count(&self) -> u64;
     fn maximum_cells_created_by_spiral_steps(&self, steps: u64) -> u64;
 
-    fn as_standard_chunker(&self) -> Option<StandardChunker>;
     fn as_strip_chunker(&self) -> Option<StripChunker>;
 }
 
@@ -154,65 +77,8 @@ impl Chunker for SquareChunker {
         }
     }
 
-    fn as_standard_chunker(&self) -> Option<StandardChunker> {
-        StandardChunker::try_from(self).ok()
-    }
-
     fn as_strip_chunker(&self) -> Option<StripChunker> {
         Some(StripChunker::with_strip_length_and_thickness(self.size, self.size))
-    }
-}
-
-impl WriteTo for StandardChunker {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        match self {
-            StandardChunker::SquareChunker { chunk_size_pow2 } => {
-                "SquareChunker".as_bytes().write_to(writer)?;
-                chunk_size_pow2.write_to(writer)
-            }
-            StandardChunker::StripChunker {
-                strip_length_pow2,
-                strip_thickness_pow2,
-            } => {
-                "StripChunker".as_bytes().write_to(writer)?;
-                strip_length_pow2.write_to(writer)?;
-                strip_thickness_pow2.write_to(writer)
-            }
-        }
-    }
-}
-
-impl ReadFrom for StandardChunker {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let t = Box::<[u8]>::read_from(reader)?;
-        if t.iter().eq("SquareChunker".as_bytes()) {
-            let chunk_size_pow2 = u8::read_from(reader)?;
-            let size = Pow2::from_exponent(chunk_size_pow2);
-            StandardChunker::try_new_square_chunker(size).ok_or_else(|| {
-                std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Invalid chunk size for SquareChunker.",
-                )
-            })
-        } else if t.iter().eq("StripChunker".as_bytes()) {
-            let strip_length_pow2 = u8::read_from(reader)?;
-            let strip_thickness_pow2 = u8::read_from(reader)?;
-            StandardChunker::try_new_flat_chunker(
-                Pow2::from_exponent(strip_length_pow2),
-                Pow2::from_exponent(strip_thickness_pow2),
-            )
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Invalid chunk sizes for StripChunker.",
-                )
-            })
-        } else {
-            Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                "Invalid chunker type.",
-            ))
-        }
     }
 }
 
@@ -465,10 +331,6 @@ impl Chunker for StripChunker {
             // Strips are aligned with the spiral traversal wherever possible.
             (4 + div_ceil(steps - 4, self.strip_length)) * chunk_size
         }
-    }
-
-    fn as_standard_chunker(&self) -> Option<StandardChunker> {
-        StandardChunker::try_new_flat_chunker(self.strip_length, self.strip_thickness)
     }
 
     fn as_strip_chunker(&self) -> Option<StripChunker> {

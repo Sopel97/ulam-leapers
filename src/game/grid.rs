@@ -1,7 +1,6 @@
 ﻿use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
-use crate::game::chunker::{Chunker, StandardChunker, StripChunker};
-use crate::io::{ReadFrom, WriteTo};
+use crate::game::chunker::{Chunker, StripChunker};
 use crate::math::coords::GridPoint;
 use crate::math::rect::GridRect;
 use crate::util::memory::MemSize;
@@ -225,66 +224,6 @@ impl<T> FrozenGrid<T> {
 
     pub fn chunker(&self) -> &dyn Chunker {
         self.chunker.as_ref()
-    }
-}
-
-impl<T> WriteTo for FrozenGrid<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.chunker.write_to(writer)?;
-        self.frozen_chunks.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for FrozenGrid<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let chunker = Box::<dyn Chunker>::read_from(reader)?;
-        let frozen_chunks = BTreeMap::<ChunkOrigin, CompressedChunk<T>>::read_from(reader)?;
-
-        // Validate chunk bounds and origin against the chunker.
-        for (origin, chunk) in frozen_chunks.iter() {
-            let chunker_provided_bounds = chunker.resolve_chunk_bounds(&chunk.bounds().start);
-            if origin.point() != chunker_provided_bounds.start
-                || chunker_provided_bounds != *chunk.bounds()
-            {
-                return Err(std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Chunk bounds mismatch bounds provided by the chunker.",
-                ));
-            }
-        }
-
-        let memory_usage = frozen_chunks.values().map(|v| v.memory_usage()).sum();
-        Ok(FrozenGrid {
-            chunker,
-            frozen_chunks,
-            memory_usage,
-        })
-    }
-}
-
-impl WriteTo for Box<dyn Chunker> {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        let standard_chunker = self.as_standard_chunker().ok_or_else(|| {
-            std::io::Error::new(
-                ErrorKind::InvalidData,
-                "Trying to write a non-standard Chunker.",
-            )
-        })?;
-        standard_chunker.write_to(writer)
-    }
-}
-
-impl ReadFrom for Box<dyn Chunker> {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let standard_chunker = StandardChunker::read_from(reader)?;
-        Ok(standard_chunker.into_chunker())
     }
 }
 

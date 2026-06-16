@@ -1,5 +1,4 @@
-﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{symmetries, GridPoint, GridVector};
+﻿use crate::math::coords::{symmetries, GridPoint, GridVector};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
@@ -107,23 +106,6 @@ fn err_on_duplicate_attack_vectors(attack_vectors: &[GridVector]) -> std::io::Re
         ))
     } else {
         Ok(())
-    }
-}
-
-impl WriteTo for LeaperAttacks {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        err_on_attack_offset_too_large(&self.attack_vectors)?;
-        self.attack_vectors.write_to(writer)
-    }
-}
-
-impl ReadFrom for LeaperAttacks {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let attack_vectors = Vec::<GridVector>::read_from(reader)?;
-        err_on_attack_offset_too_large(&attack_vectors)?;
-        err_on_duplicate_attack_vectors(&attack_vectors)?;
-
-        Ok(LeaperAttacks { attack_vectors })
     }
 }
 

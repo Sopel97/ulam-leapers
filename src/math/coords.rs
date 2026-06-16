@@ -1,5 +1,4 @@
-﻿use crate::io::{ReadFrom, WriteTo};
-use std::cmp;
+﻿use std::cmp;
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::ops::*;
@@ -267,52 +266,6 @@ pub fn symmetries(v: &GridVector) -> impl Iterator<Item = GridVector> {
     .into_iter()
     .collect::<HashSet<GridVector>>()
     .into_iter()
-}
-
-impl<T> WriteTo for Point2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.x.write_to(writer)?;
-        self.y.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Point2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Point2D {
-            x: T::read_from(reader)?,
-            y: T::read_from(reader)?,
-        })
-    }
-}
-
-impl<T> WriteTo for Vector2D<T>
-where
-    T: WriteTo,
-{
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.x.write_to(writer)?;
-        self.y.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for Vector2D<T>
-where
-    T: ReadFrom,
-{
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Vector2D {
-            x: T::read_from(reader)?,
-            y: T::read_from(reader)?,
-        })
-    }
 }
 
 #[cfg(test)]

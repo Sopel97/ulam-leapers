@@ -3,7 +3,6 @@ use crate::algo::transpose::transpose_u8;
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::Array2D;
 use crate::compression::{AnyCompression, CompressedBlob, Compression, CompressionKind};
-use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::rect::GridRect;
 use crate::util::align::CACHE_LINE_SIZE;
@@ -125,28 +124,6 @@ impl<T> Chunk<T> {
 pub enum CompressedChunkTransform {
     None,
     Transposition,
-}
-
-impl WriteTo for CompressedChunkTransform {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        match self {
-            CompressedChunkTransform::None => b'N'.write_to(writer),
-            CompressedChunkTransform::Transposition => b'T'.write_to(writer),
-        }
-    }
-}
-
-impl ReadFrom for CompressedChunkTransform {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        match u8::read_from(reader)? {
-            b'N' => Ok(CompressedChunkTransform::None),
-            b'T' => Ok(CompressedChunkTransform::Transposition),
-            _ => Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                "Invalid chunk transform type.",
-            )),
-        }
-    }
 }
 
 impl From<UlsChunkTransform> for CompressedChunkTransform {
@@ -293,41 +270,6 @@ impl<T> CompressedChunk<T> {
     
     pub fn transform(&self) -> CompressedChunkTransform {
         self.transform
-    }
-}
-
-impl<T> WriteTo for CompressedChunk<T> {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.bounds.write_to(writer)?;
-        self.transform.write_to(writer)?;
-        self.data.bytes().write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl<T> ReadFrom for CompressedChunk<T> {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(CompressedChunk {
-            bounds: GridRect::read_from(reader)?,
-            transform: CompressedChunkTransform::read_from(reader)?,
-            data: CompressedBlob::from_raw_parts(
-                CompressionKind::Zstd,
-                Box::<[u8]>::read_from(reader)?,
-            ),
-            _marker: PhantomData,
-        })
-    }
-}
-
-impl WriteTo for ChunkOrigin {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.0.write_to(writer)
-    }
-}
-
-impl ReadFrom for ChunkOrigin {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(ChunkOrigin(GridPoint::read_from(reader)?))
     }
 }
 

@@ -1,5 +1,4 @@
-﻿use crate::io::{ReadFrom, WriteTo};
-use crate::math::coords::{GridPoint, GridVector, Point2D};
+﻿use crate::math::coords::{GridPoint, GridVector, Point2D};
 use std::cmp::Ordering;
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{Add, AddAssign, Sub};
@@ -173,55 +172,6 @@ impl UlamSpiralCursor {
 
     pub fn spiral_position(&self) -> UlamSpiralPoint {
         self.spiral_position
-    }
-}
-
-pub const ULS_MAX_CURSOR_OFFSET: usize = 2_000_000_000;
-
-impl WriteTo for UlamSpiralPoint {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.0.write_to(writer)
-    }
-}
-
-impl ReadFrom for UlamSpiralPoint {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(UlamSpiralPoint(u64::read_from(reader)?))
-    }
-}
-
-impl WriteTo for UlamSpiralCursor {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        if self.grid_position.x.unsigned_abs() as usize > ULS_MAX_CURSOR_OFFSET
-            || self.grid_position.y.unsigned_abs() as usize > ULS_MAX_CURSOR_OFFSET
-        {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Cursor is farther than {}", ULS_MAX_CURSOR_OFFSET),
-            ));
-        }
-
-        // The whole structure can be easily restored from just the spiral index,
-        // and it also allows us to avoid any consistency issues.
-        self.spiral_position.write_to(writer)
-    }
-}
-
-impl ReadFrom for UlamSpiralCursor {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let mut cursor = UlamSpiralCursor::new();
-        // TODO: O(1) set instead of advancing by lines.
-        cursor.advance_to(UlamSpiralPoint::read_from(reader)?);
-        if cursor.grid_position.x.unsigned_abs() as usize > ULS_MAX_CURSOR_OFFSET
-            || cursor.grid_position.y.unsigned_abs() as usize > ULS_MAX_CURSOR_OFFSET
-        {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Cursor is farther than {}", ULS_MAX_CURSOR_OFFSET),
-            ));
-        }
-
-        Ok(cursor)
     }
 }
 

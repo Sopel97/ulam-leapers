@@ -5,7 +5,6 @@ use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::grid::{FrozenGrid, Grid};
 use crate::game::persist::uls::{UlsPlayer, UlsSimulation};
 use crate::game::piece::LeaperAttacks;
-use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::pow2::Pow2;
 use crate::math::rect::GridRect;
@@ -793,117 +792,6 @@ impl Simulation {
 impl Default for Simulation {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub const ULS_MAX_PLAYERS: usize = 63;
-pub const ULS_MAX_PLAYER_ID: usize = 64;
-
-impl WriteTo for PlayerId {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        if self.0 as usize > ULS_MAX_PLAYER_ID {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Player ID {} is too high.", self.0),
-            ));
-        }
-        self.0.write_to(writer)
-    }
-}
-
-impl ReadFrom for PlayerId {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let id = u8::read_from(reader)?;
-        if id as usize > ULS_MAX_PLAYER_ID {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Player ID {} is too high.", id),
-            ));
-        }
-        Ok(PlayerId(id))
-    }
-}
-
-impl WriteTo for PlayerIdSet {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.bits.write_to(writer)
-    }
-}
-
-impl ReadFrom for PlayerIdSet {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let bits = u64::read_from(reader)?;
-        if (bits & 1) == 1 {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                "PlayerIdSet must not have the lowest bit set.",
-            ));
-        }
-
-        Ok(PlayerIdSet { bits })
-    }
-}
-
-impl WriteTo for Player {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.attacks.write_to(writer)?;
-        self.id.write_to(writer)?;
-        self.enemies.write_to(writer)?;
-        self.cursor.write_to(writer)?;
-        Ok(())
-    }
-}
-
-impl ReadFrom for Player {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        Ok(Self {
-            attacks: LeaperAttacks::read_from(reader)?,
-            id: PlayerId::read_from(reader)?,
-            enemies: PlayerIdSet::read_from(reader)?,
-            cursor: UlamSpiralCursor::read_from(reader)?,
-        })
-    }
-}
-
-impl WriteTo for FinalizedSimulation {
-    fn write_to(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        self.players.write_to(writer)?;
-        self.simulated_turns.write_to(writer)?;
-        // When all chunks are finalized we can compress them even more as a sequence.
-        let mut encoder = zstd::Encoder::new(writer, 3)?;
-        self.grid.write_to(&mut encoder)?;
-        encoder.flush()?;
-        Ok(())
-    }
-}
-
-impl ReadFrom for FinalizedSimulation {
-    fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
-        let players = Vec::<Player>::read_from(reader)?;
-        for (i, player) in players.iter().enumerate() {
-            if player.id.0 as usize != i + 1 {
-                return Err(std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Player ID must match its position.",
-                ));
-            }
-
-            if player.enemies.highest_player_id().0 as usize > players.len() {
-                return Err(std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Player is enemy with non-existent player.",
-                ));
-            }
-        }
-
-        let simulated_turns = u64::read_from(reader)?;
-        let grid = FrozenGrid::<PlayerId>::read_from(&mut zstd::Decoder::new(reader)?)?;
-
-        Ok(FinalizedSimulation {
-            players,
-            simulated_turns,
-            grid: Arc::new(grid),
-        })
     }
 }
 
