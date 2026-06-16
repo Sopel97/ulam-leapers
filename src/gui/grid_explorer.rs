@@ -19,6 +19,7 @@ use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
+use ulam_leapers::game::persist::uls::{UlsCompatibilityError, UlsSimulation};
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::io::{ReadFrom, WriteTo};
 use ulam_leapers::math::coords::{GridPoint, Point2D};
@@ -47,6 +48,7 @@ const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifie
 pub enum SaveState {
     NotSaved,
     Saved,
+    Incompatible(UlsCompatibilityError),
     Errored(std::io::Error),
 }
 
@@ -141,7 +143,8 @@ impl GridExplorer {
     pub fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
         let file = File::open(path)?;
         let mut reader = std::io::BufReader::new(file);
-        let simulation = FinalizedSimulation::read_from(&mut reader)?;
+        let uls_sim = UlsSimulation::read_from(&mut reader)?;
+        let simulation = FinalizedSimulation::from(uls_sim);
         let mut explorer = GridExplorer::new(simulation);
         explorer.assume_saved();
         Ok(explorer)
@@ -345,11 +348,18 @@ impl GridExplorer {
             .save_file()
         {
             let mut writer = BufWriter::new(File::create(path).unwrap());
-            if let Err(e) = self.finalized_simulation.write_to(&mut writer) {
-                eprintln!("Failed to save simulation: {}", e);
-                self.save_state = SaveState::Errored(e);
-            } else {
-                self.save_state = SaveState::Saved;
+            match UlsSimulation::try_from(&self.finalized_simulation) {
+                Err(err) => {
+                    self.save_state = SaveState::Incompatible(err)
+                } 
+                Ok(uls_sim) => {
+                    if let Err(e) = uls_sim.write_to(&mut writer) {
+                        eprintln!("Failed to save simulation: {}", e);
+                        self.save_state = SaveState::Errored(e);
+                    } else {
+                        self.save_state = SaveState::Saved;
+                    }
+                }
             }
         }
     }
@@ -358,6 +368,9 @@ impl GridExplorer {
         match &self.save_state {
             SaveState::NotSaved => {
                 ui.label("Simulation is not saved!");
+            }
+            SaveState::Incompatible(err) => {
+                ui.label(format!("Simulation incompatible with ULS format: {}", err));
             }
             SaveState::Errored(err) => {
                 ui.label(format!("Error while saving simulation: {}", err));

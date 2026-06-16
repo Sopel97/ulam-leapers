@@ -1,6 +1,6 @@
 ﻿use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
-use crate::game::chunker::{Chunker, StandardChunker};
+use crate::game::chunker::{Chunker, StandardChunker, StripChunker};
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::rect::GridRect;
@@ -9,6 +9,8 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{ErrorKind, Read, Write};
 use std::ops::{Index, IndexMut};
+use crate::game::persist::uls::{UlsChunk, UlsChunker};
+use crate::game::simulation::PlayerId;
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send + Sync>,
@@ -195,7 +197,7 @@ impl<T> FrozenGrid<T> {
     pub fn chunk_count(&self) -> usize {
         self.frozen_chunks.len()
     }
-
+    
     pub fn bounds(&self) -> GridRect {
         let mut min = GridPoint::new(0, 0);
         let mut max = GridPoint::new(0, 0);
@@ -206,6 +208,10 @@ impl<T> FrozenGrid<T> {
             max.y = chunk.bounds().end().y.max(max.y);
         }
         GridRect::with_start_end(min, max)
+    }
+    
+    pub fn iter_chunks(&self) -> impl Iterator<Item=&CompressedChunk<T>> {
+        self.frozen_chunks.values()
     }
 
     pub fn get_chunk_at(&self, origin: &ChunkOrigin) -> Option<&CompressedChunk<T>> {
@@ -279,6 +285,26 @@ impl ReadFrom for Box<dyn Chunker> {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         let standard_chunker = StandardChunker::read_from(reader)?;
         Ok(standard_chunker.into_chunker())
+    }
+}
+
+impl FrozenGrid<PlayerId> {
+    pub fn from_uls(uls_chunker: UlsChunker, uls_chunks: Vec<UlsChunk>) -> Self {
+        let chunker = StripChunker::from(uls_chunker);
+        let frozen_chunks: BTreeMap<_, _> = uls_chunks.into_iter().map(|chunk| {
+            let origin = ChunkOrigin::new(GridPoint::new(chunk.origin_x, chunk.origin_y));
+            (origin, CompressedChunk::<PlayerId>::from_uls(chunk, &chunker))
+        }).collect();
+        
+        let memory_usage = frozen_chunks.iter().map(|(_, chunk)| {
+            chunk.memory_usage()
+        }).sum();
+        
+        Self {
+            chunker: Box::new(chunker),
+            frozen_chunks,
+            memory_usage,
+        }
     }
 }
 

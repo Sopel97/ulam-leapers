@@ -17,8 +17,8 @@ pub struct SimulationConfigInputConstraints {
     pub attack_radius: RangeInclusive<usize>,
     pub player_count: RangeInclusive<usize>,
     pub memory_usage: RangeInclusive<MemSize>,
-    pub turns: RangeInclusive<usize>,
-    pub complete_shells: RangeInclusive<usize>,
+    pub turns: RangeInclusive<u64>,
+    pub complete_shells: RangeInclusive<u64>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -94,7 +94,7 @@ impl SimulationConfigInput {
             || self.player_relations != old.player_relations
     }
 
-    pub fn set_turns_limit(&mut self, turns: usize) -> Result<(), WidgetError> {
+    pub fn set_turns_limit(&mut self, turns: u64) -> Result<(), WidgetError> {
         self.simulation_limits.set_turns(turns)
     }
 

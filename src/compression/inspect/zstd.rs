@@ -1,4 +1,6 @@
-﻿use crate::util::bitstream::LittleEndianBitReader;
+﻿use std::error::Error;
+use std::fmt::Display;
+use crate::util::bitstream::LittleEndianBitReader;
 use crate::util::bytestream::{ByteReader, ByteReaderError};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -10,6 +12,33 @@ pub enum ZstdInspectError {
     TooManyHuffmanWeights,
     FseAccuracyLogTooHigh,
 }
+
+impl Display for ZstdInspectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZstdInspectError::ReservedBlockType => {
+                write!(f, "Reserved block type")
+            }
+            ZstdInspectError::InvalidFrameMagic => {
+                write!(f, "Invalid frame magic")
+            }
+            ZstdInspectError::UnexpectedEndOfStream => {
+                write!(f, "Unexpected end of stream")
+            }
+            ZstdInspectError::ReservedBitSetInHeaderDescriptor => {
+                write!(f, "Reserved bit set in header descriptor")
+            }
+            ZstdInspectError::TooManyHuffmanWeights => {
+                write!(f, "Too many Huffman weights")
+            }
+            ZstdInspectError::FseAccuracyLogTooHigh => {
+                write!(f, "FSE accuracy log too big")
+            }
+        }
+    }
+}
+
+impl Error for ZstdInspectError {}
 
 impl From<ByteReaderError> for ZstdInspectError {
     fn from(err: ByteReaderError) -> Self {

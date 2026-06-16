@@ -4,3 +4,4 @@ pub mod grid;
 pub mod piece;
 pub mod sampler;
 pub mod simulation;
+pub mod persist;

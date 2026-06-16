@@ -4,6 +4,7 @@ pub mod zstd;
 use crate::compression::zstd::ZstdCompression;
 use std::fmt;
 use std::io::{Read, Write};
+use crate::game::persist::uls::UlsCompressionKind;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum CompressionKind {
@@ -28,6 +29,15 @@ impl fmt::Display for CompressionError {
             CompressionError::InvalidCompressionLevel => {
                 write!(f, "invalid compression level")
             }
+        }
+    }
+}
+
+impl From<UlsCompressionKind> for CompressionKind {
+    fn from(kind: UlsCompressionKind) -> Self {
+        match kind {
+            UlsCompressionKind::None => CompressionKind::None,
+            UlsCompressionKind::Zstd => CompressionKind::Zstd,
         }
     }
 }
@@ -188,6 +198,10 @@ impl CompressedBlob {
 
     pub fn bytes(&self) -> &[u8] {
         self.data.as_ref()
+    }
+    
+    pub fn compression_kind(&self) -> CompressionKind {
+        self.kind
     }
 }
 

@@ -3,6 +3,7 @@ use crate::math::coords::{symmetries, GridPoint, GridVector};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{ErrorKind, Read, Write};
+use crate::game::persist::uls::{UlsAttackVector, ULS_MAX_ATTACK_VECTOR_COORD};
 
 static LEAPER_NAMES: std::sync::LazyLock<BTreeMap<(i32, i32), &str>> =
     std::sync::LazyLock::new(|| {
@@ -64,18 +65,34 @@ impl LeaperAttacks {
     pub fn get_attacks_from(&self, base: &GridPoint) -> impl Iterator<Item = GridPoint> {
         self.attack_vectors.iter().map(move |&v| *base + v)
     }
+    
+    pub fn attack_vectors(&self) -> &[GridVector] {
+        self.attack_vectors.as_slice()
+    }
 }
 
-pub const ULS_MAX_ATTACK_OFFSET: usize = 127;
+impl LeaperAttacks {
+    pub fn from_uls(uls_attack_vectors: Vec<UlsAttackVector>) -> Self {
+        let attack_vectors = uls_attack_vectors.into_iter().map(
+            |v| {
+                GridVector::new(v.x as i32, v.y as i32)
+            }
+        ).collect();
+        
+        Self {
+            attack_vectors
+        }
+    }
+}
 
 fn err_on_attack_offset_too_large(attack_vectors: &[GridVector]) -> std::io::Result<()> {
     for attack_vector in attack_vectors.iter() {
-        if attack_vector.x.unsigned_abs() as usize > ULS_MAX_ATTACK_OFFSET
-            || attack_vector.y.unsigned_abs() as usize > ULS_MAX_ATTACK_OFFSET
+        if attack_vector.x.unsigned_abs() as usize > ULS_MAX_ATTACK_VECTOR_COORD as usize
+            || attack_vector.y.unsigned_abs() as usize > ULS_MAX_ATTACK_VECTOR_COORD as usize
         {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidData,
-                format!("Attack offset larger than {}", ULS_MAX_ATTACK_OFFSET),
+                format!("Attack offset larger than {}", ULS_MAX_ATTACK_VECTOR_COORD),
             ));
         }
     }

@@ -1,8 +1,9 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
 use crate::game::chunk::CompressedChunk;
-use crate::game::chunker::StripChunker;
+use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::grid::{FrozenGrid, Grid};
+use crate::game::persist::uls::{UlsPlayer, UlsSimulation};
 use crate::game::piece::LeaperAttacks;
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
@@ -56,6 +57,10 @@ impl PlayerIdSet {
 
     pub fn highest_player_id(&self) -> PlayerId {
         PlayerId::new((63 - self.bits.leading_zeros() as i32).max(0) as u8)
+    }
+    
+    pub fn as_u64_mask(self) -> u64 {
+        self.bits
     }
 }
 
@@ -145,19 +150,61 @@ pub struct Player {
     cursor: UlamSpiralCursor,
 }
 
+impl Player {
+    pub fn id(&self) -> PlayerId {
+        self.id
+    }
+    
+    pub fn enemies(&self) -> PlayerIdSet {
+        self.enemies
+    }
+    
+    pub fn cursor(&self) -> &UlamSpiralCursor {
+        &self.cursor
+    }
+    
+    pub fn attacks(&self) -> &LeaperAttacks {
+        &self.attacks
+    }
+}
+
+impl Player {
+    fn from_uls(uls_player: UlsPlayer, pid: PlayerId) -> Self {
+        let UlsPlayer { 
+            attack_vectors: uls_attack_vectors, 
+            enemies_mask: uls_enemies_mask, 
+            spiral_position: uls_spiral_position 
+        } = uls_player;
+        
+        let enemies = PlayerIdSet { bits: uls_enemies_mask };
+        
+        let mut cursor = UlamSpiralCursor::new();
+        cursor.advance_to(UlamSpiralPoint::new(uls_spiral_position));
+        
+        let attacks = LeaperAttacks::from_uls(uls_attack_vectors);
+        
+        Self {
+            enemies,
+            id: pid,
+            cursor,
+            attacks,
+        }
+    }
+}
+
 const DEFAULT_CHUNK_STRIP_LENGTH: Pow2 = Pow2::from_exponent(12);
 const DEFAULT_CHUNK_STRIP_THICKNESS: Pow2 = Pow2::from_exponent(8);
 
 pub trait Game {
     fn players(&self) -> &Vec<Player>;
-    fn complete_turns(&self) -> usize;
+    fn complete_turns(&self) -> u64;
 
-    fn complete_shells(&self) -> u32 {
+    fn complete_shells(&self) -> u64 {
         self.players()
             .iter()
             .map(|p| p.cursor.grid_position().chebyshev_distance_to_origin())
             .min()
-            .unwrap()
+            .unwrap() as u64
     }
 
     fn farthest_player_spiral_position(&self) -> UlamSpiralPoint {
@@ -177,13 +224,13 @@ pub struct Simulation {
     players: Vec<Player>,
     grid: Option<Grid<PlayerId>>,
     forbiddances: SlidingWindow<PlayerIdSet>,
-    simulated_turns: usize,
+    simulated_turns: u64,
 }
 
 pub struct FinalizedSimulation {
     players: Vec<Player>,
     grid: Arc<FrozenGrid<PlayerId>>,
-    simulated_turns: usize,
+    simulated_turns: u64,
 }
 
 impl FinalizedSimulation {
@@ -197,6 +244,10 @@ impl FinalizedSimulation {
 
     pub fn grid(&self) -> Arc<FrozenGrid<PlayerId>> {
         Arc::clone(&self.grid)
+    }
+    
+    pub fn grid_ref(&self) -> &FrozenGrid<PlayerId> {
+        &self.grid
     }
 
     pub fn highest_player_id(&self) -> PlayerId {
@@ -217,7 +268,7 @@ impl Game for FinalizedSimulation {
         &self.players
     }
 
-    fn complete_turns(&self) -> usize {
+    fn complete_turns(&self) -> u64 {
         self.simulated_turns
     }
 }
@@ -225,8 +276,8 @@ impl Game for FinalizedSimulation {
 #[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
 pub struct SimulationProgress {
     memory_usage: MemSize,
-    turns: usize,
-    complete_shells: usize,
+    turns: u64,
+    complete_shells: u64,
 }
 
 impl SimulationProgress {
@@ -234,11 +285,11 @@ impl SimulationProgress {
         self.memory_usage
     }
 
-    pub fn turns(&self) -> usize {
+    pub fn turns(&self) -> u64 {
         self.turns
     }
 
-    pub fn complete_shells(&self) -> usize {
+    pub fn complete_shells(&self) -> u64 {
         self.complete_shells
     }
 }
@@ -260,8 +311,8 @@ pub enum SimulationLimit {
 #[derive(Clone)]
 pub struct SimulationLimits {
     memory: Option<MemSize>,
-    turns: Option<usize>,
-    complete_shells: Option<usize>,
+    turns: Option<u64>,
+    complete_shells: Option<u64>,
     stop_flag: Option<Arc<AtomicBool>>,
 }
 
@@ -282,12 +333,12 @@ impl SimulationLimits {
         self
     }
 
-    pub fn with_turn_limit(mut self, limit: usize) -> Self {
+    pub fn with_turn_limit(mut self, limit: u64) -> Self {
         self.turns = Some(limit);
         self
     }
 
-    pub fn with_complete_shell_limit(mut self, limit: usize) -> Self {
+    pub fn with_complete_shell_limit(mut self, limit: u64) -> Self {
         self.complete_shells = Some(limit);
         self
     }
@@ -305,11 +356,11 @@ impl SimulationLimits {
         self.memory
     }
 
-    pub fn turns(&self) -> Option<usize> {
+    pub fn turns(&self) -> Option<u64> {
         self.turns
     }
 
-    pub fn complete_shells(&self) -> Option<usize> {
+    pub fn complete_shells(&self) -> Option<u64> {
         self.complete_shells
     }
 
@@ -329,20 +380,24 @@ impl Game for Simulation {
         &self.players
     }
 
-    fn complete_turns(&self) -> usize {
+    fn complete_turns(&self) -> u64 {
         self.simulated_turns
     }
 }
 
 impl Simulation {
     pub fn new() -> Simulation {
+        Self::with_chunker(Box::new(StripChunker::with_strip_length_and_thickness(
+            DEFAULT_CHUNK_STRIP_LENGTH,
+            DEFAULT_CHUNK_STRIP_THICKNESS,
+        )))
+    }
+
+    pub fn with_chunker(chunker: Box<dyn Chunker>) -> Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(
-                Box::new(StripChunker::with_strip_length_and_thickness(
-                    DEFAULT_CHUNK_STRIP_LENGTH,
-                    DEFAULT_CHUNK_STRIP_THICKNESS,
-                )),
+                chunker,
                 ZstdCompression::new_with_level(6).into(),
             )),
             forbiddances: SlidingWindow::with_origin(0),
@@ -508,21 +563,21 @@ impl Simulation {
 
         if limits
             .complete_shells
-            .is_some_and(|v| self.complete_shells() as usize >= v)
+            .is_some_and(|v| self.complete_shells() >= v)
         {
             return Ok(SimulationLimit::CompleteShells);
         }
 
-        const TURNS_PER_STEP: usize = 1024 * 16;
+        const TURNS_PER_STEP: u64 = 1024 * 16;
         // Limit this to have some other cell based processing.
-        const MAX_CELLS_PER_STEP: usize = 1024 * 256;
+        const MAX_CELLS_PER_STEP: u64 = 1024 * 256;
         // We don't want to check for `MAX_STEP_CELLS` being reached every turn
         // because it's not free. This should be safe aside from most extreme cases.
-        const TURNS_PER_STEP_MINIBATCH: usize = MAX_CELLS_PER_STEP / 256;
+        const TURNS_PER_STEP_MINIBATCH: u64 = MAX_CELLS_PER_STEP / 256;
         // We use cells instead of steps as the unit here because the number of cells
         // created in a single step can very wildly, depending on the simulation parameters.
-        const COMPRESSION_INTERVAL_CELLS: usize = 1024 * 1024;
-        const MEMORY_USAGE_INTERVAL_CELLS: usize = 1024 * 1024;
+        const COMPRESSION_INTERVAL_CELLS: u64 = 1024 * 1024;
+        const MEMORY_USAGE_INTERVAL_CELLS: u64 = 1024 * 1024;
         // We attempt to amortize chunk freezing so we shouldn't need very many placement buffers.
         const NUM_PLACEMENT_BUFFERS: usize = 8;
 
@@ -533,7 +588,7 @@ impl Simulation {
             .chunker()
             .maximum_cells_created_by_spiral_steps(COMPRESSION_INTERVAL_CELLS);
         // We amortize compression, but we can still benefit from some available concurrency in the system.
-        let minimum_compression_batch = rayon::current_num_threads() / 2;
+        let minimum_compression_batch = rayon::current_num_threads() as u64 / 2;
         let player_ids = self
             .players
             .iter()
@@ -554,7 +609,7 @@ impl Simulation {
             let placements: Vec<Vec<GridPoint>> = (0..self.players.len() + 1)
                 .map(|i| match i {
                     0 => Vec::new(),
-                    _ => Vec::with_capacity(TURNS_PER_STEP),
+                    _ => Vec::with_capacity(TURNS_PER_STEP as usize),
                 })
                 .collect();
             buffer_tx.send(placements).unwrap();
@@ -602,7 +657,7 @@ impl Simulation {
         });
 
         let mut progress = SimulationProgress::default();
-        let mut turns_to_simulate = limits.turns.unwrap_or(usize::MAX) - self.simulated_turns;
+        let mut turns_to_simulate = limits.turns.unwrap_or(u64::MAX) - self.simulated_turns;
         let mut hit_limit = None;
         let mut last_compression_farthest_cell = UlamSpiralPoint::new(0);
         let mut last_memory_usage_farthest_cell = UlamSpiralPoint::new(0);
@@ -611,7 +666,7 @@ impl Simulation {
             let farthest_cell = self.farthest_player_spiral_position();
 
             let mut placements = get_clear_buffer();
-            for bt in (0..turns_to_simulate_this_step).step_by(TURNS_PER_STEP_MINIBATCH) {
+            for bt in (0..turns_to_simulate_this_step).step_by(TURNS_PER_STEP_MINIBATCH as usize) {
                 let turns_to_simulate_this_minibatch =
                     min(TURNS_PER_STEP_MINIBATCH, turns_to_simulate_this_step - bt);
                 for _ in 0..turns_to_simulate_this_minibatch {
@@ -623,7 +678,7 @@ impl Simulation {
                 // If we advanced by an abnormally high amount of cells then break early
                 // to allow other important checks to be made.
                 let now_farthest_cell = self.farthest_player_spiral_position();
-                if (now_farthest_cell - farthest_cell) as usize > MAX_CELLS_PER_STEP {
+                if (now_farthest_cell - farthest_cell) as u64 > MAX_CELLS_PER_STEP {
                     break;
                 }
             }
@@ -644,7 +699,7 @@ impl Simulation {
             // we need to freeze every `COMPRESSION_INTERVAL_CELLS` to eventually catch up
             // with the chunks being newly created.
             // When close to the memory limit this amortization scheme is overriden.
-            if farthest_cell >= last_compression_farthest_cell + COMPRESSION_INTERVAL_CELLS as u64
+            if farthest_cell >= last_compression_farthest_cell + COMPRESSION_INTERVAL_CELLS
                 && let Some(region) = self.grid_region_past_modification()
             {
                 let new_cells = farthest_cell - last_compression_farthest_cell;
@@ -658,25 +713,25 @@ impl Simulation {
                     // Ideally we would use the chunker here with `new_cell` but the `grid`
                     // is not available at this point.
                     let estimated_new_memory_before_next_check =
-                        MemSize::sizes_of::<PlayerId>(maximum_cells_created_between_compressions);
+                        MemSize::sizes_of::<PlayerId>(maximum_cells_created_between_compressions as usize);
                     total + estimated_new_memory_before_next_check >= limit
                 }) {
                     // No limit, force all eligible chunks to be frozen.
-                    usize::MAX
+                    u64::MAX
                 } else {
                     // factor of 2 to overshoot a little
                     max(
                         minimum_compression_batch,
-                        (new_cells as usize / average_cell_count_per_chunk + 1) * 2,
+                        (new_cells as u64 / average_cell_count_per_chunk + 1) * 2,
                     )
                 };
 
-                job_tx.send(Job::Compress(region, n)).unwrap();
+                job_tx.send(Job::Compress(region, n as usize)).unwrap();
 
                 last_compression_farthest_cell = farthest_cell;
             }
 
-            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS as u64
+            if farthest_cell >= last_memory_usage_farthest_cell + MEMORY_USAGE_INTERVAL_CELLS
             {
                 // Yes, the check lags behind.
                 let total = *grid_memory_usage.lock().unwrap() + self.memory_usage();
@@ -706,7 +761,7 @@ impl Simulation {
                 hit_limit = Some(SimulationLimit::StopFlag);
             }
 
-            progress.complete_shells = self.complete_shells() as usize;
+            progress.complete_shells = self.complete_shells();
             progress.turns = self.simulated_turns;
 
             progress_callback(progress);
@@ -841,7 +896,7 @@ impl ReadFrom for FinalizedSimulation {
             }
         }
 
-        let simulated_turns = usize::read_from(reader)?;
+        let simulated_turns = u64::read_from(reader)?;
         let grid = FrozenGrid::<PlayerId>::read_from(&mut zstd::Decoder::new(reader)?)?;
 
         Ok(FinalizedSimulation {
@@ -849,6 +904,29 @@ impl ReadFrom for FinalizedSimulation {
             simulated_turns,
             grid: Arc::new(grid),
         })
+    }
+}
+
+impl From<UlsSimulation<'_>> for FinalizedSimulation {
+    fn from(uls_sim: UlsSimulation) -> Self {
+        let UlsSimulation { 
+            chunker: uls_chunker, 
+            chunks: uls_chunks, 
+            players: uls_players, 
+            turn_count: simulated_turns, 
+        } = uls_sim;
+        
+        let players = uls_players.into_iter().enumerate().map(|(i, player)| {
+            Player::from_uls(player, PlayerId::new((i + 1) as u8))
+        }).collect();
+        
+        let grid = Arc::new(FrozenGrid::from_uls(uls_chunker, uls_chunks));
+        
+        Self {
+            players,
+            simulated_turns,
+            grid,
+        }
     }
 }
 

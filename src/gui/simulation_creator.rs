@@ -31,22 +31,22 @@ const MIN_ATTACK_RADIUS: usize = 3;
 const DEFAULT_ATTACK_RADIUS: usize = 5;
 const MAX_ATTACK_RADIUS: usize = 7;
 
-const MIN_TURNS: usize = 1_000_000;
-const DEFAULT_TURNS: usize = 1_000 * 1_000_000;
-const MAX_TURNS: usize = 1_000_000 * 1_000_000;
-const MIN_COMPLETE_SHELLS: usize = 10;
-const MAX_COMPLETE_SHELLS: usize = 1_000_000;
+const MIN_TURNS: u64 = 1_000_000;
+const DEFAULT_TURNS: u64 = 1_000 * 1_000_000;
+const MAX_TURNS: u64 = 1_000_000 * 1_000_000;
+const MIN_COMPLETE_SHELLS: u64 = 10;
+const MAX_COMPLETE_SHELLS: u64 = 1_000_000;
 const MIN_MEMORY_USAGE: MemSize = MemSize::gb(1);
 const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 
-const MIN_PREVIEW_SHELLS: usize = 100;
-const DEFAULT_PREVIEW_SHELLS: usize = 250;
-const MAX_PREVIEW_SHELLS: usize = 1000;
+const MIN_PREVIEW_SHELLS: u64 = 100;
+const DEFAULT_PREVIEW_SHELLS: u64 = 250;
+const MAX_PREVIEW_SHELLS: u64 = 1000;
 
 enum SimulationCreatorWorkerJob {
     Stop,
     CancelAll,
-    GeneratePreview(Simulation, Context, usize),
+    GeneratePreview(Simulation, Context, u64),
 }
 
 enum SimulationCreatorWorkerResult {
@@ -59,8 +59,8 @@ pub struct SimulationCreator {
     state_json_actual: String,
     state_json_ui: String,
 
-    preview_shells: usize,
-    last_rendered_preview_shells: usize,
+    preview_shells: u64,
+    last_rendered_preview_shells: u64,
 
     preview_texture_handle: Option<TextureHandle>,
 
@@ -110,7 +110,7 @@ impl SimulationCreatorWorker {
         }
     }
 
-    fn generate_preview(&self, mut simulation: Simulation, ctx: Context, shells: usize) {
+    fn generate_preview(&self, mut simulation: Simulation, ctx: Context, shells: u64) {
         if shells == 0 {
             return;
         }
@@ -155,7 +155,7 @@ impl SimulationCreatorWorker {
 }
 
 impl SimulationCreator {
-    pub fn get_preview_shells_range() -> RangeInclusive<usize> {
+    pub fn get_preview_shells_range() -> RangeInclusive<u64> {
         MIN_PREVIEW_SHELLS..=MAX_PREVIEW_SHELLS
     }
 

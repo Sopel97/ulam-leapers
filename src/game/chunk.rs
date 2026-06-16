@@ -1,4 +1,5 @@
-﻿use crate::algo::transpose::transpose_u8;
+﻿use std::borrow::Cow;
+use crate::algo::transpose::transpose_u8;
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::Array2D;
 use crate::compression::{AnyCompression, CompressedBlob, Compression, CompressionKind};
@@ -11,11 +12,9 @@ use std::io::{ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
-
-// Chunk size and alignment constraints for the ULS (Ulam Leapers Simulation) persistence format.
-pub const ULS_MINIMUM_CHUNK_ALIGNMENT: u64 = 64;
-pub const ULS_MAXIMUM_CHUNK_SIZE: u64 = 4096 * 4096;
-pub const ULS_MAXIMUM_CHUNK_EXTENT: u64 = 8192;
+use crate::game::chunker::{Chunker, StripChunker};
+use crate::game::persist::uls::{UlsChunk, UlsChunkTransform};
+use crate::game::simulation::PlayerId;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
@@ -150,6 +149,15 @@ impl ReadFrom for CompressedChunkTransform {
     }
 }
 
+impl From<UlsChunkTransform> for CompressedChunkTransform {
+    fn from(uls_transform: UlsChunkTransform) -> Self {
+        match uls_transform {
+            UlsChunkTransform::None => CompressedChunkTransform::None,
+            UlsChunkTransform::Transposition => CompressedChunkTransform::Transposition,
+        }
+    }
+}
+
 // Generic over T because we want to preserve type information of the underlying data.
 #[derive(Debug)]
 pub struct CompressedChunk<T> {
@@ -278,6 +286,14 @@ impl<T> CompressedChunk<T> {
     pub fn memory_usage(&self) -> MemSize {
         MemSize::size_of::<CompressedChunk<T>>() + MemSize::b(self.data.len())
     }
+    
+    pub fn blob(&self) -> &CompressedBlob {
+        &self.data
+    }
+    
+    pub fn transform(&self) -> CompressedChunkTransform {
+        self.transform
+    }
 }
 
 impl<T> WriteTo for CompressedChunk<T> {
@@ -312,5 +328,39 @@ impl WriteTo for ChunkOrigin {
 impl ReadFrom for ChunkOrigin {
     fn read_from(reader: &mut impl Read) -> std::io::Result<Self> {
         Ok(ChunkOrigin(GridPoint::read_from(reader)?))
+    }
+}
+
+impl<PlayerId> CompressedChunk<PlayerId> {
+    pub fn from_uls(uls_chunk: UlsChunk, chunker: &StripChunker) -> Self {
+        let UlsChunk {
+            origin_x,
+            origin_y,
+            transform: uls_transform,
+            compression_kind: uls_compression_kind,
+            compressed_data: uls_compressed_data,
+        } = uls_chunk;
+
+        let bounds = chunker.resolve_chunk_bounds(
+            &GridPoint::new(
+                origin_x, origin_y
+            )
+        );
+
+        let transform = CompressedChunkTransform::from(uls_transform);
+        let compression_kind = CompressionKind::from(uls_compression_kind);
+        let data = match uls_compressed_data {
+            Cow::Owned(compressed_data) => CompressedBlob::from_raw_parts(compression_kind, compressed_data.into_boxed_slice()),
+            Cow::Borrowed(compressed_data) => { panic!("Expected owned during deserialization.") }
+        };
+        
+        // TODO: Consider compressing if not compressed already.
+
+        Self {
+            transform,
+            bounds,
+            data,
+            _marker: Default::default(),
+        }
     }
 }

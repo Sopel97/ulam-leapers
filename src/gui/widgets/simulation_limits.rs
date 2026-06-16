@@ -9,15 +9,15 @@ use ulam_leapers::util::memory::MemSize;
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationLimitsConstraints {
     pub memory_usage: RangeInclusive<MemSize>,
-    pub turns: RangeInclusive<usize>,
-    pub complete_shells: RangeInclusive<usize>,
+    pub turns: RangeInclusive<u64>,
+    pub complete_shells: RangeInclusive<u64>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationLimitsInput {
     memory_usage: usize,
-    turns: usize,
-    complete_shells: usize,
+    turns: u64,
+    complete_shells: u64,
 
     constraints: SimulationLimitsConstraints,
 }
@@ -53,7 +53,7 @@ impl SimulationLimitsInput {
         Ok(())
     }
 
-    pub fn set_turns(&mut self, turns: usize) -> Result<(), WidgetError> {
+    pub fn set_turns(&mut self, turns: u64) -> Result<(), WidgetError> {
         if !self.constraints.turns.contains(&turns) {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Turns {} outside of allowed range {:?}",
@@ -66,7 +66,7 @@ impl SimulationLimitsInput {
         Ok(())
     }
 
-    pub fn set_complete_shells(&mut self, complete_shells: usize) -> Result<(), WidgetError> {
+    pub fn set_complete_shells(&mut self, complete_shells: u64) -> Result<(), WidgetError> {
         if !self.constraints.complete_shells.contains(&complete_shells) {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Complete shells {} outside of allowed range {:?}",
@@ -146,7 +146,7 @@ impl JsonWidget for SimulationLimitsInput {
             .into());
         }
 
-        let turns = json.read_u64("turns")? as usize;
+        let turns = json.read_u64("turns")?;
         if !constraints.turns.contains(&turns) {
             return Err(WidgetError::ConstraintViolation(format!(
                 "turns {} is outside of range {:?}",
@@ -155,7 +155,7 @@ impl JsonWidget for SimulationLimitsInput {
             .into());
         }
 
-        let complete_shells = json.read_u64("complete_shells")? as usize;
+        let complete_shells = json.read_u64("complete_shells")?;
         if !constraints.complete_shells.contains(&complete_shells) {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Complete shells {} is outside of range {:?}",

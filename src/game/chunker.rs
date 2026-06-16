@@ -1,6 +1,5 @@
-﻿use crate::game::chunk::{
-    ChunkOrigin, ULS_MAXIMUM_CHUNK_EXTENT, ULS_MAXIMUM_CHUNK_SIZE, ULS_MINIMUM_CHUNK_ALIGNMENT,
-};
+﻿use crate::game::chunk::ChunkOrigin;
+use crate::game::persist::uls::{UlsChunker, ULS_MAX_CHUNK_EXTENT, ULS_MAX_CHUNK_SIZE, ULS_MIN_CHUNK_ALIGNMENT};
 use crate::io::{ReadFrom, WriteTo};
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
@@ -26,9 +25,9 @@ pub enum StandardChunker {
 
 impl StandardChunker {
     pub fn try_new_square_chunker(size: Pow2) -> Option<Self> {
-        if size.as_u64() < ULS_MINIMUM_CHUNK_ALIGNMENT
-            || size.as_u64() > ULS_MAXIMUM_CHUNK_EXTENT
-            || size.as_u64().pow(2) > ULS_MAXIMUM_CHUNK_SIZE
+        if size.as_u64() < ULS_MIN_CHUNK_ALIGNMENT
+            || size.as_u64() > ULS_MAX_CHUNK_EXTENT
+            || size.as_u64().pow(2) > ULS_MAX_CHUNK_SIZE
         {
             None
         } else {
@@ -43,9 +42,9 @@ impl StandardChunker {
             return None;
         }
 
-        if strip_thickness.as_u64() < ULS_MINIMUM_CHUNK_ALIGNMENT
-            || strip_length.as_u64() > ULS_MAXIMUM_CHUNK_EXTENT
-            || (strip_thickness * strip_length).as_u64() > ULS_MAXIMUM_CHUNK_SIZE
+        if strip_thickness.as_u64() < ULS_MIN_CHUNK_ALIGNMENT
+            || strip_length.as_u64() > ULS_MAX_CHUNK_EXTENT
+            || (strip_thickness * strip_length).as_u64() > ULS_MAX_CHUNK_SIZE
         {
             None
         } else {
@@ -88,11 +87,12 @@ pub trait Chunker: Send + Sync {
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
     fn minimum_chunk_alignment(&self) -> usize;
     fn minimum_chunk_extent(&self) -> usize;
-    fn minimum_covered_shells(&self) -> usize;
-    fn average_cell_count(&self) -> usize;
-    fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize;
+    fn minimum_covered_shells(&self) -> u64;
+    fn average_cell_count(&self) -> u64;
+    fn maximum_cells_created_by_spiral_steps(&self, steps: u64) -> u64;
 
     fn as_standard_chunker(&self) -> Option<StandardChunker>;
+    fn as_strip_chunker(&self) -> Option<StripChunker>;
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -136,16 +136,16 @@ impl Chunker for SquareChunker {
         self.size.as_u64() as usize
     }
 
-    fn minimum_covered_shells(&self) -> usize {
-        self.size.as_u64() as usize
+    fn minimum_covered_shells(&self) -> u64 {
+        self.size.as_u64()
     }
 
-    fn average_cell_count(&self) -> usize {
-        self.size.as_u64().pow(2) as usize
+    fn average_cell_count(&self) -> u64 {
+        self.size.as_u64().pow(2)
     }
 
-    fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize {
-        let chunk_size = self.size.as_u64().pow(2) as usize;
+    fn maximum_cells_created_by_spiral_steps(&self, steps: u64) -> u64 {
+        let chunk_size = self.size.as_u64().pow(2);
         // Corners in extreme case
         if steps < 4 {
             steps * chunk_size
@@ -156,6 +156,10 @@ impl Chunker for SquareChunker {
 
     fn as_standard_chunker(&self) -> Option<StandardChunker> {
         StandardChunker::try_from(self).ok()
+    }
+
+    fn as_strip_chunker(&self) -> Option<StripChunker> {
+        Some(StripChunker::with_strip_length_and_thickness(self.size, self.size))
     }
 }
 
@@ -323,6 +327,18 @@ impl StripChunker {
     fn num_chunks_in_superchunk(&self) -> usize {
         (self.strip_length / self.strip_thickness).as_u64() as usize
     }
+    
+    pub fn strip_length(&self) -> Pow2 {
+        self.strip_length
+    }
+    
+    pub fn strip_thickness(&self) -> Pow2 {
+        self.strip_thickness
+    }
+    
+    pub fn chunk_size(&self) -> Pow2 {
+        self.strip_length * self.strip_thickness
+    }
 }
 
 impl Chunker for StripChunker {
@@ -432,16 +448,16 @@ impl Chunker for StripChunker {
         self.strip_thickness.as_u64() as usize
     }
 
-    fn minimum_covered_shells(&self) -> usize {
-        (self.strip_length * self.strip_thickness).as_u64() as usize
+    fn minimum_covered_shells(&self) -> u64 {
+        (self.strip_length * self.strip_thickness).as_u64()
     }
 
-    fn average_cell_count(&self) -> usize {
-        (self.strip_length * self.strip_thickness).as_u64() as usize
+    fn average_cell_count(&self) -> u64 {
+        (self.strip_length * self.strip_thickness).as_u64()
     }
 
-    fn maximum_cells_created_by_spiral_steps(&self, steps: usize) -> usize {
-        let chunk_size = (self.strip_length * self.strip_thickness).as_u64() as usize;
+    fn maximum_cells_created_by_spiral_steps(&self, steps: u64) -> u64 {
+        let chunk_size = (self.strip_length * self.strip_thickness).as_u64();
         // Corners in extreme case
         if steps < 4 {
             steps * chunk_size
@@ -453,6 +469,19 @@ impl Chunker for StripChunker {
 
     fn as_standard_chunker(&self) -> Option<StandardChunker> {
         StandardChunker::try_new_flat_chunker(self.strip_length, self.strip_thickness)
+    }
+
+    fn as_strip_chunker(&self) -> Option<StripChunker> {
+        Some(*self)
+    }
+}
+
+impl From<UlsChunker> for StripChunker {
+    fn from(chunker: UlsChunker) -> Self {
+        StripChunker::with_strip_length_and_thickness(
+            Pow2::try_from(chunker.strip_length as u64).expect("UlsChunker should only allow powers of two"),
+            Pow2::try_from(chunker.strip_thickness as u64).expect("UlsChunker should only allow powers of two"),
+        )
     }
 }
 

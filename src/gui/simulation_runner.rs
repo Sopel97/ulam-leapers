@@ -68,7 +68,7 @@ impl ProgressTracker {
         self.last_progress_update_time - self.start_time
     }
 
-    pub fn eta_to_turns(&self, turns: usize) -> Option<Duration> {
+    pub fn eta_to_turns(&self, turns: u64) -> Option<Duration> {
         if turns <= self.curr_progress.turns() {
             return Some(Duration::from_secs(0));
         }
