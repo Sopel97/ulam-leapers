@@ -46,10 +46,14 @@ const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
 const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
 
+const MAX_CONTROLS_WINDOW_WIDTH: f32 = 200.0;
+
+const DEFAULT_SIMULATION_FILE_NAME: &str = "simulation.uls";
+
 #[derive(Debug)]
 pub enum SaveState {
     NotSaved,
-    Saved,
+    Saved(PathBuf),
     Incompatible(UlsError),
     Errored(std::io::Error),
 }
@@ -153,21 +157,21 @@ impl GridExplorer {
     }
 
     pub fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
-        let file = File::open(path)?;
+        let file = File::open(path.clone())?;
         let mut reader = std::io::BufReader::new(file);
         let uls_sim = UlsSimulation::read_from(&mut reader)?;
         let simulation = FinalizedSimulation::from(uls_sim);
         let mut explorer = GridExplorer::new(simulation);
-        explorer.assume_saved();
+        explorer.assume_saved(path);
         Ok(explorer)
     }
 
     fn is_saved(&self) -> bool {
-        matches!(self.save_state, SaveState::Saved)
+        matches!(self.save_state, SaveState::Saved(_))
     }
 
-    fn assume_saved(&mut self) {
-        self.save_state = SaveState::Saved;
+    fn assume_saved(&mut self, path: PathBuf) {
+        self.save_state = SaveState::Saved(path);
     }
 
     fn zoom_range(&self) -> RangeInclusive<i32> {
@@ -355,11 +359,20 @@ impl GridExplorer {
     }
 
     fn try_save(&mut self) {
+        let suggested_name = match &self.save_state {
+            SaveState::Saved(path) => path
+                .file_name()
+                .expect("If saved it should be a file.")
+                .display()
+                .to_string(),
+            _ => DEFAULT_SIMULATION_FILE_NAME.parse().unwrap(),
+        };
+
         if let Some(path) = rfd::FileDialog::new()
-            .set_file_name("simulation.uls")
+            .set_file_name(suggested_name)
             .save_file()
         {
-            let mut writer = BufWriter::new(File::create(path).unwrap());
+            let mut writer = BufWriter::new(File::create(path.clone()).unwrap());
             match UlsSimulation::try_from(&self.finalized_simulation) {
                 Err(err) => self.save_state = SaveState::Incompatible(err),
                 Ok(uls_sim) => {
@@ -367,7 +380,7 @@ impl GridExplorer {
                         eprintln!("Failed to save simulation: {}", e);
                         self.save_state = SaveState::Errored(e);
                     } else {
-                        self.save_state = SaveState::Saved;
+                        self.save_state = SaveState::Saved(path);
                     }
                 }
             }
@@ -375,20 +388,25 @@ impl GridExplorer {
     }
 
     fn show_save_ui(&mut self, ui: &mut Ui) {
-        match &self.save_state {
-            SaveState::NotSaved => {
-                ui.label("Simulation is not saved!");
-            }
-            SaveState::Incompatible(err) => {
-                ui.label(format!("Simulation incompatible with ULS format: {}", err));
-            }
-            SaveState::Errored(err) => {
-                ui.label(format!("Error while saving simulation: {}", err));
-            }
-            SaveState::Saved => {
-                ui.label("Simulation is saved!");
-            }
-        };
+        ui.scope(|ui| {
+            ui.set_max_width(MAX_CONTROLS_WINDOW_WIDTH);
+
+            match &self.save_state {
+                SaveState::NotSaved => {
+                    ui.label("Simulation is not saved!");
+                }
+                SaveState::Incompatible(err) => {
+                    ui.label(format!("Simulation incompatible with ULS format: {}", err));
+                }
+                SaveState::Errored(err) => {
+                    ui.label(format!("Error while saving simulation: {}", err));
+                }
+                SaveState::Saved(path) => {
+                    let path_display = path.display();
+                    ui.label(format!("Saved at {path_display}"));
+                }
+            };
+        });
 
         let button =
             Button::new("Save simulation").shortcut_text(ui.ctx().format_shortcut(&SAVE_SHORTCUT));
@@ -493,7 +511,7 @@ impl GridExplorer {
 
         // TODO: Columns for some reason take more space than necessary.
         //       This `set_max_width` is a hack to make it about as much as it should.
-        ui.set_max_width(200.0);
+        ui.set_max_width(MAX_CONTROLS_WINDOW_WIDTH);
         ui.columns(2, |columns| {
             for player_id in 0..=player_count {
                 let column = &mut columns[player_id % 2];
