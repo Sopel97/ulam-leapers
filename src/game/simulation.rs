@@ -609,7 +609,7 @@ impl Simulation {
                         buffer_tx.send(placements).unwrap();
                     }
                     Job::Compress(region, n) => {
-                        grid.freeze_n(&region, n);
+                        grid.freeze_at_most_n_chunks_in_region(&region, n);
                     }
                     Job::MemoryUsage => {
                         let mut grid_memory_usage_worker = grid_memory_usage_worker.lock().unwrap();

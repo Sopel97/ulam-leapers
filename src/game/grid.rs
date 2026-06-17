@@ -20,19 +20,11 @@ pub struct Grid<T> {
 }
 
 impl<T: Default + Send + Sync> Grid<T> {
-    /// Freezes at most `n` chunks in the given `region`.
-    /// Returns the number of chunks frozen.
-    pub fn freeze_n(&mut self, region: &GridRect, n: usize) -> usize {
-        // While amortized this function won't do much it may be called on many chunks
-        // at the time. There is no good way to change that without possibly blowing
-        // up memory usage due to the number of uncompressed chunks growing.
-        let to_freeze = self
-            .active_chunks
-            .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
-            .take(n)
-            // Not sure if there's a better way,
-            // extract_if doesn't produce a par-compatible iterator.
-            .collect::<Vec<_>>();
+    fn freeze_chunks<F>(&mut self, extract_fn: F) -> usize
+    where
+        F: FnOnce(&mut BTreeMap<ChunkOrigin, Chunk<T>>) -> Vec<(ChunkOrigin, Chunk<T>)>,
+    {
+        let to_freeze = extract_fn(&mut self.active_chunks);
 
         let frozen = to_freeze
             .into_par_iter()
@@ -54,18 +46,26 @@ impl<T: Default + Send + Sync> Grid<T> {
         count
     }
 
+    /// Freezes at most `n` chunks in the given `region`.
     /// Returns the number of chunks frozen.
-    pub fn freeze(&mut self, region: &GridRect) -> usize {
-        self.freeze_n(region, usize::MAX)
+    pub fn freeze_at_most_n_chunks_in_region(&mut self, region: &GridRect, n: usize) -> usize {
+        // No better way than O(n) scan I'm afraid, but it should be fine in most uses.
+        self.freeze_chunks(|active_chunks| {
+            active_chunks
+                .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
+                .take(n)
+                .collect::<Vec<_>>()
+        })
+    }
+
+    /// Returns the number of chunks frozen.
+    pub fn freeze_chunks_in_region(&mut self, region: &GridRect) -> usize {
+        self.freeze_at_most_n_chunks_in_region(region, usize::MAX)
     }
 
     /// Returns the number of chunks frozen.
     pub fn freeze_all(&mut self) -> usize {
-        // TODO: Remove this hack. We can't represent the full range properly.
-        self.freeze(&GridRect::with_start_end(
-            GridPoint::new(i32::MIN, i32::MIN),
-            GridPoint::new(i32::MAX, i32::MAX),
-        ))
+        self.freeze_chunks(|active_chunks| std::mem::take(active_chunks).into_iter().collect())
     }
 }
 
@@ -242,8 +242,8 @@ impl FrozenGrid<PlayerId> {
             .collect();
 
         let memory_usage = frozen_chunks
-            .iter()
-            .map(|(_, chunk)| chunk.memory_usage())
+            .values()
+            .map(|chunk| chunk.memory_usage())
             .sum();
 
         Self {
@@ -369,7 +369,7 @@ mod tests {
         grid[point(0, 0)] = 123;
         grid[point(-64 + 5, 0)] = 123;
 
-        grid.freeze(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70));
+        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70));
 
         assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
         assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-64 + 5, 0)));
@@ -381,7 +381,7 @@ mod tests {
 
         grid[point(0, 0)] = 123;
 
-        grid.freeze(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810));
+        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810));
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;
