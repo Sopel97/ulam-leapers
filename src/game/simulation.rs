@@ -1,5 +1,6 @@
 ﻿use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::zstd::ZstdCompression;
+use crate::compression::AnyCompression;
 use crate::game::chunk::CompressedChunk;
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::grid::{FrozenGrid, Grid};
@@ -7,16 +8,17 @@ use crate::game::persist::uls::{UlsPlayer, UlsSimulation};
 use crate::game::piece::LeaperAttacks;
 use crate::math::coords::GridPoint;
 use crate::math::pow2::Pow2;
-use crate::math::rect::{GridRect, Rect2D};
+use crate::math::rect::GridRect;
 use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::util::memory::MemSize;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use std::cmp::{max, min};
 use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use crate::compression::AnyCompression;
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -380,9 +382,7 @@ impl Simulation {
     pub fn with_chunker(chunker: Box<dyn Chunker>) -> Simulation {
         Simulation {
             players: vec![],
-            grid: Some(Grid::new(
-                chunker
-            )),
+            grid: Some(Grid::new(chunker)),
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
@@ -575,7 +575,9 @@ impl Simulation {
             .maximum_cells_created_by_spiral_steps(COMPRESSION_INTERVAL_CELLS);
         // We amortize compression, but we can still benefit from some available concurrency in the system.
         let minimum_compression_batch = rayon::current_num_threads() as u64 / 2;
-        let player_ids: Vec<_> = (1..=self.players.len()).map(|i| PlayerId::new(i as u8)).collect();
+        let player_ids: Vec<_> = (1..=self.players.len())
+            .map(|i| PlayerId::new(i as u8))
+            .collect();
         let (job_tx, job_rx) = mpsc::channel();
         let (buffer_tx, buffer_rx) = mpsc::channel();
 
@@ -774,7 +776,12 @@ impl From<Simulation> for FinalizedSimulation {
     fn from(simulation: Simulation) -> Self {
         Self {
             players: simulation.players,
-            grid: Arc::new(simulation.grid.unwrap().to_frozen_grid(&simulation.compression)),
+            grid: Arc::new(
+                simulation
+                    .grid
+                    .unwrap()
+                    .to_frozen_grid(&simulation.compression),
+            ),
             simulated_turns: simulation.simulated_turns,
         }
     }
@@ -796,14 +803,23 @@ impl FinalizedSimulation {
     /// Converts the finalized simulation back into a simulation that can be resumed.
     pub fn to_simulation<F>(self, progress_callback: F) -> Simulation
     where
-        F: Fn(FinalizedSimulationToSimulationProgress) + Send + Sync
+        F: Fn(FinalizedSimulationToSimulationProgress) + Send + Sync,
     {
         let complete_shells = self.complete_shells();
-        let mut forbiddances = SlidingWindow::with_origin(self.nearest_player_spiral_position().as_u64() as isize);
+        let forbiddances_origin = self.nearest_player_spiral_position().as_u64() as isize;
+        let mut forbiddances = SlidingWindow::with_origin(forbiddances_origin);
 
-        let FinalizedSimulation { players, grid, simulated_turns } = self;
+        let FinalizedSimulation {
+            players,
+            grid,
+            simulated_turns,
+        } = self;
 
-        let attack_radius = players.iter().map(|p| p.attacks().radius()).max().unwrap_or(0);
+        let attack_radius = players
+            .iter()
+            .map(|p| p.attacks().radius())
+            .max()
+            .unwrap_or(0);
         let region_that_can_remain_frozen = {
             // we need the grid region past modification shrunk by attack radius,
             // because we need to collect attacks that can still influence new placements
@@ -811,10 +827,7 @@ impl FinalizedSimulation {
             if safe_shells > 0 {
                 let min_point = GridPoint::new(-safe_shells, -safe_shells);
 
-                GridRect::square_with_size(
-                    min_point,
-                    2 * safe_shells + 1,
-                )
+                GridRect::square_with_size(min_point, 2 * safe_shells + 1)
             } else {
                 GridRect::zero()
             }
@@ -825,37 +838,63 @@ impl FinalizedSimulation {
             Err(_) => panic!("Arc had multiple owners"),
         });
         grid.unfreeze_chunks_not_in_region(&region_that_can_remain_frozen, |i, total| {
-            progress_callback(FinalizedSimulationToSimulationProgress::UnfreezingChunks(i, total));
+            progress_callback(FinalizedSimulationToSimulationProgress::UnfreezingChunks(
+                i, total,
+            ));
         });
 
         let empty_cell = PlayerId::new(0);
         let active_chunks = grid.active_chunks();
         let active_chunk_count = active_chunks.len();
-        for (i, active_chunk) in active_chunks.values().enumerate() {
-            // This can be implemented more efficiently if we compute which shells
-            // we need exactly, and then iterate 4 intersections.
-            active_chunk.for_each_cell(|attack_src, pid| {
-                if *pid != empty_cell {
-                    let player = &players[pid.index() - 1];
 
-                    // We must not forget to forbid players from overwriting other player placements.
-                    let spiral_pos = UlamSpiralPoint::from(&attack_src);
-                    if spiral_pos.as_u64() as isize >= forbiddances.get_origin() {
-                        forbiddances[spiral_pos.as_u64() as isize] = PlayerIdSet::full();
-                    }
+        let chunk_counter = Arc::new(AtomicUsize::new(0));
+        let forbiddances_vecs = active_chunks
+            .values()
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|active_chunk| {
+                let mut forbiddances_vec_part = vec![];
 
-                    for attack_dst in player.attacks.get_attacks_from(&attack_src) {
-                        let u = UlamSpiralPoint::from(&attack_dst);
-                        // We don't care about cells before the origin (last player) and
-                        // we need to be careful not to modify them.
-                        if u.as_u64() as isize >= forbiddances.get_origin() {
-                            forbiddances[u.as_u64() as isize] |= player.enemies;
+                // TODO: this could still be significantly faster if we compute the exact shells
+                //       that we need and only iterate these 4 intersecting regions
+                active_chunk.for_each_cell(|attack_src, pid| {
+                    if *pid != empty_cell {
+                        let player = &players[pid.index() - 1];
+
+                        // We must not forget to forbid players from overwriting other player placements.
+                        let spiral_pos = UlamSpiralPoint::from(&attack_src);
+                        if spiral_pos.as_u64() as isize >= forbiddances_origin {
+                            forbiddances_vec_part
+                                .push((spiral_pos.as_u64() as isize, PlayerIdSet::full()));
+                        }
+
+                        for attack_dst in player.attacks.get_attacks_from(&attack_src) {
+                            let u = UlamSpiralPoint::from(&attack_dst);
+                            // We don't care about cells before the origin (last player) and
+                            // we need to be careful not to modify them.
+                            if u.as_u64() as isize >= forbiddances_origin {
+                                forbiddances_vec_part.push((u.as_u64() as isize, player.enemies));
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            progress_callback(FinalizedSimulationToSimulationProgress::RecomputingForbiddances(i, active_chunk_count));
+                let i = chunk_counter.fetch_add(1, Ordering::Relaxed);
+                progress_callback(
+                    FinalizedSimulationToSimulationProgress::RecomputingForbiddances(
+                        i,
+                        active_chunk_count,
+                    ),
+                );
+
+                forbiddances_vec_part
+            })
+            .collect::<Vec<_>>();
+
+        for forbiddances_vec in forbiddances_vecs {
+            for (i, e) in forbiddances_vec {
+                forbiddances[i] |= e;
+            }
         }
 
         Simulation {
@@ -902,10 +941,7 @@ impl From<UlsSimulation<'_>> for FinalizedSimulation {
             turn_count: simulated_turns,
         } = uls_sim;
 
-        let players = uls_players
-            .into_iter()
-            .map(Player::from)
-            .collect();
+        let players = uls_players.into_iter().map(Player::from).collect();
 
         let grid = Arc::new(FrozenGrid::from_uls(uls_chunker, uls_chunks));
 
