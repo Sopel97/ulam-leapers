@@ -151,6 +151,9 @@ pub enum UlsCompatibilityError {
     DuplicateAttackVectors {
         duplicate_count: u64,
     },
+    DuplicateChunks {
+        duplicate_count: u64,
+    },
     ZstdInspectError(ZstdInspectError),
 }
 
@@ -266,6 +269,9 @@ impl Display for UlsCompatibilityError {
             }
             UlsCompatibilityError::DuplicateAttackVectors { duplicate_count } => {
                 write!(f, "{duplicate_count} duplicate attack vectors")
+            }
+            UlsCompatibilityError::DuplicateChunks { duplicate_count } => {
+                write!(f, "{duplicate_count} duplicate chunks")
             }
             UlsCompatibilityError::ZstdInspectError(err) => {
                 write!(f, "ZST inspect error: {err}")
@@ -861,6 +867,13 @@ impl UlsSimulation<'_> {
                     .collect::<Result<Vec<_>, _>>()?
             }
         };
+        
+        let origins: BTreeSet<_> = chunks.iter().map(|chunk| (chunk.origin_x, chunk.origin_y)).collect();
+        if origins.len() != chunks.len() {
+            return Err(UlsCompatibilityError::DuplicateChunks {
+                duplicate_count: (chunks.len() - origins.len()) as u64,
+            }.into());
+        }
 
         Ok(Self {
             turn_count,
