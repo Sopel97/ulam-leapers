@@ -764,16 +764,10 @@ impl UlsSimulation<'_> {
 
         self.chunker.write_to(writer)?;
 
-        // We always use ZSTD compression here because it's cheap.
-        UlsCompressionKind::Zstd.write_to(writer)?;
         write_u32_le(writer, self.chunks.len() as u32)?;
-
-        let mut zstd_writer = zstd::Encoder::new(writer, 3)?;
         for chunk in &self.chunks {
-            chunk.write_to(&mut zstd_writer)?;
+            chunk.write_to(writer)?;
         }
-        // IMPORTANT: Do not forget to finalize the ZSTD stream!
-        zstd_writer.finish()?;
 
         Ok(())
     }
@@ -851,23 +845,14 @@ impl UlsSimulation<'_> {
         // We need an actual chunker to determine if the origins are correct.
         let actual_chunker = StripChunker::from(chunker);
 
-        let compression_kind = UlsCompressionKind::read_from(reader)?;
         let chunk_count = read_u32_le(reader)?;
         assert!(ULS_MAX_CHUNK_COUNT >= u32::MAX as u64);
 
         let highest_player_id = PlayerId::new(player_count);
-        let chunks = match compression_kind {
-            UlsCompressionKind::None => (0..chunk_count)
-                .map(|_| Self::read_chunk(reader, &actual_chunker, highest_player_id))
-                .collect::<Result<Vec<_>, _>>()?,
-            UlsCompressionKind::Zstd => {
-                let mut zstd_reader = zstd::Decoder::new(reader)?;
-                (0..chunk_count)
-                    .map(|_| Self::read_chunk(&mut zstd_reader, &actual_chunker, highest_player_id))
-                    .collect::<Result<Vec<_>, _>>()?
-            }
-        };
-        
+        let chunks = (0..chunk_count)
+            .map(|_| Self::read_chunk(reader, &actual_chunker, highest_player_id))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let origins: BTreeSet<_> = chunks.iter().map(|chunk| (chunk.origin_x, chunk.origin_y)).collect();
         if origins.len() != chunks.len() {
             return Err(UlsCompatibilityError::DuplicateChunks {
