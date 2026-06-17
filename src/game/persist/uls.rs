@@ -806,6 +806,35 @@ impl UlsSimulation<'_> {
             chunks,
         })
     }
+    
+    /// Reads just the player configuration. Useful if the grid is not important.
+    pub fn read_just_players_from(reader: &mut impl Read) -> std::io::Result<Vec<UlsPlayer>> {
+        let mut magic = [0u8; ULS_MAGIC_FORMAT_SIGNATURE.len()];
+        reader.read_exact(&mut magic)?;
+        if &magic != ULS_MAGIC_FORMAT_SIGNATURE {
+            return Err(UlsError::InvalidMagicFormatSignature {
+                actual: magic.to_vec().into_boxed_slice(),
+            }
+                .into());
+        }
+
+        let turn_count = read_u64_le(reader)?;
+        if turn_count > ULS_MAX_TURN_COUNT {
+            return Err(UlsError::TooManyTurns { actual: turn_count }.into());
+        }
+
+        let player_count = read_u8_le(reader)?;
+        if player_count as u64 > ULS_MAX_PLAYER_COUNT {
+            return Err(UlsError::TooManyPlayers {
+                actual: player_count as u64,
+            }
+                .into());
+        }
+
+        (0..player_count)
+            .map(|_| UlsPlayer::read_from(reader))
+            .collect::<Result<Vec<_>, _>>()
+    }
 }
 
 #[cfg(test)]

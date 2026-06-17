@@ -68,6 +68,22 @@ impl LeaperAttacks {
     pub fn attack_vectors(&self) -> &[GridVector] {
         self.attack_vectors.as_slice()
     }
+    
+    pub fn radius(&self) -> usize {
+        self.attack_vectors
+            .iter()
+            .flat_map(|v| [v.x.unsigned_abs(), v.y.unsigned_abs()].into_iter())
+            .max()
+            .unwrap_or(0) as usize
+    }
+    
+    pub fn is_symmetric(&self) -> bool {
+        // NOTE: quite a naive implementation, but should be fine.
+        let all_symmetric = Self::from_canonicals(self.attack_vectors.iter());
+        let self_set = self.attack_vectors.iter().collect::<BTreeSet<_>>();
+        let all_symmetric_set = all_symmetric.attack_vectors.iter().collect::<BTreeSet<_>>();
+        self_set == all_symmetric_set
+    }
 }
 
 impl LeaperAttacks {

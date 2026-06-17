@@ -57,6 +57,35 @@ impl LeaperAttacksInput {
         }
     }
 
+    pub fn with_radius_and_attacks(
+        radius: usize,
+        attacks: &LeaperAttacks,
+        constraints: LeaperAttacksInputConstraints,
+    ) -> Result<Self, WidgetError> {
+        if !constraints.radius.contains(&radius) {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Attack radius {} outside of allowed range {:?}",
+                radius, constraints.radius
+            )));
+        }
+
+        let wh = radius * 2 + 1;
+        let mut attack_map = Array2D::new(wh, wh);
+        for v in attacks.attack_vectors() {
+            if let Some((x, y)) = LeaperAttacksInput::attack_offset_to_index(v, radius) {
+                attack_map[(x, y)] = true;
+            }
+        }
+
+        Ok(Self {
+            attack_map,
+            is_symmetric: attacks.is_symmetric(),
+            radius,
+            constraints,
+            internal_state: InternalState::default(),
+        })
+    }
+
     pub fn set_radius(&mut self, radius: usize) -> Result<(), WidgetError> {
         if !self.constraints.radius.contains(&radius) {
             return Err(WidgetError::ConstraintViolation(format!(
@@ -400,11 +429,7 @@ impl LeaperAttacksView {
 
     pub fn new(name: Option<String>, attacks: &LeaperAttacks) -> Self {
         let attack_vectors = attacks.attack_vectors();
-        let radius = attack_vectors
-            .iter()
-            .flat_map(|v| [v.x.unsigned_abs(), v.y.unsigned_abs()].into_iter())
-            .max()
-            .unwrap_or(0) as usize;
+        let radius = attacks.radius();
         let mut attack_map = Array2D::new(radius * 2 + 1, radius * 2 + 1);
         for v in attack_vectors {
             if let Some((x, y)) = LeaperAttacksInput::attack_offset_to_index(v, radius) {

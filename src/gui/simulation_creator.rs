@@ -6,19 +6,22 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::widgets::simulation_config::{
     SimulationConfigInput, SimulationConfigInputConstraints,
 };
-use crate::gui::widgets::widget::{JsonWidget, StatefulWidget};
+use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{
     pos2, vec2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect, ScrollArea,
     Slider, Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2,
 };
 use eframe::epaint::TextureHandle;
+use std::fs::File;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
+use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::sampler::FrozenGridSampler;
-use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
+use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
@@ -173,15 +176,9 @@ impl SimulationCreator {
         }
     }
 
-    pub fn new() -> Self {
+    fn with_state(state: SimulationConfigInput) -> Self {
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
-
-        let mut state =
-            SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
-        state.set_turns_limit(DEFAULT_TURNS).unwrap();
-        state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
-        state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
 
         Self {
             state,
@@ -204,6 +201,44 @@ impl SimulationCreator {
             worker_jobs: job_sender,
             worker_results: result_receiver,
         }
+    }
+
+    pub fn new() -> Self {
+        let mut state =
+            SimulationConfigInput::new(Self::make_creation_state_constraints()).unwrap();
+        state.set_turns_limit(DEFAULT_TURNS).unwrap();
+        state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
+        state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
+
+        Self::with_state(state)
+    }
+
+    pub fn with_players(players: &[Player]) -> Result<Self, WidgetError> {
+        let mut state =
+            SimulationConfigInput::with_players(players, Self::make_creation_state_constraints())?;
+
+        state.set_turns_limit(DEFAULT_TURNS)?;
+
+        if players.is_empty() {
+            state.set_player_count(DEFAULT_PLAYER_COUNT)?;
+            state.set_attack_radius(DEFAULT_ATTACK_RADIUS)?;
+        }
+
+        Ok(Self::with_state(state))
+    }
+
+    /// Returns a `SimulationCreator` matching the player configuration for the given
+    /// ULS file, but with a completely new state.
+    pub fn new_from_uls(path: PathBuf) -> Result<Self, std::io::Error> {
+        let file = File::open(path.clone())?;
+        let mut reader = std::io::BufReader::new(file);
+        let uls_players = UlsSimulation::read_just_players_from(&mut reader)?;
+        let players: Vec<_> = uls_players.into_iter().map(Player::from).collect();
+        Self::with_players(&players).map_err(|e| {
+            std::io::Error::other(
+                format!("Simulation creator does not support this configuration: {e}"),
+            )
+        })
     }
 }
 

@@ -8,7 +8,7 @@ use eframe::egui;
 use eframe::egui::{Color32, Response, ScrollArea, Slider, Ui, Vec2b};
 use serde_json::{json, Value};
 use std::ops::RangeInclusive;
-use ulam_leapers::game::simulation::{Simulation, SimulationLimits};
+use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
 
@@ -44,6 +44,63 @@ impl SimulationConfigInput {
 
         let player_relations =
             PlayerRelationsInput::new(constraints.player_relations_input_constraints());
+
+        let simulation_limits =
+            SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
+
+        Ok(SimulationConfigInput {
+            player_count,
+            attack_radius,
+            player_configs,
+            player_relations,
+            simulation_limits,
+            constraints,
+        })
+    }
+
+    pub fn with_players(
+        players: &[Player],
+        constraints: SimulationConfigInputConstraints,
+    ) -> Result<Self, WidgetError> {
+        let attack_radius = players
+            .iter()
+            .map(|player| player.attacks().radius())
+            .max()
+            .unwrap_or(*constraints.attack_radius.start())
+            .max(*constraints.attack_radius.start());
+
+        if !constraints.attack_radius.contains(&attack_radius) {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Attack radius {} outside of allowed range {:?}",
+                attack_radius, constraints.attack_radius
+            )));
+        }
+
+        let player_count = players.len();
+
+        if !constraints.player_count.contains(&player_count) {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Player count {} outside of allowed range {:?}",
+                player_count, constraints.player_count
+            )));
+        }
+
+        let mut player_configs = players
+            .iter()
+            .map(|player| {
+                LeaperAttacksInput::with_radius_and_attacks(
+                    attack_radius,
+                    player.attacks(),
+                    constraints.leaper_attacks_input_constraints(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::assign_player_names(&mut player_configs);
+
+        let player_relations = PlayerRelationsInput::with_players(
+            players,
+            constraints.player_relations_input_constraints(),
+        )?;
 
         let simulation_limits =
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());

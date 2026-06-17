@@ -90,10 +90,26 @@ impl eframe::App for App {
             .show_inside(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.menu_button("New", |ui| {
-                        if ui.button("Creator").clicked() {
+                        if ui.button("Empty Creator").clicked() {
                             tabs_to_spawn.push(Box::new(SimulationCreator::new()));
                         }
-                        if ui.button("Explorer").clicked() {
+                        if ui.button("Creator from ULS").on_hover_text("Opens a new creator with player configuration loaded from a ULS file").clicked() {
+                            let path = rfd::FileDialog::new()
+                                .add_filter("Ulam Leapers Simulation", &["uls"])
+                                .pick_file();
+                            if let Some(path) = path {
+                                let result = SimulationCreator::new_from_uls(path);
+                                match result {
+                                    Ok(creator) => {
+                                        tabs_to_spawn.push(Box::new(creator));
+                                    }
+                                    Err(err) => {
+                                        eprintln!("Error opening creator: {}", err);
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Explorer from ULS").on_hover_text("Opens a new explorer from a ULS file").clicked() {
                             let paths = rfd::FileDialog::new()
                                 .add_filter("Ulam Leapers Simulation", &["uls"])
                                 .pick_files();

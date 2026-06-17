@@ -59,6 +59,52 @@ impl PlayerRelationsInput {
         }
     }
 
+    pub fn with_players(
+        players: &[Player],
+        constraints: PlayerRelationsInputConstraints,
+    ) -> Result<Self, WidgetError> {
+        let player_count = players.len();
+
+        if !constraints.player_count.contains(&player_count) {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Player count {} outside of allowed range {:?}",
+                player_count, constraints.player_count
+            )));
+        }
+
+        let mut enemy_map = Array2D::new(player_count, player_count);
+        for (attacker, player) in players.iter().enumerate() {
+            for attacked in 0..players.len() {
+                let pid = PlayerId::new((attacked + 1) as u8);
+                enemy_map[(attacked, attacker)] = player.enemies().is_set(pid);
+            }
+        }
+
+        let is_symmetric = Self::is_enemy_map_symmetric(&enemy_map);
+
+        Ok(Self {
+            enemy_map,
+            is_symmetric,
+            player_count,
+            internal_state: Default::default(),
+            constraints,
+        })
+    }
+
+    fn is_enemy_map_symmetric(enemy_map: &Array2D<bool>) -> bool {
+        assert_eq!(enemy_map.width(), enemy_map.height());
+
+        for i in 0..enemy_map.height() {
+            for j in 0..enemy_map.width() {
+                if enemy_map[(i, j)] != enemy_map[(j, i)] {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
     fn make_default_enemy_map(player_count: usize) -> Array2D<bool> {
         let mut enemy_map = Array2D::new(player_count, player_count);
         for y in 0..player_count {
