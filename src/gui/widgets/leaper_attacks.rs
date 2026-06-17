@@ -387,6 +387,69 @@ impl JsonWidget for LeaperAttacksInput {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LeaperAttacksView {
+    name: Option<String>,
+    attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
+}
+
+impl LeaperAttacksView {
+    pub fn with_name(name: String, attacks: &LeaperAttacks) -> Self {
+        Self::new(Some(name), attacks)
+    }
+
+    pub fn new(name: Option<String>, attacks: &LeaperAttacks) -> Self {
+        let attack_vectors = attacks.attack_vectors();
+        let radius = attack_vectors
+            .iter()
+            .flat_map(|v| [v.x.unsigned_abs(), v.y.unsigned_abs()].into_iter())
+            .max()
+            .unwrap_or(0) as usize;
+        let mut attack_map = Array2D::new(radius * 2 + 1, radius * 2 + 1);
+        for v in attack_vectors {
+            if let Some((x, y)) = LeaperAttacksInput::attack_offset_to_index(v, radius) {
+                attack_map[(x, y)] = true;
+            }
+        }
+
+        Self { name, attack_map }
+    }
+
+    fn show_attack_map(&mut self, ui: &mut Ui) {
+        let radius = self.attack_map.width() / 2;
+        ui_layout_2d(
+            ui,
+            self.attack_map.width(),
+            self.attack_map.height(),
+            |ui, x, y| {
+                let is_middle = x == radius && y == radius;
+                let checkbox_widget = Checkbox::without_text(&mut self.attack_map[(x, y)]).indeterminate(is_middle);
+                ui.add_enabled(false, checkbox_widget);
+            },
+        );
+    }
+}
+
+impl StatefulWidget for LeaperAttacksView {
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        egui::Frame::default()
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        if let Some(name) = &self.name {
+                            ui.label(format!("{} Attacks", name));
+                        } else {
+                            ui.label("Attacks");
+                        }
+                    });
+
+                    self.show_attack_map(ui);
+                });
+            })
+            .response
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

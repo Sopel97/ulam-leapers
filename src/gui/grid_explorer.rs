@@ -25,6 +25,8 @@ use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
+use crate::gui::widgets::widget::StatefulWidget;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -85,6 +87,16 @@ impl Subwindow for GridExplorer {
                 .constrain_to(ui.available_rect_before_wrap())
                 .show(ui, |ui| {
                     self.show_controls_window_ui(ui);
+                });
+
+            egui::Window::new("Players")
+                .scroll(true)
+                .resizable(true)
+                .constrain_to(ui.available_rect_before_wrap())
+                .anchor(Align2::LEFT_TOP, vec2(0.0, 0.0))
+                .default_open(false)
+                .show(ui, |ui| {
+                    self.show_players_ui(ui);
                 });
 
             if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
@@ -578,5 +590,18 @@ impl GridExplorer {
             Chunked [big]TIFF support for large images, separately configurable, is a future feature.");
 
         self.show_screenshots_ui(ui);
+    }
+
+    pub fn make_player_name(index: usize) -> String {
+        format!("P{}", index + 1)
+    }
+
+    fn show_players_ui(&mut self, ui: &mut Ui) {
+        let players = self.finalized_simulation.players();
+        for (i, player) in players.iter().enumerate() {
+            let name = Self::make_player_name(i);
+            let mut widget = LeaperAttacksView::with_name(name, player.attacks());
+            widget.ui(ui);
+        }
     }
 }
