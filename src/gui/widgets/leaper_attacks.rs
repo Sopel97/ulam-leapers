@@ -423,7 +423,8 @@ impl LeaperAttacksView {
             self.attack_map.height(),
             |ui, x, y| {
                 let is_middle = x == radius && y == radius;
-                let checkbox_widget = Checkbox::without_text(&mut self.attack_map[(x, y)]).indeterminate(is_middle);
+                let checkbox_widget =
+                    Checkbox::without_text(&mut self.attack_map[(x, y)]).indeterminate(is_middle);
                 ui.add_enabled(false, checkbox_widget);
             },
         );

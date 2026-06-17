@@ -6,9 +6,13 @@ use std::cmp;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::game::simulation::PlayerId;
+use ulam_leapers::game::simulation::{Player, PlayerId};
 use ulam_leapers::util::blit::{blit_array2d, Blit2D};
 use ulam_leapers::util::json::SerdeJsonValueExt;
+
+const ENEMY_MAP_HELP_TEXT: &str = "Specifies which player can and cannot be placed\n\
+                                    on a square attacked by a different player.\n\
+                                    Player *column* fears player *row*.";
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct PlayerRelationsInputConstraints {
@@ -192,18 +196,18 @@ impl PlayerRelationsInput {
 impl StatefulWidget for PlayerRelationsInput {
     fn ui(&mut self, ui: &mut Ui) -> Response {
         ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label("Enemies ❓").on_hover_text(
-                    "Specifies which player can and cannot be placed\n\
-                                    on a square attacked by a different player.\n\
-                                    Player *column* fears player *row*.",
-                );
-                if ui.checkbox(&mut self.is_symmetric, "Symmetric").changed() && self.is_symmetric {
-                    self.apply_enabled_symmetrically();
-                }
-            });
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Enemies ❓").on_hover_text(ENEMY_MAP_HELP_TEXT);
+                    if ui.checkbox(&mut self.is_symmetric, "Symmetric").changed()
+                        && self.is_symmetric
+                    {
+                        self.apply_enabled_symmetrically();
+                    }
+                });
 
-            self.show_enemy_map(ui);
+                self.show_enemy_map(ui);
+            });
         })
         .response
     }
@@ -271,6 +275,52 @@ impl JsonWidget for PlayerRelationsInput {
             internal_state: Default::default(),
             constraints,
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerRelationsView {
+    enemy_map: Array2D<bool>,
+}
+
+impl PlayerRelationsView {
+    pub fn new(players: &[Player]) -> Self {
+        let player_count = players.len();
+        let mut enemy_map = Array2D::new(player_count, player_count);
+        for (attacker, player) in players.iter().enumerate() {
+            let enemies_mask = player.enemies();
+            for attacked in 0..player_count {
+                enemy_map[(attacker, attacked)] =
+                    enemies_mask.is_set(PlayerId::new((attacked + 1) as u8));
+            }
+        }
+
+        Self { enemy_map }
+    }
+
+    pub fn show_enemy_map(&mut self, ui: &mut Ui) {
+        ui_layout_2d(
+            ui,
+            self.enemy_map.width(),
+            self.enemy_map.height(),
+            |ui, x, y| {
+                let checkbox_widget = Checkbox::new(&mut self.enemy_map[(x, y)], "");
+                ui.add_enabled(false, checkbox_widget);
+            },
+        );
+    }
+}
+
+impl StatefulWidget for PlayerRelationsView {
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label("Enemies ❓").on_hover_text(ENEMY_MAP_HELP_TEXT);
+
+                self.show_enemy_map(ui);
+            })
+        })
+        .response
     }
 }
 

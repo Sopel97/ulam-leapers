@@ -6,7 +6,10 @@ use crate::gui::grid_render::render::{
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
+use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
+use crate::gui::widgets::player_relations::PlayerRelationsView;
+use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
 use eframe::egui::{
     vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
@@ -25,8 +28,6 @@ use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
-use crate::gui::widgets::widget::StatefulWidget;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -593,15 +594,25 @@ impl GridExplorer {
     }
 
     pub fn make_player_name(index: usize) -> String {
-        format!("P{}", index + 1)
+        format!("Player {}", index + 1)
     }
 
     fn show_players_ui(&mut self, ui: &mut Ui) {
         let players = self.finalized_simulation.players();
-        for (i, player) in players.iter().enumerate() {
-            let name = Self::make_player_name(i);
-            let mut widget = LeaperAttacksView::with_name(name, player.attacks());
-            widget.ui(ui);
-        }
+
+        ui.horizontal_top(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    for (i, player) in players.iter().enumerate() {
+                        let name = Self::make_player_name(i);
+                        let mut widget = LeaperAttacksView::with_name(name, player.attacks());
+                        widget.ui(ui);
+                    }
+                });
+            });
+
+            let mut relations_widget = PlayerRelationsView::new(players);
+            relations_widget.ui(ui);
+        });
     }
 }
