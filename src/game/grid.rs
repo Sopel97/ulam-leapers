@@ -109,6 +109,11 @@ impl<T: Default + Clone + Copy + Send + Sync> Grid<T> {
         CallbackF: Fn(usize, usize) + Send + Sync,
     {
         let to_unfreeze = extract_fn(&mut self.frozen_chunks);
+
+        for (_, chunk) in &to_unfreeze {
+            self.frozen_chunks_memory_usage -= chunk.memory_usage();
+        }
+
         let to_unfreeze_count = to_unfreeze.len();
         let unfrozen_counter = Arc::new(AtomicUsize::new(0));
 
@@ -127,10 +132,7 @@ impl<T: Default + Clone + Copy + Send + Sync> Grid<T> {
 
         // Collecting to a vector is not great but should be fine. Other ways of converting
         // parallel processing to sequential are annoying.
-        for (origin, chunk) in unfrozen {
-            self.frozen_chunks_memory_usage -= chunk.memory_usage();
-            self.active_chunks.insert(origin, chunk);
-        }
+        self.active_chunks.extend(unfrozen);
 
         count
     }
