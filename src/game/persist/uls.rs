@@ -16,8 +16,7 @@ use std::fmt::{Display, Formatter};
 use std::io::{ErrorKind, Read, Write};
 
 // Constraints for the ULS (Ulam Leapers Simulation) persistence format.
-pub const ULS_MIN_CHUNK_ALIGNMENT: u64 = 64;
-pub const ULS_MAX_CHUNK_SIZE: u64 = 4096 * 4096;
+pub const ULS_MIN_CHUNK_EXTENT: u64 = 64;
 pub const ULS_MAX_CHUNK_EXTENT: u64 = 8192;
 
 pub const ULS_MAX_ATTACK_VECTOR_COUNT: u64 = u8::MAX as u64;
@@ -25,7 +24,7 @@ pub const ULS_MAX_ATTACK_VECTOR_COORD: u64 = i8::MAX as u64;
 
 pub const ULS_MAX_CHUNK_COUNT: u64 = u32::MAX as u64;
 pub const ULS_MAX_CHUNK_ORIGIN_COORD: u64 = 1 << 30;
-pub const ULS_MAX_CHUNK_BLOB_SIZE: u64 = ULS_MAX_CHUNK_SIZE * 2;
+pub const ULS_MAX_CHUNK_BLOB_SIZE: u64 = ULS_MAX_CHUNK_EXTENT * ULS_MAX_CHUNK_EXTENT * 2;
 
 pub const ULS_MAX_PLAYER_COUNT: u64 = (u64::BITS - 1) as u64;
 
@@ -84,14 +83,7 @@ pub struct UlsSimulation<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum UlsError {
-    ChunkerChunkAlignmentTooLow {
-        actual: u64,
-    },
-    ChunkerChunkSizeTooHigh {
-        actual_strip_length: u64,
-        actual_strip_thickness: u64,
-    },
-    ChunkerChunkExtentTooHigh {
+    ChunkerChunkExtentOutOfRange {
         actual_strip_length: u64,
         actual_strip_thickness: u64,
     },
@@ -160,29 +152,13 @@ pub enum UlsError {
 impl Display for UlsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            UlsError::ChunkerChunkAlignmentTooLow { actual } => {
-                write!(
-                    f,
-                    "Chunk alignment too low: {actual} < {ULS_MIN_CHUNK_ALIGNMENT}"
-                )
-            }
-            UlsError::ChunkerChunkSizeTooHigh {
-                actual_strip_length,
-                actual_strip_thickness,
-            } => {
-                let size = actual_strip_length * actual_strip_thickness;
-                write!(
-                    f,
-                    "Chunk size too high: {actual_strip_length}*{actual_strip_thickness}={size} > {ULS_MAX_CHUNK_SIZE}"
-                )
-            }
-            UlsError::ChunkerChunkExtentTooHigh {
+            UlsError::ChunkerChunkExtentOutOfRange {
                 actual_strip_length,
                 actual_strip_thickness,
             } => {
                 write!(
                     f,
-                    "Chunk extent too high: ({actual_strip_length}, {actual_strip_thickness}) > ({ULS_MAX_CHUNK_EXTENT}, {ULS_MAX_CHUNK_EXTENT})"
+                    "Chunk extent out of range: ({actual_strip_length}, {actual_strip_thickness}) not in ({ULS_MIN_CHUNK_EXTENT}..={ULS_MAX_CHUNK_EXTENT}, {ULS_MIN_CHUNK_EXTENT}..={ULS_MAX_CHUNK_EXTENT})"
                 )
             }
             UlsError::ChunkerChunkExtentNotPow2 {
@@ -373,30 +349,13 @@ impl TryFrom<&StripChunker> for UlsChunker {
             chunk_strip_thickness <= chunk_strip_length,
             "This is an invariant of the chunker but important enough to check."
         );
-        let chunk_size = chunker.chunk_size();
 
-        if chunk_strip_length.as_u64() < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsError::ChunkerChunkAlignmentTooLow {
-                actual: chunk_strip_length.as_u64(),
-            });
-        }
-        if chunk_strip_thickness.as_u64() < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsError::ChunkerChunkAlignmentTooLow {
-                actual: chunk_strip_thickness.as_u64(),
-            });
-        }
-
-        if chunk_strip_length.as_u64() > ULS_MAX_CHUNK_EXTENT
+        if chunk_strip_length.as_u64() < ULS_MIN_CHUNK_EXTENT
+            || chunk_strip_thickness.as_u64() < ULS_MIN_CHUNK_EXTENT
+            || chunk_strip_length.as_u64() > ULS_MAX_CHUNK_EXTENT
             || chunk_strip_thickness.as_u64() > ULS_MAX_CHUNK_EXTENT
         {
-            return Err(UlsError::ChunkerChunkExtentTooHigh {
-                actual_strip_length: chunk_strip_length.as_u64(),
-                actual_strip_thickness: chunk_strip_thickness.as_u64(),
-            });
-        }
-
-        if chunk_size.as_u64() > ULS_MAX_CHUNK_SIZE {
-            return Err(UlsError::ChunkerChunkSizeTooHigh {
+            return Err(UlsError::ChunkerChunkExtentOutOfRange {
                 actual_strip_length: chunk_strip_length.as_u64(),
                 actual_strip_thickness: chunk_strip_thickness.as_u64(),
             });
@@ -579,32 +538,12 @@ impl UlsChunker {
             .into());
         }
 
-        if (strip_length as u64) < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsError::ChunkerChunkAlignmentTooLow {
-                actual: strip_length as u64,
-            }
-            .into());
-        }
-        if (strip_thickness as u64) < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsError::ChunkerChunkAlignmentTooLow {
-                actual: strip_thickness as u64,
-            }
-            .into());
-        }
-
-        if (strip_length as u64) > ULS_MAX_CHUNK_EXTENT
+        if (strip_length as u64) < ULS_MIN_CHUNK_EXTENT
+            || (strip_thickness as u64) < ULS_MIN_CHUNK_EXTENT
+            || (strip_length as u64) > ULS_MAX_CHUNK_EXTENT
             || (strip_thickness as u64) > ULS_MAX_CHUNK_EXTENT
         {
-            return Err(UlsError::ChunkerChunkExtentTooHigh {
-                actual_strip_length: strip_length as u64,
-                actual_strip_thickness: strip_thickness as u64,
-            }
-            .into());
-        }
-
-        let chunk_size = strip_length as u64 * strip_thickness as u64;
-        if chunk_size > ULS_MAX_CHUNK_SIZE {
-            return Err(UlsError::ChunkerChunkSizeTooHigh {
+            return Err(UlsError::ChunkerChunkExtentOutOfRange {
                 actual_strip_length: strip_length as u64,
                 actual_strip_thickness: strip_thickness as u64,
             }
