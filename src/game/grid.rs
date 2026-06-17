@@ -70,10 +70,10 @@ impl<T: Default + Send + Sync> Grid<T> {
     pub fn freeze_all(&mut self, compression: &AnyCompression) -> usize {
         self.freeze_chunks(|active_chunks| std::mem::take(active_chunks).into_iter().collect(), compression)
     }
-    
+
     pub fn to_frozen_grid(mut self, compression: &AnyCompression) -> FrozenGrid<T> {
         self.freeze_all(compression);
-        
+
         FrozenGrid {
             frozen_chunks: self.frozen_chunks,
             memory_usage: self.frozen_chunks_memory_usage,
@@ -265,6 +265,17 @@ impl<T> FrozenGrid<T> {
     }
 }
 
+impl<T> FrozenGrid<T> {
+    pub fn to_grid(self) -> Grid<T> {
+        Grid {
+            frozen_chunks: self.frozen_chunks,
+            frozen_chunks_memory_usage: self.memory_usage,
+            chunker: self.chunker,
+            active_chunks: BTreeMap::new(),
+        }
+    }
+}
+
 impl FrozenGrid<PlayerId> {
     pub fn from_uls(uls_chunker: UlsChunker, uls_chunks: Vec<UlsChunk>) -> Self {
         let chunker = StripChunker::from(uls_chunker);
@@ -307,7 +318,7 @@ mod tests {
     fn make_bounds(origin_x: i32, origin_y: i32, width: u32, height: u32) -> GridRect {
         GridRect::with_size(point(origin_x, origin_y), width as i32, height as i32)
     }
-    
+
     fn make_compression() -> AnyCompression {
         ZstdCompression::new_with_level(1).into()
     }
