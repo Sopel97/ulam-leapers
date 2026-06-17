@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Simulation, SimulationLimits};
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::simulation_resumer::SimulationResumer;
 use crate::gui::simulation_runner::SimulationRunner;
 
 #[derive(Default)]
@@ -119,28 +120,13 @@ impl eframe::App for App {
                                 .add_filter("Ulam Leapers Simulation", &["uls"])
                                 .pick_file();
                             if let Some(path) = path {
-                                match File::open(path.clone()) {
-                                    Ok(file) => {
-                                        let mut reader = std::io::BufReader::new(file);
-                                        let uls_sim = UlsSimulation::read_from(&mut reader);
-                                        match uls_sim {
-                                            Ok(uls_sim) => {
-                                                let fin_sim = FinalizedSimulation::from(uls_sim);
-                                                let sim = Simulation::from(fin_sim);
-                                                let limits = SimulationLimits::new()
-                                                    .with_memory_limit(MemSize::gib(64))
-                                                    .with_turn_limit(1 << 40)
-                                                    .with_complete_shell_limit(1 << 30);
-                                                let result = SimulationRunner::new(sim, limits);
-                                                tabs_to_spawn.push(Box::new(result));
-                                            }
-                                            Err(err) => {
-                                                eprintln!("Error opening simulation: {}", err);
-                                            }
-                                        }
-                                    },
+                                let result = SimulationResumer::load_from_file(path);
+                                match result {
+                                    Ok(resumer) => {
+                                        tabs_to_spawn.push(Box::new(resumer));
+                                    }
                                     Err(err) => {
-                                        eprintln!("Error opening simulation: {}", err);
+                                        eprintln!("Error opening resumer: {}", err);
                                     }
                                 }
                             }
