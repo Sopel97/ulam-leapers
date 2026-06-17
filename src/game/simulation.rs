@@ -780,12 +780,28 @@ impl From<Simulation> for FinalizedSimulation {
     }
 }
 
-impl From<FinalizedSimulation> for Simulation {
-    fn from(finalized: FinalizedSimulation) -> Self {
-        let complete_shells = finalized.complete_shells();
-        let mut forbiddances = SlidingWindow::with_origin(finalized.nearest_player_spiral_position().as_u64() as isize);
+#[derive(Debug, Copy, Clone)]
+pub enum FinalizedSimulationToSimulationProgress {
+    UnfreezingChunks(usize, usize),
+    RecomputingForbiddances(usize, usize),
+}
 
-        let FinalizedSimulation { players, grid, simulated_turns } = finalized;
+impl Default for FinalizedSimulationToSimulationProgress {
+    fn default() -> Self {
+        Self::UnfreezingChunks(0, 0)
+    }
+}
+
+impl FinalizedSimulation {
+    /// Converts the finalized simulation back into a simulation that can be resumed.
+    pub fn to_simulation<F>(self, progress_callback: F) -> Simulation
+    where
+        F: Fn(FinalizedSimulationToSimulationProgress) + Send + Sync
+    {
+        let complete_shells = self.complete_shells();
+        let mut forbiddances = SlidingWindow::with_origin(self.nearest_player_spiral_position().as_u64() as isize);
+
+        let FinalizedSimulation { players, grid, simulated_turns } = self;
 
         let attack_radius = players.iter().map(|p| p.attacks().radius()).max().unwrap_or(0);
         let region_that_can_remain_frozen = {
@@ -808,10 +824,14 @@ impl From<FinalizedSimulation> for Simulation {
             Ok(value) => value,
             Err(_) => panic!("Arc had multiple owners"),
         });
-        grid.unfreeze_chunks_not_in_region(&region_that_can_remain_frozen);
+        grid.unfreeze_chunks_not_in_region(&region_that_can_remain_frozen, |i, total| {
+            progress_callback(FinalizedSimulationToSimulationProgress::UnfreezingChunks(i, total));
+        });
 
         let empty_cell = PlayerId::new(0);
-        for active_chunk in grid.active_chunks().values() {
+        let active_chunks = grid.active_chunks();
+        let active_chunk_count = active_chunks.len();
+        for (i, active_chunk) in active_chunks.values().enumerate() {
             // This can be implemented more efficiently if we compute which shells
             // we need exactly, and then iterate 4 intersections.
             active_chunk.for_each_cell(|attack_src, pid| {
@@ -834,14 +854,16 @@ impl From<FinalizedSimulation> for Simulation {
                     }
                 }
             });
+
+            progress_callback(FinalizedSimulationToSimulationProgress::RecomputingForbiddances(i, active_chunk_count));
         }
 
-        Self {
+        Simulation {
             players,
             grid: Some(grid),
             simulated_turns,
             forbiddances,
-            compression: Self::make_default_compression(),
+            compression: Simulation::make_default_compression(),
         }
     }
 }

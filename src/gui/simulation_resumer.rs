@@ -1,6 +1,7 @@
 ﻿use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::util::ContextOrUi;
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
@@ -9,12 +10,13 @@ use eframe::egui;
 use eframe::egui::{Context, ScrollArea, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use ulam_leapers::game::persist::uls::UlsSimulation;
-use ulam_leapers::game::simulation::{FinalizedSimulation, Game, Simulation};
+use ulam_leapers::game::simulation::{
+    FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, Simulation,
+};
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::util::ContextOrUi;
 
 const MIN_TURNS: u64 = 1_000_000;
 const MAX_TURNS: u64 = 1_000_000 * 1_000_000;
@@ -25,7 +27,10 @@ const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 
 enum SimulationResumerWorkerJob {
     Stop,
-    ConvertToSimulation(FinalizedSimulation),
+    ConvertToSimulation(
+        FinalizedSimulation,
+        Arc<Mutex<FinalizedSimulationToSimulationProgress>>,
+    ),
 }
 
 enum SimulationResumerWorkerResult {
@@ -45,8 +50,13 @@ impl SimulationResumerWorker {
                 SimulationResumerWorkerJob::Stop => {
                     break;
                 }
-                SimulationResumerWorkerJob::ConvertToSimulation(finalized_simulation) => {
-                    let simulation = Simulation::from(finalized_simulation);
+                SimulationResumerWorkerJob::ConvertToSimulation(
+                    finalized_simulation,
+                    progress_slot,
+                ) => {
+                    let simulation = finalized_simulation.to_simulation(|progress| {
+                        *progress_slot.lock().unwrap() = progress;
+                    });
                     self.result_sender
                         .send(SimulationResumerWorkerResult::ConvertedSimulation(
                             simulation,
@@ -61,7 +71,7 @@ impl SimulationResumerWorker {
 enum State {
     ResolvingStateChange,
     FinalizedSimulation(FinalizedSimulation),
-    Converting,
+    Converting(Arc<Mutex<FinalizedSimulationToSimulationProgress>>),
     Simulation(Simulation),
 }
 
@@ -69,7 +79,7 @@ pub struct SimulationResumer {
     state: State,
 
     simulation_limits_input: SimulationLimitsInput,
-    
+
     submit_to_runner: bool,
 
     worker: Option<JoinHandle<()>>,
@@ -126,7 +136,7 @@ impl SimulationResumer {
             state: State::FinalizedSimulation(fin_sim),
 
             simulation_limits_input,
-            
+
             submit_to_runner: false,
 
             worker: Some(std::thread::spawn(move || {
@@ -149,9 +159,11 @@ impl Subwindow for SimulationResumer {
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         self.handle_state_changes(ContextOrUi::Ui(ui));
-        
+
         if self.submit_to_runner {
-            if let State::Simulation(sim) = std::mem::replace(&mut self.state, State::ResolvingStateChange) {
+            if let State::Simulation(sim) =
+                std::mem::replace(&mut self.state, State::ResolvingStateChange)
+            {
                 let limits = self.simulation_limits_input.build_limits();
                 let runner = SimulationRunner::new(sim, limits);
                 Replace(Box::new(runner))
@@ -165,7 +177,7 @@ impl Subwindow for SimulationResumer {
 
     fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
         self.handle_state_changes(ContextOrUi::Context(ctx));
-        
+
         Keep(self)
     }
 }
@@ -187,22 +199,30 @@ impl SimulationResumer {
                     match self.show_finalized_simulation_ui(ui, &fin_sim) {
                         FinalizedSimulationUiAction::None => State::FinalizedSimulation(fin_sim),
                         FinalizedSimulationUiAction::Submit => {
+                            let progress = Arc::new(Mutex::new(
+                                FinalizedSimulationToSimulationProgress::default(),
+                            ));
                             self.worker_jobs
-                                .send(SimulationResumerWorkerJob::ConvertToSimulation(fin_sim))
+                                .send(SimulationResumerWorkerJob::ConvertToSimulation(
+                                    fin_sim,
+                                    progress.clone(),
+                                ))
                                 .unwrap();
-                            State::Converting
+                            State::Converting(progress)
                         }
                     }
                 } else {
                     State::FinalizedSimulation(fin_sim)
                 }
             }
-            State::Converting => {
+            State::Converting(progress) => {
                 if let Some(ui) = ctxui.ui() {
-                    self.show_converting_ui(ui);
+                    self.show_converting_ui(ui, &progress);
+                    // We want regular updates.
+                    ui.ctx().request_repaint();
                 }
-                State::Converting
-            },
+                State::Converting(progress)
+            }
             State::Simulation(sim) => {
                 self.submit_to_runner = true;
                 State::Simulation(sim)
@@ -212,11 +232,32 @@ impl SimulationResumer {
             }
         };
     }
-    
-    fn show_converting_ui(&mut self, ui: &mut Ui) {
+
+    fn show_converting_ui(
+        &mut self,
+        ui: &mut Ui,
+        progress: &Arc<Mutex<FinalizedSimulationToSimulationProgress>>,
+    ) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::Frame::default().show(ui, |ui| {
-                ui.label("Preparing simulation...")
+                ui.vertical(|ui| {
+                    ui.label("Preparing simulation...");
+                    let progress_copy = *progress.lock().unwrap();
+                    match progress_copy {
+                        FinalizedSimulationToSimulationProgress::UnfreezingChunks(i, total) => {
+                            ui.label(format!("Unfreezing chunks: {i} / {total}"));
+                        }
+                        FinalizedSimulationToSimulationProgress::RecomputingForbiddances(
+                            i,
+                            total,
+                        ) => {
+                            ui.label("Finished unfreezing chunks.");
+                            ui.label(format!(
+                                "Recomputing forbiddances for chunks: {i} / {total}"
+                            ));
+                        }
+                    }
+                });
             });
         });
     }

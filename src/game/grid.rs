@@ -1,4 +1,4 @@
-﻿use std::collections::btree_map::OccupiedEntry;
+﻿use crate::compression::zstd::ZstdCompression;
 use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
 use crate::game::chunker::{Chunker, StripChunker};
@@ -11,7 +11,8 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::ops::{Index, IndexMut};
-use crate::compression::zstd::ZstdCompression;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send + Sync>,
@@ -49,26 +50,39 @@ impl<T: Default + Send + Sync> Grid<T> {
 
     /// Freezes at most `n` chunks in the given `region`.
     /// Returns the number of chunks frozen.
-    pub fn freeze_at_most_n_chunks_in_region(&mut self, region: &GridRect, n: usize, compression: &AnyCompression) -> usize {
+    pub fn freeze_at_most_n_chunks_in_region(
+        &mut self,
+        region: &GridRect,
+        n: usize,
+        compression: &AnyCompression,
+    ) -> usize {
         // No better way than O(n) scan I'm afraid, but it should be fine in most uses.
-        self.freeze_chunks(|active_chunks| {
-            active_chunks
-                .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
-                .take(n)
-                .collect::<Vec<_>>()
-        },
-        compression,
+        self.freeze_chunks(
+            |active_chunks| {
+                active_chunks
+                    .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
+                    .take(n)
+                    .collect::<Vec<_>>()
+            },
+            compression,
         )
     }
 
     /// Returns the number of chunks frozen.
-    pub fn freeze_chunks_in_region(&mut self, region: &GridRect, compression: &AnyCompression) -> usize {
+    pub fn freeze_chunks_in_region(
+        &mut self,
+        region: &GridRect,
+        compression: &AnyCompression,
+    ) -> usize {
         self.freeze_at_most_n_chunks_in_region(region, usize::MAX, compression)
     }
 
     /// Returns the number of chunks frozen.
     pub fn freeze_all(&mut self, compression: &AnyCompression) -> usize {
-        self.freeze_chunks(|active_chunks| std::mem::take(active_chunks).into_iter().collect(), compression)
+        self.freeze_chunks(
+            |active_chunks| std::mem::take(active_chunks).into_iter().collect(),
+            compression,
+        )
     }
 
     pub fn to_frozen_grid(mut self, compression: &AnyCompression) -> FrozenGrid<T> {
@@ -83,20 +97,30 @@ impl<T: Default + Send + Sync> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy + Send + Sync> Grid<T> {
-    fn unfreeze_chunks<F>(&mut self, extract_fn: F) -> usize
+    fn unfreeze_chunks<ExtractF, CallbackF>(
+        &mut self,
+        extract_fn: ExtractF,
+        progress_callback: CallbackF,
+    ) -> usize
     where
-        F: FnOnce(
+        ExtractF: FnOnce(
             &mut BTreeMap<ChunkOrigin, CompressedChunk<T>>,
         ) -> Vec<(ChunkOrigin, CompressedChunk<T>)>,
+        CallbackF: Fn(usize, usize) + Send + Sync,
     {
         let to_unfreeze = extract_fn(&mut self.frozen_chunks);
+        let to_unfreeze_count = to_unfreeze.len();
+        let unfrozen_counter = Arc::new(AtomicUsize::new(0));
 
         let unfrozen = to_unfreeze
             .into_par_iter()
             .map(|entry| {
                 let origin = entry.0;
                 let chunk = entry.1;
-                (origin, chunk.decompress())
+                let res = (origin, chunk.decompress());
+                let i = unfrozen_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                progress_callback(i, to_unfreeze_count);
+                res
             })
             .collect::<Vec<_>>();
         let count = unfrozen.len();
@@ -111,12 +135,22 @@ impl<T: Default + Clone + Copy + Send + Sync> Grid<T> {
         count
     }
 
-    pub fn unfreeze_chunks_not_in_region(&mut self, region: &GridRect) -> usize {
-        self.unfreeze_chunks(|frozen_chunks| {
-            frozen_chunks
-                .extract_if(.., |_origin, chunk| !region.contains(chunk.bounds()))
-                .collect::<Vec<_>>()
-        })
+    pub fn unfreeze_chunks_not_in_region<F>(
+        &mut self,
+        region: &GridRect,
+        progress_callback: F,
+    ) -> usize
+    where
+        F: Fn(usize, usize) + Send + Sync,
+    {
+        self.unfreeze_chunks(
+            |frozen_chunks| {
+                frozen_chunks
+                    .extract_if(.., |_origin, chunk| !region.contains(chunk.bounds()))
+                    .collect::<Vec<_>>()
+            },
+            progress_callback,
+        )
     }
 }
 
@@ -138,7 +172,7 @@ impl<T> Grid<T> {
     pub fn chunker(&self) -> &dyn Chunker {
         self.chunker.as_ref()
     }
-    
+
     pub fn active_chunks(&self) -> &BTreeMap<ChunkOrigin, Chunk<T>> {
         &self.active_chunks
     }
@@ -328,9 +362,7 @@ mod tests {
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
-        Grid::new(
-            Box::new(SquareChunker::new(chunk_size)),
-        )
+        Grid::new(Box::new(SquareChunker::new(chunk_size)))
     }
 
     #[test]
@@ -425,7 +457,10 @@ mod tests {
         grid[point(0, 0)] = 123;
         grid[point(-64 + 5, 0)] = 123;
 
-        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70), &make_compression());
+        grid.freeze_chunks_in_region(
+            &GridRect::with_size(GridPoint::new(-4, -4), 70, 70),
+            &make_compression(),
+        );
 
         assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
         assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-64 + 5, 0)));
@@ -437,7 +472,10 @@ mod tests {
 
         grid[point(0, 0)] = 123;
 
-        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810), &make_compression());
+        grid.freeze_chunks_in_region(
+            &GridRect::with_size(GridPoint::new(-400, -400), 810, 810),
+            &make_compression(),
+        );
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;
