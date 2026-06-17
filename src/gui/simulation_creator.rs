@@ -21,7 +21,7 @@ use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::sampler::FrozenGridSampler;
-use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
+use ulam_leapers::game::simulation::{FinalizedSimulation, Player, Simulation, SimulationLimits};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
@@ -120,7 +120,7 @@ impl SimulationCreatorWorker {
 
         let limits = SimulationLimits::new().with_complete_shell_limit(shells);
         let _ = simulation.simulate(limits);
-        let finalized = simulation.finalize();
+        let finalized = FinalizedSimulation::from(simulation);
         let frozen_grid = finalized.grid();
         let max_id = finalized.highest_player_id();
 

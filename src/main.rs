@@ -44,7 +44,7 @@ fn main() {
                 .with_memory_limit(MemSize::gb(32)),
         );
         let end_memory_usage = sim.memory_usage();
-        let finalized_sim = sim.finalize();
+        let finalized_sim = FinalizedSimulation::from(sim);
         let elapsed = start.elapsed();
 
         let simulated_turns = finalized_sim.complete_turns();

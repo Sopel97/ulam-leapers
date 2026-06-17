@@ -201,7 +201,7 @@ impl SimulationRunnerWorker {
     fn finalize(&self, simulation: Simulation, ctx: Context) {
         self.result_sender
             .send(SimulationRunnerWorkerResult::Finalized(
-                simulation.finalize(),
+                FinalizedSimulation::from(simulation),
             ))
             .unwrap();
         ctx.request_repaint();

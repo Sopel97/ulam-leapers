@@ -747,20 +747,21 @@ impl Simulation {
 
         Ok(hit_limit.unwrap_or(SimulationLimit::Turns))
     }
-
-    // Freezes all chunks, deallocates simulation buffers, prohibits further simulation.
-    pub fn finalize(self) -> FinalizedSimulation {
-        FinalizedSimulation {
-            players: self.players,
-            grid: Arc::new(self.grid.unwrap().into()),
-            simulated_turns: self.simulated_turns,
-        }
-    }
 }
 
 impl Default for Simulation {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Simulation> for FinalizedSimulation {
+    fn from(simulation: Simulation) -> Self {
+        Self {
+            players: simulation.players,
+            grid: Arc::new(simulation.grid.unwrap().into()),
+            simulated_turns: simulation.simulated_turns,
+        }
     }
 }
 

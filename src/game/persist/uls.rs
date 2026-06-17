@@ -856,7 +856,7 @@ mod tests {
     #[test]
     fn uls_simulation_from_empty_simulation() {
         let sim = Simulation::with_chunker(make_chunker());
-        let fin_sim = sim.finalize();
+        let fin_sim = FinalizedSimulation::from(sim);
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
         assert_eq!(uls_sim.turn_count, 0);
@@ -877,7 +877,7 @@ mod tests {
         let _p2 = sim.add_player(LeaperAttacks::from_offsets(
             [GridVector::new(1, 2)].into_iter().collect(),
         ));
-        let fin_sim = sim.finalize();
+        let fin_sim = FinalizedSimulation::from(sim);
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
         assert_eq!(uls_sim.turn_count, 0);
@@ -916,7 +916,7 @@ mod tests {
         sim.add_all_pairwise_player_enemies();
         sim.simulate(SimulationLimits::new().with_turn_limit(5))
             .unwrap();
-        let fin_sim = sim.finalize();
+        let fin_sim = FinalizedSimulation::from(sim);
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
         //    2  2  1  1
@@ -940,7 +940,7 @@ mod tests {
         sim.add_all_pairwise_player_enemies();
         sim.simulate(SimulationLimits::new().with_turn_limit(5))
             .unwrap();
-        let fin_sim = sim.finalize();
+        let fin_sim = FinalizedSimulation::from(sim);
         let uls_sim = UlsSimulation::try_from(&fin_sim).unwrap();
 
         let mut out_vec = vec![];
