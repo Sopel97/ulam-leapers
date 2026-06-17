@@ -7,7 +7,7 @@ use crate::game::persist::uls::{UlsPlayer, UlsSimulation};
 use crate::game::piece::LeaperAttacks;
 use crate::math::coords::GridPoint;
 use crate::math::pow2::Pow2;
-use crate::math::rect::GridRect;
+use crate::math::rect::{GridRect, Rect2D};
 use crate::math::ulam::{UlamSpiralCursor, UlamSpiralPoint};
 use crate::util::memory::MemSize;
 use std::cmp::{max, min};
@@ -175,7 +175,7 @@ pub trait Game {
             .iter()
             .map(|p| p.cursor.grid_position().chebyshev_distance_to_origin())
             .min()
-            .unwrap() as u64
+            .unwrap_or(0) as u64
     }
 
     fn farthest_player_spiral_position(&self) -> UlamSpiralPoint {
@@ -183,7 +183,15 @@ pub trait Game {
             .iter()
             .map(|p| p.cursor.spiral_position())
             .max()
-            .unwrap()
+            .unwrap_or(UlamSpiralPoint::new(0))
+    }
+
+    fn nearest_player_spiral_position(&self) -> UlamSpiralPoint {
+        self.players()
+            .iter()
+            .map(|p| p.cursor.spiral_position())
+            .min()
+            .unwrap_or(UlamSpiralPoint::new(0))
     }
 
     fn player_count(&self) -> usize {
@@ -768,6 +776,72 @@ impl From<Simulation> for FinalizedSimulation {
             players: simulation.players,
             grid: Arc::new(simulation.grid.unwrap().to_frozen_grid(&simulation.compression)),
             simulated_turns: simulation.simulated_turns,
+        }
+    }
+}
+
+impl From<FinalizedSimulation> for Simulation {
+    fn from(finalized: FinalizedSimulation) -> Self {
+        let complete_shells = finalized.complete_shells();
+        let mut forbiddances = SlidingWindow::with_origin(finalized.nearest_player_spiral_position().as_u64() as isize);
+
+        let FinalizedSimulation { players, grid, simulated_turns } = finalized;
+
+        let attack_radius = players.iter().map(|p| p.attacks().radius()).max().unwrap_or(0);
+        let region_that_can_remain_frozen = {
+            // we need the grid region past modification shrunk by attack radius,
+            // because we need to collect attacks that can still influence new placements
+            let safe_shells = complete_shells as i32 - attack_radius as i32;
+            if safe_shells > 0 {
+                let min_point = GridPoint::new(-safe_shells, -safe_shells);
+
+                GridRect::square_with_size(
+                    min_point,
+                    2 * safe_shells + 1,
+                )
+            } else {
+                GridRect::zero()
+            }
+        };
+
+        let mut grid = Grid::from(match Arc::try_unwrap(grid) {
+            Ok(value) => value,
+            Err(_) => panic!("Arc had multiple owners"),
+        });
+        grid.unfreeze_chunks_not_in_region(&region_that_can_remain_frozen);
+
+        let empty_cell = PlayerId::new(0);
+        for active_chunk in grid.active_chunks().values() {
+            // This can be implemented more efficiently if we compute which shells
+            // we need exactly, and then iterate 4 intersections.
+            active_chunk.for_each_cell(|attack_src, pid| {
+                if *pid != empty_cell {
+                    let player = &players[pid.index() - 1];
+
+                    // We must not forget to forbid players from overwriting other player placements.
+                    let spiral_pos = UlamSpiralPoint::from(&attack_src);
+                    if spiral_pos.as_u64() as isize >= forbiddances.get_origin() {
+                        forbiddances[spiral_pos.as_u64() as isize] = PlayerIdSet::full();
+                    }
+
+                    for attack_dst in player.attacks.get_attacks_from(&attack_src) {
+                        let u = UlamSpiralPoint::from(&attack_dst);
+                        // We don't care about cells before the origin (last player) and
+                        // we need to be careful not to modify them.
+                        if u.as_u64() as isize >= forbiddances.get_origin() {
+                            forbiddances[u.as_u64() as isize] |= player.enemies;
+                        }
+                    }
+                }
+            });
+        }
+
+        Self {
+            players,
+            grid: Some(grid),
+            simulated_turns,
+            forbiddances,
+            compression: Self::make_default_compression(),
         }
     }
 }

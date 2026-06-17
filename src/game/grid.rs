@@ -138,6 +138,10 @@ impl<T> Grid<T> {
     pub fn chunker(&self) -> &dyn Chunker {
         self.chunker.as_ref()
     }
+    
+    pub fn active_chunks(&self) -> &BTreeMap<ChunkOrigin, Chunk<T>> {
+        &self.active_chunks
+    }
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
@@ -265,12 +269,12 @@ impl<T> FrozenGrid<T> {
     }
 }
 
-impl<T> FrozenGrid<T> {
-    pub fn to_grid(self) -> Grid<T> {
-        Grid {
-            frozen_chunks: self.frozen_chunks,
-            frozen_chunks_memory_usage: self.memory_usage,
-            chunker: self.chunker,
+impl<T> From<FrozenGrid<T>> for Grid<T> {
+    fn from(grid: FrozenGrid<T>) -> Self {
+        Self {
+            frozen_chunks: grid.frozen_chunks,
+            frozen_chunks_memory_usage: grid.memory_usage,
+            chunker: grid.chunker,
             active_chunks: BTreeMap::new(),
         }
     }

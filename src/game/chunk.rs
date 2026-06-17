@@ -55,6 +55,21 @@ impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> MemSize {
         MemSize::sizes_of::<T>(self.cells.width() * self.cells.height())
     }
+    
+    pub fn for_each_cell<F>(&self, mut f: F)
+    where
+        F: FnMut(GridPoint, &T)
+    {
+        let ox = self.bounds().start.x;
+        let oy = self.bounds().start.y;
+        for dy in 0..self.cells.height() {
+            for dx in 0..self.cells.width() {
+                let x = ox + dx as i32;
+                let y = oy + dy as i32;
+                f(GridPoint::new(x, y), &self.cells[(dx, dy)]);
+            }
+        }
+    }
 }
 
 impl<T: Default + Clone> Chunk<T> {

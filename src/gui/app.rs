@@ -4,7 +4,12 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Color32, PointerButton, Response, Sense, Ui};
 use eframe::{egui, Frame};
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::path::PathBuf;
+use ulam_leapers::game::persist::uls::UlsSimulation;
+use ulam_leapers::game::simulation::{FinalizedSimulation, Simulation, SimulationLimits};
+use ulam_leapers::util::memory::MemSize;
+use crate::gui::simulation_runner::SimulationRunner;
 
 #[derive(Default)]
 enum SubwindowState {
@@ -105,6 +110,37 @@ impl eframe::App for App {
                                     }
                                     Err(err) => {
                                         eprintln!("Error opening creator: {}", err);
+                                    }
+                                }
+                            }
+                        }
+                        if ui.button("Continue from ULS").clicked() {
+                            let path = rfd::FileDialog::new()
+                                .add_filter("Ulam Leapers Simulation", &["uls"])
+                                .pick_file();
+                            if let Some(path) = path {
+                                match File::open(path.clone()) {
+                                    Ok(file) => {
+                                        let mut reader = std::io::BufReader::new(file);
+                                        let uls_sim = UlsSimulation::read_from(&mut reader);
+                                        match uls_sim {
+                                            Ok(uls_sim) => {
+                                                let fin_sim = FinalizedSimulation::from(uls_sim);
+                                                let sim = Simulation::from(fin_sim);
+                                                let limits = SimulationLimits::new()
+                                                    .with_memory_limit(MemSize::gib(64))
+                                                    .with_turn_limit(1 << 40)
+                                                    .with_complete_shell_limit(1 << 30);
+                                                let result = SimulationRunner::new(sim, limits);
+                                                tabs_to_spawn.push(Box::new(result));
+                                            }
+                                            Err(err) => {
+                                                eprintln!("Error opening simulation: {}", err);
+                                            }
+                                        }
+                                    },
+                                    Err(err) => {
+                                        eprintln!("Error opening simulation: {}", err);
                                     }
                                 }
                             }
