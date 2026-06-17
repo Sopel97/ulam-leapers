@@ -61,15 +61,63 @@ impl<T> Chunk<T> {
     where
         F: FnMut(GridPoint, &T)
     {
-        let ox = self.bounds().start.x;
-        let oy = self.bounds().start.y;
-        for dy in 0..self.cells.height() {
-            for dx in 0..self.cells.width() {
-                let x = ox + dx as i32;
-                let y = oy + dy as i32;
-                let shell = cmp::max(x.unsigned_abs(), y.unsigned_abs());
-                if shell_range.contains(&shell) {
-                    f(GridPoint::new(x, y), &self.cells[(dx, dy)]);
+        let near = *shell_range.start() as i32;
+        let far = *shell_range.end() as i32;
+
+        // Top slice without corners.
+        let top_shells_rect = GridRect::with_start_end(
+            GridPoint::new(-near + 1, near),
+            GridPoint::new(near, far + 1),
+        );
+
+        // Bottom slice without corners.
+        let bottom_shells_rect = GridRect::with_start_end(
+            GridPoint::new(-near + 1, -far),
+            GridPoint::new(near, -near + 1),
+        );
+
+        // Left slice WITH corners.
+        let left_shells_rect = GridRect::with_start_end(
+            GridPoint::new(-far, -far),
+            GridPoint::new(-near + 1, far + 1),
+        );
+
+        // Right slice WITH corners.
+        let right_shells_rect = GridRect::with_start_end(
+            GridPoint::new(near, -far),
+            GridPoint::new(far + 1, far + 1),
+        );
+
+        debug_assert!(!top_shells_rect.intersects(&left_shells_rect));
+        debug_assert!(!top_shells_rect.intersects(&right_shells_rect));
+        debug_assert!(!bottom_shells_rect.intersects(&left_shells_rect));
+        debug_assert!(!bottom_shells_rect.intersects(&right_shells_rect));
+
+        self.for_each_cell_in_region(top_shells_rect, &mut f);
+        self.for_each_cell_in_region(bottom_shells_rect, &mut f);
+        self.for_each_cell_in_region(left_shells_rect, &mut f);
+        self.for_each_cell_in_region(right_shells_rect, &mut f);
+    }
+
+    /// `region` will be intersected with this chunk's bounds.
+    pub fn for_each_cell_in_region<F>(&self, region: GridRect, f: &mut F)
+    where
+        F: FnMut(GridPoint, &T)
+    {
+        let region = region.intersection(&self.bounds);
+        if let Some(region) = region {
+            let width = region.width();
+            let height = region.height();
+            if width == 0 || height == 0 {
+                return;
+            }
+
+            for global_y in region.start.y..region.end.y {
+                let local_y = global_y - self.bounds.start.y;
+
+                for global_x in region.start.x..region.end.x {
+                    let local_x = global_x - self.bounds.start.x;
+                    f(GridPoint::new(global_x, global_y), &self.cells[(local_x as usize, local_y as usize)]);
                 }
             }
         }
