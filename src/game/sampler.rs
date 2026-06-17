@@ -370,6 +370,7 @@ mod tests {
     use crate::math::rect::GridRect;
     use crate::util::cache::CacheEnabled;
     use std::panic::AssertUnwindSafe;
+    use crate::compression::AnyCompression;
 
     fn point(x: i32, y: i32) -> GridPoint {
         GridPoint::new(x, y)
@@ -379,12 +380,12 @@ mod tests {
     fn make_frozen_grid(chunk_size: Pow2, points: &[(i32, i32, u8)]) -> FrozenGrid<u8> {
         let mut grid: Grid<u8> = Grid::new(
             Box::new(SquareChunker::new(chunk_size)),
-            ZstdCompression::new_with_level(1).into(),
         );
         for &(x, y, v) in points {
             grid[point(x, y)] = v;
         }
-        FrozenGrid::from(grid)
+        let compression: AnyCompression = ZstdCompression::new_with_level(1).into();
+        grid.to_frozen_grid(&compression)
     }
 
     struct SumCollector;

@@ -1,4 +1,5 @@
-﻿use crate::compression::AnyCompression;
+﻿use std::collections::btree_map::OccupiedEntry;
+use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::persist::uls::{UlsChunk, UlsChunker};
@@ -10,17 +11,17 @@ use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::ops::{Index, IndexMut};
+use crate::compression::zstd::ZstdCompression;
 
 pub struct Grid<T> {
     chunker: Box<dyn Chunker + Send + Sync>,
-    compression: AnyCompression,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     frozen_chunks_memory_usage: MemSize, // to reduce the amount of redundant iteration over chunks
 }
 
 impl<T: Default + Send + Sync> Grid<T> {
-    fn freeze_chunks<F>(&mut self, extract_fn: F) -> usize
+    fn freeze_chunks<F>(&mut self, extract_fn: F, compression: &AnyCompression) -> usize
     where
         F: FnOnce(&mut BTreeMap<ChunkOrigin, Chunk<T>>) -> Vec<(ChunkOrigin, Chunk<T>)>,
     {
@@ -31,7 +32,7 @@ impl<T: Default + Send + Sync> Grid<T> {
             .map(|entry| {
                 let origin = entry.0;
                 let chunk = entry.1;
-                (origin, chunk.compress(&self.compression))
+                (origin, chunk.compress(compression))
             })
             .collect::<Vec<_>>();
         let count = frozen.len();
@@ -48,24 +49,74 @@ impl<T: Default + Send + Sync> Grid<T> {
 
     /// Freezes at most `n` chunks in the given `region`.
     /// Returns the number of chunks frozen.
-    pub fn freeze_at_most_n_chunks_in_region(&mut self, region: &GridRect, n: usize) -> usize {
+    pub fn freeze_at_most_n_chunks_in_region(&mut self, region: &GridRect, n: usize, compression: &AnyCompression) -> usize {
         // No better way than O(n) scan I'm afraid, but it should be fine in most uses.
         self.freeze_chunks(|active_chunks| {
             active_chunks
                 .extract_if(.., |_origin, chunk| region.contains(chunk.bounds()))
                 .take(n)
                 .collect::<Vec<_>>()
+        },
+        compression,
+        )
+    }
+
+    /// Returns the number of chunks frozen.
+    pub fn freeze_chunks_in_region(&mut self, region: &GridRect, compression: &AnyCompression) -> usize {
+        self.freeze_at_most_n_chunks_in_region(region, usize::MAX, compression)
+    }
+
+    /// Returns the number of chunks frozen.
+    pub fn freeze_all(&mut self, compression: &AnyCompression) -> usize {
+        self.freeze_chunks(|active_chunks| std::mem::take(active_chunks).into_iter().collect(), compression)
+    }
+    
+    pub fn to_frozen_grid(mut self, compression: &AnyCompression) -> FrozenGrid<T> {
+        self.freeze_all(compression);
+        
+        FrozenGrid {
+            frozen_chunks: self.frozen_chunks,
+            memory_usage: self.frozen_chunks_memory_usage,
+            chunker: self.chunker,
+        }
+    }
+}
+
+impl<T: Default + Clone + Copy + Send + Sync> Grid<T> {
+    fn unfreeze_chunks<F>(&mut self, extract_fn: F) -> usize
+    where
+        F: FnOnce(
+            &mut BTreeMap<ChunkOrigin, CompressedChunk<T>>,
+        ) -> Vec<(ChunkOrigin, CompressedChunk<T>)>,
+    {
+        let to_unfreeze = extract_fn(&mut self.frozen_chunks);
+
+        let unfrozen = to_unfreeze
+            .into_par_iter()
+            .map(|entry| {
+                let origin = entry.0;
+                let chunk = entry.1;
+                (origin, chunk.decompress())
+            })
+            .collect::<Vec<_>>();
+        let count = unfrozen.len();
+
+        // Collecting to a vector is not great but should be fine. Other ways of converting
+        // parallel processing to sequential are annoying.
+        for (origin, chunk) in unfrozen {
+            self.frozen_chunks_memory_usage -= chunk.memory_usage();
+            self.active_chunks.insert(origin, chunk);
+        }
+
+        count
+    }
+
+    pub fn unfreeze_chunks_not_in_region(&mut self, region: &GridRect) -> usize {
+        self.unfreeze_chunks(|frozen_chunks| {
+            frozen_chunks
+                .extract_if(.., |_origin, chunk| !region.contains(chunk.bounds()))
+                .collect::<Vec<_>>()
         })
-    }
-
-    /// Returns the number of chunks frozen.
-    pub fn freeze_chunks_in_region(&mut self, region: &GridRect) -> usize {
-        self.freeze_at_most_n_chunks_in_region(region, usize::MAX)
-    }
-
-    /// Returns the number of chunks frozen.
-    pub fn freeze_all(&mut self) -> usize {
-        self.freeze_chunks(|active_chunks| std::mem::take(active_chunks).into_iter().collect())
     }
 }
 
@@ -90,10 +141,9 @@ impl<T> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
-    pub fn new(chunker: Box<dyn Chunker + Send + Sync>, compression: AnyCompression) -> Self {
+    pub fn new(chunker: Box<dyn Chunker + Send + Sync>) -> Self {
         Grid {
             chunker,
-            compression,
             active_chunks: BTreeMap::new(),
             frozen_chunks: BTreeMap::new(),
             frozen_chunks_memory_usage: MemSize::ZERO,
@@ -150,7 +200,7 @@ impl<T: Default + Clone + Copy> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
-        if let Some(_chunk) = self.get_frozen_chunk_containing(&point) {
+        if let Some(chunk) = self.get_frozen_chunk_containing(&point) {
             // TODO: indexing into a compressed chunk, possibly with some cache
             // &chunk[point]
             panic!("Unimplemented");
@@ -174,18 +224,6 @@ pub struct FrozenGrid<T> {
     chunker: Box<dyn Chunker>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     memory_usage: MemSize,
-}
-
-impl<T: Default + Send + Sync> From<Grid<T>> for FrozenGrid<T> {
-    fn from(mut value: Grid<T>) -> FrozenGrid<T> {
-        value.freeze_all();
-
-        FrozenGrid {
-            chunker: value.chunker,
-            frozen_chunks: value.frozen_chunks,
-            memory_usage: value.frozen_chunks_memory_usage,
-        }
-    }
 }
 
 impl<T> FrozenGrid<T> {
@@ -269,11 +307,14 @@ mod tests {
     fn make_bounds(origin_x: i32, origin_y: i32, width: u32, height: u32) -> GridRect {
         GridRect::with_size(point(origin_x, origin_y), width as i32, height as i32)
     }
+    
+    fn make_compression() -> AnyCompression {
+        ZstdCompression::new_with_level(1).into()
+    }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
         Grid::new(
             Box::new(SquareChunker::new(chunk_size)),
-            ZstdCompression::new_with_level(1).into(),
         )
     }
 
@@ -369,7 +410,7 @@ mod tests {
         grid[point(0, 0)] = 123;
         grid[point(-64 + 5, 0)] = 123;
 
-        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70));
+        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-4, -4), 70, 70), &make_compression());
 
         assert!(grid.is_chunk_containing_frozen(&GridPoint::new(0, 0)));
         assert!(!grid.is_chunk_containing_frozen(&GridPoint::new(-64 + 5, 0)));
@@ -381,7 +422,7 @@ mod tests {
 
         grid[point(0, 0)] = 123;
 
-        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810));
+        grid.freeze_chunks_in_region(&GridRect::with_size(GridPoint::new(-400, -400), 810, 810), &make_compression());
 
         let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
             grid[point(0, 0)] = 123;

@@ -16,6 +16,7 @@ use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use crate::compression::AnyCompression;
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
 pub struct PlayerId(u8);
@@ -195,6 +196,7 @@ pub struct Simulation {
     grid: Option<Grid<PlayerId>>,
     forbiddances: SlidingWindow<PlayerIdSet>,
     simulated_turns: u64,
+    compression: AnyCompression,
 }
 
 pub struct FinalizedSimulation {
@@ -356,6 +358,10 @@ impl Game for Simulation {
 }
 
 impl Simulation {
+    fn make_default_compression() -> AnyCompression {
+        ZstdCompression::new_with_level(6).into()
+    }
+
     pub fn new() -> Simulation {
         Self::with_chunker(Box::new(StripChunker::with_strip_length_and_thickness(
             DEFAULT_CHUNK_STRIP_LENGTH,
@@ -367,12 +373,12 @@ impl Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(
-                chunker,
-                ZstdCompression::new_with_level(6).into(),
+                chunker
             )),
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
+            compression: Self::make_default_compression(),
         }
     }
 
@@ -593,6 +599,7 @@ impl Simulation {
 
         let grid_memory_usage = Arc::new(Mutex::new(MemSize::ZERO));
         let grid_memory_usage_worker = Arc::clone(&grid_memory_usage);
+        let compression = self.compression.clone();
         let grid_worker = thread::spawn(move || {
             loop {
                 let job = job_rx.recv().unwrap();
@@ -609,7 +616,7 @@ impl Simulation {
                         buffer_tx.send(placements).unwrap();
                     }
                     Job::Compress(region, n) => {
-                        grid.freeze_at_most_n_chunks_in_region(&region, n);
+                        grid.freeze_at_most_n_chunks_in_region(&region, n, &compression);
                     }
                     Job::MemoryUsage => {
                         let mut grid_memory_usage_worker = grid_memory_usage_worker.lock().unwrap();
@@ -759,7 +766,7 @@ impl From<Simulation> for FinalizedSimulation {
     fn from(simulation: Simulation) -> Self {
         Self {
             players: simulation.players,
-            grid: Arc::new(simulation.grid.unwrap().into()),
+            grid: Arc::new(simulation.grid.unwrap().to_frozen_grid(&simulation.compression)),
             simulated_turns: simulation.simulated_turns,
         }
     }

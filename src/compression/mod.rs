@@ -90,7 +90,7 @@ pub trait Compression {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum AnyCompression {
     Zstd(ZstdCompression),
     None(NoneCompression),
