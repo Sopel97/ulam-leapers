@@ -83,7 +83,7 @@ pub struct UlsSimulation<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum UlsCompatibilityError {
+pub enum UlsError {
     ChunkerChunkAlignmentTooLow {
         actual: u64,
     },
@@ -157,16 +157,16 @@ pub enum UlsCompatibilityError {
     ZstdInspectError(ZstdInspectError),
 }
 
-impl Display for UlsCompatibilityError {
+impl Display for UlsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            UlsCompatibilityError::ChunkerChunkAlignmentTooLow { actual } => {
+            UlsError::ChunkerChunkAlignmentTooLow { actual } => {
                 write!(
                     f,
                     "Chunk alignment too low: {actual} < {ULS_MIN_CHUNK_ALIGNMENT}"
                 )
             }
-            UlsCompatibilityError::ChunkerChunkSizeTooHigh {
+            UlsError::ChunkerChunkSizeTooHigh {
                 actual_strip_length,
                 actual_strip_thickness,
             } => {
@@ -176,7 +176,7 @@ impl Display for UlsCompatibilityError {
                     "Chunk size too high: {actual_strip_length}*{actual_strip_thickness}={size} > {ULS_MAX_CHUNK_SIZE}"
                 )
             }
-            UlsCompatibilityError::ChunkerChunkExtentTooHigh {
+            UlsError::ChunkerChunkExtentTooHigh {
                 actual_strip_length,
                 actual_strip_thickness,
             } => {
@@ -185,7 +185,7 @@ impl Display for UlsCompatibilityError {
                     "Chunk extent too high: ({actual_strip_length}, {actual_strip_thickness}) > ({ULS_MAX_CHUNK_EXTENT}, {ULS_MAX_CHUNK_EXTENT})"
                 )
             }
-            UlsCompatibilityError::ChunkerChunkExtentNotPow2 {
+            UlsError::ChunkerChunkExtentNotPow2 {
                 actual_strip_length,
                 actual_strip_thickness,
             } => {
@@ -194,7 +194,7 @@ impl Display for UlsCompatibilityError {
                     "Chunk extent not a power of two: ({actual_strip_length}, {actual_strip_thickness})"
                 )
             }
-            UlsCompatibilityError::ChunkerStripThicknessHigherThanLength {
+            UlsError::ChunkerStripThicknessHigherThanLength {
                 actual_strip_length,
                 actual_strip_thickness,
             } => {
@@ -203,60 +203,60 @@ impl Display for UlsCompatibilityError {
                     "Chunk strip thickness {actual_strip_thickness} > chunk strip length {actual_strip_length}"
                 )
             }
-            UlsCompatibilityError::TooManyAttackVectors { actual } => {
+            UlsError::TooManyAttackVectors { actual } => {
                 write!(
                     f,
                     "Too many attack vectors: {actual} > {ULS_MAX_ATTACK_VECTOR_COUNT}"
                 )
             }
-            UlsCompatibilityError::AttackVectorTooLarge { actual_x, actual_y } => {
+            UlsError::AttackVectorTooLarge { actual_x, actual_y } => {
                 write!(
                     f,
                     "Attack vector too large: abs({actual_x}, {actual_y}) > ({ULS_MAX_ATTACK_VECTOR_COORD}, {ULS_MAX_ATTACK_VECTOR_COORD})"
                 )
             }
-            UlsCompatibilityError::ChunkOriginTooFar { actual_x, actual_y } => {
+            UlsError::ChunkOriginTooFar { actual_x, actual_y } => {
                 write!(
                     f,
                     "Chunk origin too far: abs({actual_x}, {actual_y}) > ({ULS_MAX_CHUNK_ORIGIN_COORD}, {ULS_MAX_CHUNK_ORIGIN_COORD})"
                 )
             }
-            UlsCompatibilityError::ChunkBlobTooLarge { actual } => {
+            UlsError::ChunkBlobTooLarge { actual } => {
                 write!(
                     f,
                     "Chunk blob too large: {actual} > {ULS_MAX_CHUNK_BLOB_SIZE}"
                 )
             }
-            UlsCompatibilityError::TooManyPlayers { actual } => {
+            UlsError::TooManyPlayers { actual } => {
                 write!(f, "Too many players: {actual} > {ULS_MAX_PLAYER_COUNT}")
             }
-            UlsCompatibilityError::TooManyTurns { actual } => {
+            UlsError::TooManyTurns { actual } => {
                 write!(f, "Too many turns: {actual} > {ULS_MAX_TURN_COUNT}")
             }
-            UlsCompatibilityError::SpiralPositionTooHigh { actual } => {
+            UlsError::SpiralPositionTooHigh { actual } => {
                 write!(
                     f,
                     "Spiral position too high: {actual} > {ULS_MAX_SPIRAL_POSITION}"
                 )
             }
-            UlsCompatibilityError::TooManyChunks { actual } => {
+            UlsError::TooManyChunks { actual } => {
                 write!(f, "Too many chunks: {actual} > {ULS_MAX_CHUNK_COUNT}")
             }
-            UlsCompatibilityError::InvalidChunkTransform { transform } => {
+            UlsError::InvalidChunkTransform { transform } => {
                 write!(f, "Invalid chunk transform: {transform}")
             }
-            UlsCompatibilityError::InvalidCompressionKind { kind } => {
+            UlsError::InvalidCompressionKind { kind } => {
                 write!(f, "Invalid compression kind: {kind}")
             }
-            UlsCompatibilityError::InvalidMagicFormatSignature { actual } => {
+            UlsError::InvalidMagicFormatSignature { actual } => {
                 write!(f, "Invalid magic format signature: {actual:?}")
             }
-            UlsCompatibilityError::PlayerIdInCellTooHigh { actual, highest } => {
+            UlsError::PlayerIdInCellTooHigh { actual, highest } => {
                 let actual_index = actual.index();
                 let highest_index = highest.index();
                 write!(f, "Player id too high: {actual_index} > {highest_index}")
             }
-            UlsCompatibilityError::InvalidChunkOrigin {
+            UlsError::InvalidChunkOrigin {
                 actual_x,
                 actual_y,
                 expected_x,
@@ -267,71 +267,71 @@ impl Display for UlsCompatibilityError {
                     "Invalid chunk origin: actual ({actual_x}, {actual_y}) != expected ({expected_x}, {expected_y})"
                 )
             }
-            UlsCompatibilityError::DuplicateAttackVectors { duplicate_count } => {
+            UlsError::DuplicateAttackVectors { duplicate_count } => {
                 write!(f, "{duplicate_count} duplicate attack vectors")
             }
-            UlsCompatibilityError::DuplicateChunks { duplicate_count } => {
+            UlsError::DuplicateChunks { duplicate_count } => {
                 write!(f, "{duplicate_count} duplicate chunks")
             }
-            UlsCompatibilityError::ZstdInspectError(err) => {
+            UlsError::ZstdInspectError(err) => {
                 write!(f, "ZST inspect error: {err}")
             }
         }
     }
 }
 
-impl Error for UlsCompatibilityError {}
+impl Error for UlsError {}
 
-impl From<UlsCompatibilityError> for std::io::Error {
-    fn from(e: UlsCompatibilityError) -> Self {
+impl From<UlsError> for std::io::Error {
+    fn from(e: UlsError) -> Self {
         std::io::Error::new(ErrorKind::InvalidData, e.to_string())
     }
 }
 
-impl From<ZstdInspectError> for UlsCompatibilityError {
+impl From<ZstdInspectError> for UlsError {
     fn from(err: ZstdInspectError) -> Self {
-        UlsCompatibilityError::ZstdInspectError(err)
+        UlsError::ZstdInspectError(err)
     }
 }
 
 impl TryFrom<u8> for UlsChunkTransform {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(UlsChunkTransform::None),
             1 => Ok(UlsChunkTransform::Transposition),
-            _ => Err(UlsCompatibilityError::InvalidChunkTransform { transform: value }),
+            _ => Err(UlsError::InvalidChunkTransform { transform: value }),
         }
     }
 }
 
 impl TryFrom<u8> for UlsCompressionKind {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(UlsCompressionKind::None),
             1 => Ok(UlsCompressionKind::Zstd),
-            _ => Err(UlsCompatibilityError::InvalidCompressionKind { kind: value }),
+            _ => Err(UlsError::InvalidCompressionKind { kind: value }),
         }
     }
 }
 
 impl TryFrom<&Player> for UlsPlayer {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(player: &Player) -> Result<Self, Self::Error> {
         let spiral_position = player.cursor().spiral_position().as_u64();
         if spiral_position > ULS_MAX_SPIRAL_POSITION {
-            return Err(UlsCompatibilityError::SpiralPositionTooHigh {
+            return Err(UlsError::SpiralPositionTooHigh {
                 actual: spiral_position,
             });
         }
 
         let attack_vectors = player.attacks().attack_vectors();
         if attack_vectors.len() as u64 > ULS_MAX_ATTACK_VECTOR_COUNT {
-            return Err(UlsCompatibilityError::TooManyAttackVectors {
+            return Err(UlsError::TooManyAttackVectors {
                 actual: attack_vectors.len() as u64,
             });
         }
@@ -342,7 +342,7 @@ impl TryFrom<&Player> for UlsPlayer {
                 if v.x.unsigned_abs() as u64 > ULS_MAX_ATTACK_VECTOR_COORD
                     || v.y.unsigned_abs() as u64 > ULS_MAX_ATTACK_VECTOR_COORD
                 {
-                    Err(UlsCompatibilityError::AttackVectorTooLarge {
+                    Err(UlsError::AttackVectorTooLarge {
                         actual_x: v.x as i64,
                         actual_y: v.y as i64,
                     })
@@ -364,7 +364,7 @@ impl TryFrom<&Player> for UlsPlayer {
 }
 
 impl TryFrom<&StripChunker> for UlsChunker {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(chunker: &StripChunker) -> Result<Self, Self::Error> {
         let chunk_strip_length = chunker.strip_length();
@@ -376,12 +376,12 @@ impl TryFrom<&StripChunker> for UlsChunker {
         let chunk_size = chunker.chunk_size();
 
         if chunk_strip_length.as_u64() < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsCompatibilityError::ChunkerChunkAlignmentTooLow {
+            return Err(UlsError::ChunkerChunkAlignmentTooLow {
                 actual: chunk_strip_length.as_u64(),
             });
         }
         if chunk_strip_thickness.as_u64() < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsCompatibilityError::ChunkerChunkAlignmentTooLow {
+            return Err(UlsError::ChunkerChunkAlignmentTooLow {
                 actual: chunk_strip_thickness.as_u64(),
             });
         }
@@ -389,14 +389,14 @@ impl TryFrom<&StripChunker> for UlsChunker {
         if chunk_strip_length.as_u64() > ULS_MAX_CHUNK_EXTENT
             || chunk_strip_thickness.as_u64() > ULS_MAX_CHUNK_EXTENT
         {
-            return Err(UlsCompatibilityError::ChunkerChunkExtentTooHigh {
+            return Err(UlsError::ChunkerChunkExtentTooHigh {
                 actual_strip_length: chunk_strip_length.as_u64(),
                 actual_strip_thickness: chunk_strip_thickness.as_u64(),
             });
         }
 
         if chunk_size.as_u64() > ULS_MAX_CHUNK_SIZE {
-            return Err(UlsCompatibilityError::ChunkerChunkSizeTooHigh {
+            return Err(UlsError::ChunkerChunkSizeTooHigh {
                 actual_strip_length: chunk_strip_length.as_u64(),
                 actual_strip_thickness: chunk_strip_thickness.as_u64(),
             });
@@ -410,7 +410,7 @@ impl TryFrom<&StripChunker> for UlsChunker {
 }
 
 impl TryFrom<CompressedChunkTransform> for UlsChunkTransform {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(transform: CompressedChunkTransform) -> Result<Self, Self::Error> {
         match transform {
@@ -421,7 +421,7 @@ impl TryFrom<CompressedChunkTransform> for UlsChunkTransform {
 }
 
 impl TryFrom<CompressionKind> for UlsCompressionKind {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(compression: CompressionKind) -> Result<Self, Self::Error> {
         match compression {
@@ -432,14 +432,14 @@ impl TryFrom<CompressionKind> for UlsCompressionKind {
 }
 
 impl<'a> TryFrom<&'a CompressedChunk<PlayerId>> for UlsChunk<'a> {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(chunk: &'a CompressedChunk<PlayerId>) -> Result<Self, Self::Error> {
         let origin = chunk.origin().point();
         if origin.x.unsigned_abs() as u64 > ULS_MAX_CHUNK_ORIGIN_COORD
             || origin.y.unsigned_abs() as u64 > ULS_MAX_CHUNK_ORIGIN_COORD
         {
-            return Err(UlsCompatibilityError::ChunkOriginTooFar {
+            return Err(UlsError::ChunkOriginTooFar {
                 actual_x: origin.x as i64,
                 actual_y: origin.y as i64,
             });
@@ -456,7 +456,7 @@ impl<'a> TryFrom<&'a CompressedChunk<PlayerId>> for UlsChunk<'a> {
         let compressed_data = blob.bytes();
 
         if compressed_data.len() as u64 > ULS_MAX_CHUNK_BLOB_SIZE {
-            return Err(UlsCompatibilityError::ChunkBlobTooLarge {
+            return Err(UlsError::ChunkBlobTooLarge {
                 actual: compressed_data.len() as u64,
             });
         }
@@ -472,7 +472,7 @@ impl<'a> TryFrom<&'a CompressedChunk<PlayerId>> for UlsChunk<'a> {
 }
 
 impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
-    type Error = UlsCompatibilityError;
+    type Error = UlsError;
 
     fn try_from(simulation: &'a FinalizedSimulation) -> Result<Self, Self::Error> {
         let player_count = simulation.player_count();
@@ -482,14 +482,14 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
             "This is an invariant of FinalizedSimulation but it's important enough to check."
         );
         if player_count as u64 > ULS_MAX_PLAYER_COUNT {
-            return Err(UlsCompatibilityError::TooManyPlayers {
+            return Err(UlsError::TooManyPlayers {
                 actual: player_count as u64,
             });
         }
 
         let turn_count = simulation.complete_turns();
         if turn_count > ULS_MAX_TURN_COUNT {
-            return Err(UlsCompatibilityError::TooManyTurns {
+            return Err(UlsError::TooManyTurns {
                 actual: turn_count,
             });
         }
@@ -509,7 +509,7 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
 
         let chunk_count = grid.chunk_count();
         if chunk_count as u64 > ULS_MAX_CHUNK_COUNT {
-            return Err(UlsCompatibilityError::TooManyChunks {
+            return Err(UlsError::TooManyChunks {
                 actual: chunk_count as u64,
             });
         }
@@ -563,7 +563,7 @@ impl UlsChunker {
 
         if strip_thickness > strip_length {
             return Err(
-                UlsCompatibilityError::ChunkerStripThicknessHigherThanLength {
+                UlsError::ChunkerStripThicknessHigherThanLength {
                     actual_strip_length: strip_length as u64,
                     actual_strip_thickness: strip_thickness as u64,
                 }
@@ -572,7 +572,7 @@ impl UlsChunker {
         }
 
         if !strip_length.is_power_of_two() || !strip_thickness.is_power_of_two() {
-            return Err(UlsCompatibilityError::ChunkerChunkExtentNotPow2 {
+            return Err(UlsError::ChunkerChunkExtentNotPow2 {
                 actual_strip_length: strip_length as u64,
                 actual_strip_thickness: strip_thickness as u64,
             }
@@ -580,13 +580,13 @@ impl UlsChunker {
         }
 
         if (strip_length as u64) < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsCompatibilityError::ChunkerChunkAlignmentTooLow {
+            return Err(UlsError::ChunkerChunkAlignmentTooLow {
                 actual: strip_length as u64,
             }
             .into());
         }
         if (strip_thickness as u64) < ULS_MIN_CHUNK_ALIGNMENT {
-            return Err(UlsCompatibilityError::ChunkerChunkAlignmentTooLow {
+            return Err(UlsError::ChunkerChunkAlignmentTooLow {
                 actual: strip_thickness as u64,
             }
             .into());
@@ -595,7 +595,7 @@ impl UlsChunker {
         if (strip_length as u64) > ULS_MAX_CHUNK_EXTENT
             || (strip_thickness as u64) > ULS_MAX_CHUNK_EXTENT
         {
-            return Err(UlsCompatibilityError::ChunkerChunkExtentTooHigh {
+            return Err(UlsError::ChunkerChunkExtentTooHigh {
                 actual_strip_length: strip_length as u64,
                 actual_strip_thickness: strip_thickness as u64,
             }
@@ -604,7 +604,7 @@ impl UlsChunker {
 
         let chunk_size = strip_length as u64 * strip_thickness as u64;
         if chunk_size > ULS_MAX_CHUNK_SIZE {
-            return Err(UlsCompatibilityError::ChunkerChunkSizeTooHigh {
+            return Err(UlsError::ChunkerChunkSizeTooHigh {
                 actual_strip_length: strip_length as u64,
                 actual_strip_thickness: strip_thickness as u64,
             }
@@ -644,7 +644,7 @@ impl UlsChunk<'_> {
         let compression_kind = UlsCompressionKind::read_from(reader)?;
         let compressed_data_len = read_u32_le(reader)?;
         if compressed_data_len as u64 > ULS_MAX_CHUNK_BLOB_SIZE {
-            return Err(UlsCompatibilityError::ChunkBlobTooLarge {
+            return Err(UlsError::ChunkBlobTooLarge {
                 actual: compressed_data_len as u64,
             }
             .into());
@@ -669,14 +669,14 @@ impl UlsChunk<'_> {
         })
     }
 
-    pub fn highest_player_id(&self) -> Result<PlayerId, UlsCompatibilityError> {
+    pub fn highest_player_id(&self) -> Result<PlayerId, UlsError> {
         match self.compression_kind {
             UlsCompressionKind::None => Ok(PlayerId::new(
                 *self.compressed_data.iter().max().unwrap_or(&0u8),
             )),
             UlsCompressionKind::Zstd => match max_byte_in_zstd_stream(&self.compressed_data) {
                 Ok(v) => Ok(PlayerId::new(v)),
-                Err(err) => Err(UlsCompatibilityError::ZstdInspectError(err)),
+                Err(err) => Err(UlsError::ZstdInspectError(err)),
             },
         }
     }
@@ -695,7 +695,7 @@ impl UlsAttackVector {
         if x.unsigned_abs() as u64 > ULS_MAX_ATTACK_VECTOR_COORD
             || y.unsigned_abs() as u64 > ULS_MAX_ATTACK_VECTOR_COORD
         {
-            return Err(UlsCompatibilityError::AttackVectorTooLarge {
+            return Err(UlsError::AttackVectorTooLarge {
                 actual_x: x as i64,
                 actual_y: y as i64,
             }
@@ -723,7 +723,7 @@ impl UlsPlayer {
         let attack_vectors_len = read_u8_le(reader)?;
 
         if spiral_position > ULS_MAX_SPIRAL_POSITION {
-            return Err(UlsCompatibilityError::SpiralPositionTooHigh {
+            return Err(UlsError::SpiralPositionTooHigh {
                 actual: spiral_position,
             }
             .into());
@@ -737,7 +737,7 @@ impl UlsPlayer {
 
         let attack_vectors_unique: BTreeSet<_> = attack_vectors.iter().collect();
         if attack_vectors_unique.len() != attack_vectors.len() {
-            return Err(UlsCompatibilityError::DuplicateAttackVectors {
+            return Err(UlsError::DuplicateAttackVectors {
                 duplicate_count: (attack_vectors.len() - attack_vectors_unique.len()) as u64,
             }
             .into());
@@ -783,7 +783,7 @@ impl UlsSimulation<'_> {
             .highest_player_id()
             .map_err(std::io::Error::from)?;
         if highest_player_id_in_chunk > highest_player_id {
-            return Err(UlsCompatibilityError::PlayerIdInCellTooHigh {
+            return Err(UlsError::PlayerIdInCellTooHigh {
                 actual: highest_player_id_in_chunk,
                 highest: highest_player_id,
             }
@@ -794,7 +794,7 @@ impl UlsSimulation<'_> {
             .resolve_chunk_origin(&GridPoint::new(uls_chunk.origin_x, uls_chunk.origin_y))
             .point();
         if expected_origin.x != uls_chunk.origin_x || expected_origin.y != uls_chunk.origin_y {
-            return Err(UlsCompatibilityError::InvalidChunkOrigin {
+            return Err(UlsError::InvalidChunkOrigin {
                 actual_x: uls_chunk.origin_x,
                 actual_y: uls_chunk.origin_y,
                 expected_x: expected_origin.x,
@@ -818,7 +818,7 @@ impl UlsSimulation<'_> {
         let mut magic = [0u8; ULS_MAGIC_FORMAT_SIGNATURE.len()];
         reader.read_exact(&mut magic)?;
         if &magic != ULS_MAGIC_FORMAT_SIGNATURE {
-            return Err(UlsCompatibilityError::InvalidMagicFormatSignature {
+            return Err(UlsError::InvalidMagicFormatSignature {
                 actual: magic.to_vec().into_boxed_slice(),
             }
             .into());
@@ -826,12 +826,12 @@ impl UlsSimulation<'_> {
 
         let turn_count = read_u64_le(reader)?;
         if turn_count > ULS_MAX_TURN_COUNT {
-            return Err(UlsCompatibilityError::TooManyTurns { actual: turn_count }.into());
+            return Err(UlsError::TooManyTurns { actual: turn_count }.into());
         }
 
         let player_count = read_u8_le(reader)?;
         if player_count as u64 > ULS_MAX_PLAYER_COUNT {
-            return Err(UlsCompatibilityError::TooManyPlayers {
+            return Err(UlsError::TooManyPlayers {
                 actual: player_count as u64,
             }
             .into());
@@ -855,7 +855,7 @@ impl UlsSimulation<'_> {
 
         let origins: BTreeSet<_> = chunks.iter().map(|chunk| (chunk.origin_x, chunk.origin_y)).collect();
         if origins.len() != chunks.len() {
-            return Err(UlsCompatibilityError::DuplicateChunks {
+            return Err(UlsError::DuplicateChunks {
                 duplicate_count: (chunks.len() - origins.len()) as u64,
             }.into());
         }

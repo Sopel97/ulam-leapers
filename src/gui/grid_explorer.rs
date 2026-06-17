@@ -19,7 +19,7 @@ use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use ulam_leapers::game::chunk::BoundedChunk;
-use ulam_leapers::game::persist::uls::{UlsCompatibilityError, UlsSimulation};
+use ulam_leapers::game::persist::uls::{UlsError, UlsSimulation};
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
 use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
@@ -47,7 +47,7 @@ const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifie
 pub enum SaveState {
     NotSaved,
     Saved,
-    Incompatible(UlsCompatibilityError),
+    Incompatible(UlsError),
     Errored(std::io::Error),
 }
 
