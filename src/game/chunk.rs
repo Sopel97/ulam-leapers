@@ -9,9 +9,10 @@ use crate::math::rect::GridRect;
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
 use std::borrow::Cow;
+use std::cmp;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, RangeInclusive};
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ChunkOrigin(GridPoint);
@@ -55,7 +56,25 @@ impl<T> Chunk<T> {
     pub fn memory_usage(&self) -> MemSize {
         MemSize::sizes_of::<T>(self.cells.width() * self.cells.height())
     }
-    
+
+    pub fn for_each_cell_in_shells<F>(&self, shell_range: RangeInclusive<u32>, mut f: F)
+    where
+        F: FnMut(GridPoint, &T)
+    {
+        let ox = self.bounds().start.x;
+        let oy = self.bounds().start.y;
+        for dy in 0..self.cells.height() {
+            for dx in 0..self.cells.width() {
+                let x = ox + dx as i32;
+                let y = oy + dy as i32;
+                let shell = cmp::max(x.unsigned_abs(), y.unsigned_abs());
+                if shell_range.contains(&shell) {
+                    f(GridPoint::new(x, y), &self.cells[(dx, dy)]);
+                }
+            }
+        }
+    }
+
     pub fn for_each_cell<F>(&self, mut f: F)
     where
         F: FnMut(GridPoint, &T)

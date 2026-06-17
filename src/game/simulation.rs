@@ -820,16 +820,19 @@ impl FinalizedSimulation {
             .map(|p| p.attacks().radius())
             .max()
             .unwrap_or(0);
-        let region_that_can_remain_frozen = {
+        let (region_that_can_remain_frozen, forbiddances_shell_range) = {
             // we need the grid region past modification shrunk by attack radius,
             // because we need to collect attacks that can still influence new placements
             let safe_shells = complete_shells as i32 - attack_radius as i32;
             if safe_shells > 0 {
                 let min_point = GridPoint::new(-safe_shells, -safe_shells);
 
-                GridRect::square_with_size(min_point, 2 * safe_shells + 1)
+                (
+                    GridRect::square_with_size(min_point, 2 * safe_shells + 1),
+                    (safe_shells as u32)..=((complete_shells + 1) as u32),
+                )
             } else {
-                GridRect::zero()
+                (GridRect::zero(), 0..=((complete_shells + 1) as u32))
             }
         };
 
@@ -857,27 +860,31 @@ impl FinalizedSimulation {
 
                 // TODO: this could still be significantly faster if we compute the exact shells
                 //       that we need and only iterate these 4 intersecting regions
-                active_chunk.for_each_cell(|attack_src, pid| {
-                    if *pid != empty_cell {
-                        let player = &players[pid.index() - 1];
+                active_chunk.for_each_cell_in_shells(
+                    forbiddances_shell_range.clone(),
+                    |attack_src, pid| {
+                        if *pid != empty_cell {
+                            let player = &players[pid.index() - 1];
 
-                        // We must not forget to forbid players from overwriting other player placements.
-                        let spiral_pos = UlamSpiralPoint::from(&attack_src);
-                        if spiral_pos.as_u64() as isize >= forbiddances_origin {
-                            forbiddances_vec_part
-                                .push((spiral_pos.as_u64() as isize, PlayerIdSet::full()));
-                        }
+                            // We must not forget to forbid players from overwriting other player placements.
+                            let spiral_pos = UlamSpiralPoint::from(&attack_src);
+                            if spiral_pos.as_u64() as isize >= forbiddances_origin {
+                                forbiddances_vec_part
+                                    .push((spiral_pos.as_u64() as isize, PlayerIdSet::full()));
+                            }
 
-                        for attack_dst in player.attacks.get_attacks_from(&attack_src) {
-                            let u = UlamSpiralPoint::from(&attack_dst);
-                            // We don't care about cells before the origin (last player) and
-                            // we need to be careful not to modify them.
-                            if u.as_u64() as isize >= forbiddances_origin {
-                                forbiddances_vec_part.push((u.as_u64() as isize, player.enemies));
+                            for attack_dst in player.attacks.get_attacks_from(&attack_src) {
+                                let u = UlamSpiralPoint::from(&attack_dst);
+                                // We don't care about cells before the origin (last player) and
+                                // we need to be careful not to modify them.
+                                if u.as_u64() as isize >= forbiddances_origin {
+                                    forbiddances_vec_part
+                                        .push((u.as_u64() as isize, player.enemies));
+                                }
                             }
                         }
-                    }
-                });
+                    },
+                );
 
                 let i = chunk_counter.fetch_add(1, Ordering::Relaxed);
                 progress_callback(
