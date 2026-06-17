@@ -144,16 +144,11 @@ impl BitXor<PlayerId> for PlayerIdSet {
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Player {
     attacks: LeaperAttacks,
-    id: PlayerId,
     enemies: PlayerIdSet,
     cursor: UlamSpiralCursor,
 }
 
 impl Player {
-    pub fn id(&self) -> PlayerId {
-        self.id
-    }
-
     pub fn enemies(&self) -> PlayerIdSet {
         self.enemies
     }
@@ -164,32 +159,6 @@ impl Player {
 
     pub fn attacks(&self) -> &LeaperAttacks {
         &self.attacks
-    }
-}
-
-impl Player {
-    fn from_uls(uls_player: UlsPlayer, pid: PlayerId) -> Self {
-        let UlsPlayer {
-            attack_vectors: uls_attack_vectors,
-            enemies_mask: uls_enemies_mask,
-            spiral_position: uls_spiral_position,
-        } = uls_player;
-
-        let enemies = PlayerIdSet {
-            bits: uls_enemies_mask,
-        };
-
-        let mut cursor = UlamSpiralCursor::new();
-        cursor.advance_to(UlamSpiralPoint::new(uls_spiral_position));
-
-        let attacks = LeaperAttacks::from_uls(uls_attack_vectors);
-
-        Self {
-            enemies,
-            id: pid,
-            cursor,
-            attacks,
-        }
     }
 }
 
@@ -252,7 +221,7 @@ impl FinalizedSimulation {
     }
 
     pub fn highest_player_id(&self) -> PlayerId {
-        self.players.iter().map(|p| p.id).max().unwrap_or_default()
+        PlayerId::new(self.players.len() as u8)
     }
 
     pub fn chunk_count(&self) -> usize {
@@ -432,7 +401,6 @@ impl Simulation {
 
         self.players.push(Player {
             attacks,
-            id,
             enemies: PlayerIdSet::empty(),
             cursor: UlamSpiralCursor::new(),
         });
@@ -461,8 +429,9 @@ impl Simulation {
             panic!("Cannot modify player enemies in a running simulation.");
         }
 
-        for player in &mut self.players {
-            player.enemies = PlayerIdSet::full() ^ player.id;
+        for (i, player) in self.players.iter_mut().enumerate() {
+            let pid = PlayerId::new((i + 1) as u8);
+            player.enemies = PlayerIdSet::full() ^ pid;
         }
     }
 
@@ -482,18 +451,20 @@ impl Simulation {
 
     #[inline(always)]
     fn simulate_single_turn(&mut self, placements: &mut [Vec<GridPoint>]) {
-        for player in self.players.iter_mut() {
+        for (i, player) in self.players.iter_mut().enumerate() {
+            let pid = PlayerId::new((i + 1) as u8);
+
             // In a lot of cases we can place the piece immediately where we currently are,
             // so special case it. Results in a significant speedup.
             let immediate_cell =
                 &mut self.forbiddances[player.cursor.spiral_position().as_u64() as isize];
-            if !immediate_cell.is_set(player.id) {
+            if !immediate_cell.is_set(pid) {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
                 let pos = self.forbiddances.position_or_first_empty(
                     player.cursor.spiral_position().as_u64() as isize + 1..,
-                    |x| !x.is_set(player.id),
+                    |x| !x.is_set(pid),
                 );
                 player.cursor.advance_to(UlamSpiralPoint::new(pos as u64));
                 self.forbiddances[player.cursor.spiral_position().as_u64() as isize] =
@@ -501,7 +472,7 @@ impl Simulation {
             }
 
             let attack_src = player.cursor.grid_position();
-            placements[player.id.0 as usize].push(attack_src);
+            placements[pid.index()].push(attack_src);
             for attack_dst in player.attacks.get_attacks_from(&attack_src) {
                 let u = UlamSpiralPoint::from(&attack_dst);
                 // We don't care about cells before the origin (last player) and
@@ -590,11 +561,7 @@ impl Simulation {
             .maximum_cells_created_by_spiral_steps(COMPRESSION_INTERVAL_CELLS);
         // We amortize compression, but we can still benefit from some available concurrency in the system.
         let minimum_compression_batch = rayon::current_num_threads() as u64 / 2;
-        let player_ids = self
-            .players
-            .iter()
-            .map(|player| player.id)
-            .collect::<Vec<_>>();
+        let player_ids: Vec<_> = (1..=self.players.len()).map(|i| PlayerId::new(i as u8)).collect();
         let (job_tx, job_rx) = mpsc::channel();
         let (buffer_tx, buffer_rx) = mpsc::channel();
 
@@ -636,7 +603,7 @@ impl Simulation {
                         }
 
                         for player_id in player_ids.iter() {
-                            grid.set_multiple(&placements[player_id.0 as usize], *player_id);
+                            grid.set_multiple(&placements[player_id.index()], *player_id);
                         }
 
                         buffer_tx.send(placements).unwrap();
@@ -797,6 +764,31 @@ impl Default for Simulation {
     }
 }
 
+impl From<UlsPlayer> for Player {
+    fn from(uls_player: UlsPlayer) -> Self {
+        let UlsPlayer {
+            attack_vectors: uls_attack_vectors,
+            enemies_mask: uls_enemies_mask,
+            spiral_position: uls_spiral_position,
+        } = uls_player;
+
+        let enemies = PlayerIdSet {
+            bits: uls_enemies_mask,
+        };
+
+        let mut cursor = UlamSpiralCursor::new();
+        cursor.advance_to(UlamSpiralPoint::new(uls_spiral_position));
+
+        let attacks = LeaperAttacks::from_uls(uls_attack_vectors);
+
+        Self {
+            enemies,
+            cursor,
+            attacks,
+        }
+    }
+}
+
 impl From<UlsSimulation<'_>> for FinalizedSimulation {
     fn from(uls_sim: UlsSimulation) -> Self {
         let UlsSimulation {
@@ -808,8 +800,7 @@ impl From<UlsSimulation<'_>> for FinalizedSimulation {
 
         let players = uls_players
             .into_iter()
-            .enumerate()
-            .map(|(i, player)| Player::from_uls(player, PlayerId::new((i + 1) as u8)))
+            .map(Player::from)
             .collect();
 
         let grid = Arc::new(FrozenGrid::from_uls(uls_chunker, uls_chunks));
