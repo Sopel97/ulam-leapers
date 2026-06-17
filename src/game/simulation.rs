@@ -180,6 +180,14 @@ pub trait Game {
             .unwrap_or(0) as u64
     }
 
+    fn farthest_player_shell(&self) -> u64 {
+        self.players()
+            .iter()
+            .map(|p| p.cursor.grid_position().chebyshev_distance_to_origin())
+            .max()
+            .unwrap_or(0) as u64
+    }
+
     fn farthest_player_spiral_position(&self) -> UlamSpiralPoint {
         self.players()
             .iter()
@@ -806,6 +814,7 @@ impl FinalizedSimulation {
         F: Fn(FinalizedSimulationToSimulationProgress) + Send + Sync,
     {
         let complete_shells = self.complete_shells();
+        let farthest_shell = self.farthest_player_shell();
         let forbiddances_origin = self.nearest_player_spiral_position().as_u64() as isize;
         let mut forbiddances = SlidingWindow::with_origin(forbiddances_origin);
 
@@ -821,18 +830,19 @@ impl FinalizedSimulation {
             .max()
             .unwrap_or(0);
         let (region_that_can_remain_frozen, forbiddances_shell_range) = {
-            // we need the grid region past modification shrunk by attack radius,
+            // We need the grid region past modification shrunk by attack radius,
             // because we need to collect attacks that can still influence new placements
-            let safe_shells = complete_shells as i32 - attack_radius as i32;
-            if safe_shells > 0 {
-                let min_point = GridPoint::new(-safe_shells, -safe_shells);
+            // Last complete shell is `complete_shells - 1`, hence -1
+            let last_safe_shell = complete_shells as i32 - attack_radius as i32 - 1;
+            if last_safe_shell > 0 {
+                let min_point = GridPoint::new(-last_safe_shell, -last_safe_shell);
 
                 (
-                    GridRect::square_with_size(min_point, 2 * safe_shells + 1),
-                    (safe_shells as u32)..=((complete_shells + 1) as u32),
+                    GridRect::square_with_size(min_point, 2 * last_safe_shell + 1),
+                    ((last_safe_shell + 1) as u32)..=(farthest_shell as u32),
                 )
             } else {
-                (GridRect::zero(), 0..=((complete_shells + 1) as u32))
+                (GridRect::zero(), 0..=(farthest_shell as u32))
             }
         };
 
@@ -858,8 +868,6 @@ impl FinalizedSimulation {
             .map(|active_chunk| {
                 let mut forbiddances_vec_part = vec![];
 
-                // TODO: this could still be significantly faster if we compute the exact shells
-                //       that we need and only iterate these 4 intersecting regions
                 active_chunk.for_each_cell_in_shells(
                     forbiddances_shell_range.clone(),
                     |attack_src, pid| {
