@@ -12,6 +12,7 @@ use ulam_leapers::game::simulation::{
     SimulationProgress,
 };
 use ulam_leapers::util::time;
+use crate::gui::util::ContextOrUi;
 
 enum SimulationRunnerWorkerJob {
     Simulate(
@@ -104,27 +105,6 @@ impl ProgressTracker {
             self.average_turns_per_second * (1.0 - alpha) + instant_turns_per_second * alpha;
         self.last_progress_update_time = now;
         self.curr_progress = new_progress;
-    }
-}
-
-enum ContextOrUi<'a> {
-    Context(&'a Context),
-    Ui(&'a mut Ui),
-}
-
-impl<'a> ContextOrUi<'a> {
-    pub fn ctx(&self) -> &Context {
-        match self {
-            ContextOrUi::Context(ctx) => ctx,
-            ContextOrUi::Ui(ui) => ui.ctx(),
-        }
-    }
-
-    pub fn ui(&mut self) -> Option<&mut Ui> {
-        match self {
-            ContextOrUi::Context(_ctx) => None,
-            ContextOrUi::Ui(ui) => Some(ui),
-        }
     }
 }
 

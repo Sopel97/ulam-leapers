@@ -9,9 +9,12 @@ use eframe::egui;
 use eframe::egui::{Context, ScrollArea, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::simulation::{FinalizedSimulation, Game, Simulation};
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::util::ContextOrUi;
 
 const MIN_TURNS: u64 = 1_000_000;
 const MAX_TURNS: u64 = 1_000_000 * 1_000_000;
@@ -20,10 +23,76 @@ const MAX_COMPLETE_SHELLS: u64 = 1_000_000;
 const MIN_MEMORY_USAGE: MemSize = MemSize::gb(1);
 const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
 
+enum SimulationResumerWorkerJob {
+    Stop,
+    ConvertToSimulation(FinalizedSimulation),
+}
+
+enum SimulationResumerWorkerResult {
+    ConvertedSimulation(Simulation),
+}
+
+struct SimulationResumerWorker {
+    job_receiver: mpsc::Receiver<SimulationResumerWorkerJob>,
+    result_sender: mpsc::Sender<SimulationResumerWorkerResult>,
+}
+
+impl SimulationResumerWorker {
+    pub fn run(self) {
+        loop {
+            let job = self.job_receiver.recv().unwrap();
+            match job {
+                SimulationResumerWorkerJob::Stop => {
+                    break;
+                }
+                SimulationResumerWorkerJob::ConvertToSimulation(finalized_simulation) => {
+                    let simulation = Simulation::from(finalized_simulation);
+                    self.result_sender
+                        .send(SimulationResumerWorkerResult::ConvertedSimulation(
+                            simulation,
+                        ))
+                        .unwrap();
+                }
+            }
+        }
+    }
+}
+
+enum State {
+    ResolvingStateChange,
+    FinalizedSimulation(FinalizedSimulation),
+    Converting,
+    Simulation(Simulation),
+}
+
 pub struct SimulationResumer {
-    finalized_simulation: FinalizedSimulation,
+    state: State,
 
     simulation_limits_input: SimulationLimitsInput,
+    
+    submit_to_runner: bool,
+
+    worker: Option<JoinHandle<()>>,
+    worker_jobs: mpsc::Sender<SimulationResumerWorkerJob>,
+    worker_results: mpsc::Receiver<SimulationResumerWorkerResult>,
+}
+
+impl Drop for SimulationResumer {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            self.worker_jobs
+                .send(SimulationResumerWorkerJob::Stop)
+                .unwrap();
+            if let Err(e) = worker.join() {
+                eprintln!("Failed to join worker: {:?}", e);
+            }
+        }
+    }
+}
+
+enum FinalizedSimulationUiAction {
+    None,
+    Submit,
 }
 
 impl SimulationResumer {
@@ -50,10 +119,25 @@ impl SimulationResumer {
                 ))
             })?;
 
+        let (job_sender, job_receiver) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::channel();
+
         Ok(Self {
-            finalized_simulation: fin_sim,
+            state: State::FinalizedSimulation(fin_sim),
 
             simulation_limits_input,
+            
+            submit_to_runner: false,
+
+            worker: Some(std::thread::spawn(move || {
+                SimulationResumerWorker {
+                    job_receiver,
+                    result_sender,
+                }
+                .run()
+            })),
+            worker_jobs: job_sender,
+            worker_results: result_receiver,
         })
     }
 }
@@ -64,16 +148,95 @@ impl Subwindow for SimulationResumer {
     }
 
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Ui(ui));
+        
+        if self.submit_to_runner {
+            if let State::Simulation(sim) = std::mem::replace(&mut self.state, State::ResolvingStateChange) {
+                let limits = self.simulation_limits_input.build_limits();
+                let runner = SimulationRunner::new(sim, limits);
+                Replace(Box::new(runner))
+            } else {
+                panic!("Invalid state while trying to submit simulation to runner");
+            }
+        } else {
+            Keep(self)
+        }
+    }
+
+    fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Context(ctx));
+        
+        Keep(self)
+    }
+}
+
+impl SimulationResumer {
+    fn handle_state_changes(&mut self, mut ctxui: ContextOrUi) {
+        if let Ok(result) = self.worker_results.try_recv() {
+            match result {
+                SimulationResumerWorkerResult::ConvertedSimulation(sim) => {
+                    self.state = State::Simulation(sim);
+                }
+            }
+        }
+
+        let old_state = std::mem::replace(&mut self.state, State::ResolvingStateChange);
+        self.state = match old_state {
+            State::FinalizedSimulation(fin_sim) => {
+                if let Some(ui) = ctxui.ui() {
+                    match self.show_finalized_simulation_ui(ui, &fin_sim) {
+                        FinalizedSimulationUiAction::None => State::FinalizedSimulation(fin_sim),
+                        FinalizedSimulationUiAction::Submit => {
+                            self.worker_jobs
+                                .send(SimulationResumerWorkerJob::ConvertToSimulation(fin_sim))
+                                .unwrap();
+                            State::Converting
+                        }
+                    }
+                } else {
+                    State::FinalizedSimulation(fin_sim)
+                }
+            }
+            State::Converting => {
+                if let Some(ui) = ctxui.ui() {
+                    self.show_converting_ui(ui);
+                }
+                State::Converting
+            },
+            State::Simulation(sim) => {
+                self.submit_to_runner = true;
+                State::Simulation(sim)
+            }
+            State::ResolvingStateChange => {
+                panic!("Invalid state");
+            }
+        };
+    }
+    
+    fn show_converting_ui(&mut self, ui: &mut Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::Frame::default().show(ui, |ui| {
+                ui.label("Preparing simulation...")
+            });
+        });
+    }
+
+    #[must_use]
+    fn show_finalized_simulation_ui(
+        &mut self,
+        ui: &mut Ui,
+        sim: &FinalizedSimulation,
+    ) -> FinalizedSimulationUiAction {
         let mut submit = false;
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::Frame::default().show(ui, |ui| {
                 ui.horizontal_top(|ui| {
-                    self.show_players_ui(ui);
+                    self.show_players_ui(ui, sim);
 
                     ui.group(|ui| {
                         ui.vertical(|ui| {
-                            self.show_info_ui(ui);
+                            self.show_info_ui(ui, sim);
                         });
                     });
 
@@ -89,27 +252,18 @@ impl Subwindow for SimulationResumer {
         });
 
         if submit {
-            let sim = Simulation::from(self.finalized_simulation);
-            let limits = self.simulation_limits_input.build_limits();
-            let runner = SimulationRunner::new(sim, limits);
-            Replace(Box::new(runner))
+            FinalizedSimulationUiAction::Submit
         } else {
-            Keep(self)
+            FinalizedSimulationUiAction::None
         }
     }
 
-    fn not_ui(self: Box<Self>, ctx: &Context) -> SubwindowResult {
-        Keep(self)
-    }
-}
-
-impl SimulationResumer {
     pub fn make_player_name(index: usize) -> String {
         format!("Player {}", index + 1)
     }
 
-    fn show_players_ui(&mut self, ui: &mut Ui) {
-        let players = self.finalized_simulation.players();
+    fn show_players_ui(&mut self, ui: &mut Ui, finalized_simulation: &FinalizedSimulation) {
+        let players = finalized_simulation.players();
 
         ui.horizontal_top(|ui| {
             ui.group(|ui| {
@@ -129,13 +283,13 @@ impl SimulationResumer {
         });
     }
 
-    fn show_info_ui(&mut self, ui: &mut Ui) {
-        let turns = self.finalized_simulation.complete_turns();
-        let complete_shells = self.finalized_simulation.complete_shells();
+    fn show_info_ui(&mut self, ui: &mut Ui, finalized_simulation: &FinalizedSimulation) {
+        let turns = finalized_simulation.complete_turns();
+        let complete_shells = finalized_simulation.complete_shells();
         let side_cells = complete_shells.max(1) as usize * 2 - 1;
         let cells = side_cells * side_cells;
-        let chunks = self.finalized_simulation.chunk_count();
-        let memory_usage = self.finalized_simulation.memory_usage();
+        let chunks = finalized_simulation.chunk_count();
+        let memory_usage = finalized_simulation.memory_usage();
 
         ui.label(format!("Turns: {}M", turns / 1000 / 1000));
         ui.label(format!("Complete shells: {}", complete_shells));
