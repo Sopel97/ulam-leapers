@@ -1,15 +1,17 @@
-﻿use std::fmt::{Debug, Display};
-use crate::gui::util::format_pow2_slider_text;
+﻿use crate::gui::util::format_pow2_slider_text;
 use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
 use crate::gui::widgets::player_relations::{
     PlayerRelationsInput, PlayerRelationsInputConstraints,
 };
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
-use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError};
+use crate::gui::widgets::widget::{
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+};
 use eframe::egui;
 use eframe::egui::{Color32, Response, ScrollArea, Slider, Ui, Vec2b};
 use serde_json::{json, Value};
-use std::ops::{RangeBounds, RangeInclusive};
+use std::fmt::Debug;
+use std::ops::RangeInclusive;
 use ulam_leapers::compression::zstd::ZstdCompression;
 use ulam_leapers::game::chunker::StripChunker;
 use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
@@ -31,15 +33,18 @@ pub struct SimulationConfigInputConstraints {
 
 impl SimulationConfigInputConstraints {
     pub fn check_attack_radius(&self, attack_radius: usize) -> Result<(), WidgetError> {
-        self.attack_radius.check_constraint(&attack_radius, "Attack radius")
+        self.attack_radius
+            .check_constraint(&attack_radius, "Attack radius")
     }
 
     pub fn check_player_count(&self, player_count: usize) -> Result<(), WidgetError> {
-        self.player_count.check_constraint(&player_count, "Player count")
+        self.player_count
+            .check_constraint(&player_count, "Player count")
     }
 
     pub fn check_memory_usage(&self, memory_usage: MemSize) -> Result<(), WidgetError> {
-        self.memory_usage.check_constraint(&memory_usage, "Memory usage")
+        self.memory_usage
+            .check_constraint(&memory_usage, "Memory usage")
     }
 
     pub fn check_turns(&self, turns: u64) -> Result<(), WidgetError> {
@@ -47,30 +52,43 @@ impl SimulationConfigInputConstraints {
     }
 
     pub fn check_complete_shells(&self, complete_shells: u64) -> Result<(), WidgetError> {
-        self.complete_shells.check_constraint(&complete_shells, "Complete shells")
+        self.complete_shells
+            .check_constraint(&complete_shells, "Complete shells")
     }
 
-    pub fn check_zstd_compression_level(&self, zstd_compression_level: i32) -> Result<(), WidgetError> {
-        self.zstd_compression_level.check_constraint(&zstd_compression_level, "Zstd compression level")
+    pub fn check_zstd_compression_level(
+        &self,
+        zstd_compression_level: i32,
+    ) -> Result<(), WidgetError> {
+        self.zstd_compression_level
+            .check_constraint(&zstd_compression_level, "Zstd compression level")
     }
 
     pub fn check_chunk_strip_length(&self, chunk_strip_length: Pow2) -> Result<(), WidgetError> {
-        self.chunk_strip_length.check_constraint(&chunk_strip_length, "Strip length")
+        self.chunk_strip_length
+            .check_constraint(&chunk_strip_length, "Strip length")
     }
 
-    pub fn check_chunk_strip_thickness(&self, chunk_strip_thickness: Pow2) -> Result<(), WidgetError> {
-        self.chunk_strip_thickness.check_constraint(&chunk_strip_thickness, "Strip thickness")
+    pub fn check_chunk_strip_thickness(
+        &self,
+        chunk_strip_thickness: Pow2,
+    ) -> Result<(), WidgetError> {
+        self.chunk_strip_thickness
+            .check_constraint(&chunk_strip_thickness, "Strip thickness")
     }
 
-    pub fn check_chunk_strip_dimensions(&self, chunk_strip_length: Pow2, chunk_strip_thickness: Pow2) -> Result<(), WidgetError> {
+    pub fn check_chunk_strip_dimensions(
+        &self,
+        chunk_strip_length: Pow2,
+        chunk_strip_thickness: Pow2,
+    ) -> Result<(), WidgetError> {
         self.check_chunk_strip_length(chunk_strip_length)?;
         self.check_chunk_strip_thickness(chunk_strip_thickness)?;
 
         if chunk_strip_thickness > chunk_strip_length {
             return Err(WidgetError::InvalidState(format!(
                 "Minimum chunk strip thickness {} > minimum chunk strip length {}",
-                chunk_strip_thickness,
-                chunk_strip_length
+                chunk_strip_thickness, chunk_strip_length
             )));
         }
 
@@ -257,7 +275,8 @@ impl SimulationConfigInput {
         &mut self,
         zstd_compression_level: i32,
     ) -> Result<(), WidgetError> {
-        self.constraints.check_zstd_compression_level(zstd_compression_level)?;
+        self.constraints
+            .check_zstd_compression_level(zstd_compression_level)?;
 
         self.zstd_compression_level = zstd_compression_level;
 
@@ -269,7 +288,8 @@ impl SimulationConfigInput {
         chunk_strip_length: Pow2,
         chunk_strip_thickness: Pow2,
     ) -> Result<(), WidgetError> {
-        self.constraints.check_chunk_strip_dimensions(chunk_strip_length, chunk_strip_thickness)?;
+        self.constraints
+            .check_chunk_strip_dimensions(chunk_strip_length, chunk_strip_thickness)?;
 
         self.chunk_strip_length_pow2 = chunk_strip_length.exponent() as u32;
         self.chunk_strip_thickness_pow2 = chunk_strip_thickness.exponent() as u32;
@@ -416,8 +436,10 @@ impl JsonWidget for SimulationConfigInput {
         let zstd_compression_level = json.read_i64("zstd_compression_level")? as i32;
         constraints.check_zstd_compression_level(zstd_compression_level)?;
 
-        let chunk_strip_length = Pow2::from_exponent(json.read_u64("chunk_strip_length_pow2")? as u8);
-        let chunk_strip_thickness = Pow2::from_exponent(json.read_u64("chunk_strip_thickness_pow2")? as u8);
+        let chunk_strip_length =
+            Pow2::from_exponent(json.read_u64("chunk_strip_length_pow2")? as u8);
+        let chunk_strip_thickness =
+            Pow2::from_exponent(json.read_u64("chunk_strip_thickness_pow2")? as u8);
         constraints.check_chunk_strip_dimensions(chunk_strip_length, chunk_strip_thickness)?;
 
         Ok(Self {
