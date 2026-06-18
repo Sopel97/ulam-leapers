@@ -357,7 +357,6 @@ impl App {
                             SubwindowState::Active(kept)
                         }
                         SubwindowResult::Replace(replacement) => {
-                            // Same as Kept, but it's valuable to have a syntactic distinction.
                             tab.highlight_until_selected = true;
                             ui.ctx().request_repaint();
                             SubwindowState::Active(replacement)
