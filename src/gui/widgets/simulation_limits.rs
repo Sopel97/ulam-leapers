@@ -1,10 +1,11 @@
 ﻿use crate::gui::widgets::widget::{
-    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetError,
 };
 use eframe::egui::{Response, Slider, Ui};
 use serde_json::{json, Value};
 use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::SimulationLimits;
+use ulam_leapers::util::constraint::Constraint;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
 
@@ -18,16 +19,16 @@ pub struct SimulationLimitsConstraints {
 impl SimulationLimitsConstraints {
     pub fn check_memory_usage(&self, memory_usage: MemSize) -> Result<(), WidgetError> {
         self.memory_usage
-            .check_constraint(&memory_usage, "Memory usage")
+            .check_constraint(&memory_usage, "Memory usage").map_err(WidgetError::from)
     }
 
     pub fn check_turns(&self, turns: u64) -> Result<(), WidgetError> {
-        self.turns.check_constraint(&turns, "Turns")
+        self.turns.check_constraint(&turns, "Turns").map_err(WidgetError::from)
     }
 
     pub fn check_complete_shells(&self, complete_shells: u64) -> Result<(), WidgetError> {
         self.complete_shells
-            .check_constraint(&complete_shells, "Complete shells")
+            .check_constraint(&complete_shells, "Complete shells").map_err(WidgetError::from)
     }
 }
 

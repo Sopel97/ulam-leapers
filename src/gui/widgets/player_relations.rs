@@ -1,6 +1,6 @@
 ﻿use crate::gui::widgets::misc::ui_layout_2d;
 use crate::gui::widgets::widget::{
-    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetError,
 };
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
 use serde_json::{json, Value};
@@ -10,6 +10,7 @@ use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::simulation::{Player, PlayerId};
 use ulam_leapers::util::blit::{blit_array2d, Blit2D};
+use ulam_leapers::util::constraint::Constraint;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 
 const ENEMY_MAP_HELP_TEXT: &str = "Specifies which player can and cannot be placed\n\
@@ -24,7 +25,7 @@ pub struct PlayerRelationsInputConstraints {
 impl PlayerRelationsInputConstraints {
     pub fn check_player_count(&self, player_count: usize) -> Result<(), WidgetError> {
         self.player_count
-            .check_constraint(&player_count, "Player count")
+            .check_constraint(&player_count, "Player count").map_err(WidgetError::from)
     }
 }
 

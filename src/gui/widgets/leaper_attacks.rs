@@ -1,6 +1,6 @@
 ﻿use crate::gui::widgets::misc::ui_layout_2d;
 use crate::gui::widgets::widget::{
-    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetError,
 };
 use eframe::egui;
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
@@ -12,6 +12,7 @@ use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::piece::{leaper_name_from_attack_vector, LeaperAttacks};
 use ulam_leapers::math::coords::{symmetries, GridVector};
 use ulam_leapers::util::blit::{blit_array2d, Blit2D};
+use ulam_leapers::util::constraint::Constraint;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -21,7 +22,7 @@ pub struct LeaperAttacksInputConstraints {
 
 impl LeaperAttacksInputConstraints {
     pub fn check_radius(&self, radius: usize) -> Result<(), WidgetError> {
-        self.radius.check_constraint(&radius, "Radius")
+        self.radius.check_constraint(&radius, "Radius").map_err(WidgetError::from)
     }
 }
 

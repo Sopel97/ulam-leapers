@@ -2,7 +2,7 @@
 use serde_json::Value;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::RangeInclusive;
+use ulam_leapers::util::constraint::ConstraintViolationError;
 use ulam_leapers::util::json::JsonError;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -51,6 +51,12 @@ impl From<WidgetError> for JsonWidgetError {
     }
 }
 
+impl From<ConstraintViolationError> for WidgetError {
+    fn from(e: ConstraintViolationError) -> Self {
+        WidgetError::ConstraintViolation(e.take_message())
+    }
+}
+
 pub trait JsonWidget
 where
     Self: Sized,
@@ -69,23 +75,4 @@ where
     Self: Sized,
 {
     fn ui(&mut self, ui: &mut Ui) -> Response;
-}
-
-pub trait WidgetConstraint<T> {
-    fn check_constraint(&self, val: &T, name: &str) -> Result<(), WidgetError>;
-}
-
-impl<T> WidgetConstraint<T> for RangeInclusive<T>
-where
-    T: Debug + Display + PartialOrd,
-{
-    fn check_constraint(&self, val: &T, name: &str) -> Result<(), WidgetError> {
-        if !self.contains(val) {
-            Err(WidgetError::ConstraintViolation(format!(
-                "{name} {val} outside allowed range {self:?}"
-            )))
-        } else {
-            Ok(())
-        }
-    }
 }
