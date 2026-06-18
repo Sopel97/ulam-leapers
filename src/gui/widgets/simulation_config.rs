@@ -216,7 +216,7 @@ impl SimulationConfigInput {
 
         Ok(())
     }
-    
+
     pub fn player_count(&self) -> usize {
         self.player_configs.len()
     }

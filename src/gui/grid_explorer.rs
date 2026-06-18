@@ -5,7 +5,7 @@ use crate::gui::grid_render::render::{
 };
 use crate::gui::subwindow::SubwindowResult::Keep;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
+use crate::gui::util::{format_zoom_slider_text, make_player_name, scroll_delta_in_ui};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
@@ -280,12 +280,27 @@ impl GridExplorer {
                     StrokeKind::Outside,
                 );
 
+                let cursor_line = match self.grid_cell_accessor.get(pointed_coords) {
+                    Some(pid) => {
+                        let name = make_player_name(pid);
+                        format!("Cursor: {} at ({}, {})",
+                            name,
+                            pointed_coords.x,
+                            pointed_coords.y,
+                        )
+                    }
+                    None => {
+                        format!("Cursor: ({}, {})",
+                            pointed_coords.x,
+                            pointed_coords.y,
+                        )
+                    }
+                };
+
                 let text = format!(
-                    "Cursor: ({}, {})\n\
+                    "{cursor_line}\n\
                     Bounds: ({}, {}), ({}, {})\n\
                     Memsize: {}",
-                    pointed_coords.x,
-                    pointed_coords.y,
                     chunk_bounds.start.x,
                     chunk_bounds.start.y,
                     chunk_bounds.end.x,
@@ -619,10 +634,6 @@ impl GridExplorer {
         self.show_screenshots_ui(ui);
     }
 
-    pub fn make_player_name(index: usize) -> String {
-        format!("Player {}", index + 1)
-    }
-
     fn show_players_ui(&mut self, ui: &mut Ui) {
         let players = self.finalized_simulation.players();
 
@@ -631,8 +642,9 @@ impl GridExplorer {
                 ui.vertical(|ui| {
                     for (i, player) in players.iter().enumerate() {
                         ui.horizontal(|ui| {
-                            srgb_color_button(ui, &mut self.player_colors[i + 1], false);
-                            let name = Self::make_player_name(i);
+                            let pid = PlayerId::new((i + 1) as u8);
+                            srgb_color_button(ui, &mut self.player_colors[pid.index()], false);
+                            let name = make_player_name(pid);
                             ui.label(format!("{name} attacks"));
                         });
                         let mut widget = LeaperAttacksView::new(player.attacks());

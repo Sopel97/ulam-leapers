@@ -1,7 +1,7 @@
 ﻿use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::util::ContextOrUi;
+use crate::gui::util::{make_player_name, ContextOrUi};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
@@ -14,9 +14,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{sleep, JoinHandle};
 use std::time::Duration;
 use ulam_leapers::game::persist::uls::UlsSimulation;
-use ulam_leapers::game::simulation::{
-    FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, Simulation,
-};
+use ulam_leapers::game::simulation::{FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, PlayerId, Simulation};
 use ulam_leapers::util::memory::MemSize;
 use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 
@@ -309,10 +307,6 @@ impl SimulationResumer {
         }
     }
 
-    pub fn make_player_name(index: usize) -> String {
-        format!("Player {}", index + 1)
-    }
-
     fn show_players_ui(&mut self, ui: &mut Ui, finalized_simulation: &FinalizedSimulation) {
         let players = finalized_simulation.players();
 
@@ -321,7 +315,8 @@ impl SimulationResumer {
                 ScrollArea::new(Vec2b::new(false, true)).show(ui, |ui| {
                     ui.vertical(|ui| {
                         for (i, player) in players.iter().enumerate() {
-                            let name = Self::make_player_name(i);
+                            let pid = PlayerId::new((i + 1) as u8);
+                            let name = make_player_name(pid);
                             ui.label(format!("{name} attacks"));
                             let mut widget = LeaperAttacksView::new(player.attacks());
                             widget.ui(ui);

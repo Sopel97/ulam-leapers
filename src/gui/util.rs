@@ -1,6 +1,7 @@
 ﻿use eframe::egui;
 use eframe::egui::{Context, Ui};
 use std::ops::RangeInclusive;
+use ulam_leapers::game::simulation::PlayerId;
 
 pub enum ContextOrUi<'a> {
     Context(&'a Context),
@@ -41,5 +42,13 @@ pub fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
         format!("{}x", 1 << n)
     } else {
         format!("1/{}x", 1 << -n)
+    }
+}
+
+pub fn make_player_name(pid: PlayerId) -> String {
+    if pid == PlayerId::new(0) {
+        "Empty".to_owned()
+    } else {
+        format!("Player {}", pid.index())
     }
 }
