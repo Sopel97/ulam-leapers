@@ -239,6 +239,9 @@ impl SimulationCreator {
             SimulationConfigInput::with_players(players, Self::make_creation_state_constraints())?;
 
         state.set_turns_limit(DEFAULT_TURNS)?;
+        state.set_attack_radius(DEFAULT_ATTACK_RADIUS)?;
+        state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL)?;
+        state.set_chunk_strip_length_and_thickness_pow2(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)?;
 
         if players.is_empty() {
             state.set_player_count(DEFAULT_PLAYER_COUNT)?;
