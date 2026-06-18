@@ -11,7 +11,8 @@ use eframe::egui::{Context, ScrollArea, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::JoinHandle;
+use std::thread::{sleep, JoinHandle};
+use std::time::Duration;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::simulation::{
     FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, Simulation,
@@ -31,6 +32,7 @@ enum SimulationResumerWorkerJob {
     ConvertToSimulation(
         FinalizedSimulation,
         Arc<Mutex<FinalizedSimulationToSimulationProgress>>,
+        Context,
     ),
 }
 
@@ -54,6 +56,7 @@ impl SimulationResumerWorker {
                 SimulationResumerWorkerJob::ConvertToSimulation(
                     finalized_simulation,
                     progress_slot,
+                    context,
                 ) => {
                     let simulation = finalized_simulation.to_simulation(|progress| {
                         *progress_slot.lock().unwrap() = progress;
@@ -63,6 +66,7 @@ impl SimulationResumerWorker {
                             simulation,
                         ))
                         .unwrap();
+                    context.request_repaint();
                 }
             }
         }
@@ -161,6 +165,18 @@ impl Subwindow for SimulationResumer {
     fn ui(mut self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
         self.handle_state_changes(ContextOrUi::Ui(ui));
 
+        self.get_subwindow_result()
+    }
+
+    fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Context(ctx));
+
+        self.get_subwindow_result()
+    }
+}
+
+impl SimulationResumer {
+    fn get_subwindow_result(mut self: Box<Self>) -> SubwindowResult {
         if self.submit_to_runner {
             if let State::Simulation(sim) =
                 std::mem::replace(&mut self.state, State::ResolvingStateChange)
@@ -176,14 +192,6 @@ impl Subwindow for SimulationResumer {
         }
     }
 
-    fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
-        self.handle_state_changes(ContextOrUi::Context(ctx));
-
-        Keep(self)
-    }
-}
-
-impl SimulationResumer {
     fn handle_state_changes(&mut self, mut ctxui: ContextOrUi) {
         if let Ok(result) = self.worker_results.try_recv() {
             match result {
@@ -207,6 +215,7 @@ impl SimulationResumer {
                                 .send(SimulationResumerWorkerJob::ConvertToSimulation(
                                     fin_sim,
                                     progress.clone(),
+                                    ctxui.ctx().clone(),
                                 ))
                                 .unwrap();
                             State::Converting(progress)

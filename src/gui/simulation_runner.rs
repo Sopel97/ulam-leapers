@@ -1,6 +1,7 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
-use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
+use crate::gui::subwindow::SubwindowResult::{Keep, KeepAndHighlightUntilSelected, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::util::ContextOrUi;
 use eframe::egui;
 use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +13,6 @@ use ulam_leapers::game::simulation::{
     SimulationProgress,
 };
 use ulam_leapers::util::time;
-use crate::gui::util::ContextOrUi;
 
 enum SimulationRunnerWorkerJob {
     Simulate(
@@ -115,6 +115,7 @@ pub struct SimulationRunner {
     progress_tracker: ProgressTracker,
 
     submit_to_explorer: bool,
+    highlight_until_selected: bool,
     progress: Arc<Mutex<SimulationProgress>>,
     last_progress: SimulationProgress,
     worker: Option<JoinHandle<()>>,
@@ -203,6 +204,7 @@ impl SimulationRunner {
             progress_tracker: ProgressTracker::new(),
 
             submit_to_explorer: false,
+            highlight_until_selected: false,
             progress: Default::default(),
             last_progress: Default::default(),
             worker: Some(std::thread::spawn(move || {
@@ -282,18 +284,7 @@ impl Subwindow for SimulationRunner {
             });
         });
 
-        if self.submit_to_explorer {
-            if let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
-                finalized_simulation,
-            )) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::Closing)
-            {
-                Replace(Box::new(GridExplorer::new(finalized_simulation)))
-            } else {
-                panic!("Tried submitting to explorer while in an unsuitable state.")
-            }
-        } else {
-            Keep(self)
-        }
+        self.get_subwindow_result()
     }
 
     fn is_closeable(&self) -> bool {
@@ -306,14 +297,37 @@ impl Subwindow for SimulationRunner {
     fn not_ui(mut self: Box<Self>, ctx: &Context) -> SubwindowResult {
         self.handle_state_changes(ContextOrUi::Context(ctx));
 
-        Keep(self)
+        self.get_subwindow_result()
     }
 }
 
 impl SimulationRunner {
+    fn get_subwindow_result(mut self: Box<Self>) -> SubwindowResult {
+        if self.submit_to_explorer {
+            if let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                finalized_simulation,
+            )) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::Closing)
+            {
+                Replace(Box::new(GridExplorer::new(finalized_simulation)))
+            } else {
+                panic!("Tried submitting to explorer while in an unsuitable state.")
+            }
+        } else if self.highlight_until_selected {
+            self.highlight_until_selected = false;
+            KeepAndHighlightUntilSelected(self)
+        } else {
+            Keep(self)
+        }
+    }
+
     fn handle_state_changes(&mut self, mut ctxui: ContextOrUi) {
         while let Ok(result) = self.worker_results.try_recv() {
-            self.simulation_state = SimulationRunnerState::Idle(result);
+            let new_state = SimulationRunnerState::Idle(result);
+            if std::mem::discriminant(&new_state) != std::mem::discriminant(&self.simulation_state)
+            {
+                self.highlight_until_selected = true;
+            }
+            self.simulation_state = new_state;
         }
 
         let old_simulation_state = std::mem::replace(

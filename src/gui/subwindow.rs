@@ -2,6 +2,7 @@
 
 pub enum SubwindowResult {
     Keep(Box<dyn Subwindow>),
+    KeepAndHighlightUntilSelected(Box<dyn Subwindow>),
     Spawn((Box<dyn Subwindow>, Vec<Box<dyn Subwindow>>)),
     Replace(Box<dyn Subwindow>),
     Close,
@@ -25,4 +26,8 @@ pub trait Subwindow {
 
     /// Called when the subwindow is closed by the close button if allowed by is_closeable.
     fn on_close(&mut self) {}
+    
+    fn highligh_until_selected(&self) -> bool {
+        false
+    }
 }

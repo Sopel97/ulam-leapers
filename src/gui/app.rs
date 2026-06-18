@@ -1,16 +1,11 @@
 ﻿use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::simulation_creator::SimulationCreator;
+use crate::gui::simulation_resumer::SimulationResumer;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Color32, PointerButton, Response, Sense, Ui};
 use eframe::{egui, Frame};
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::path::PathBuf;
-use ulam_leapers::game::persist::uls::UlsSimulation;
-use ulam_leapers::game::simulation::{FinalizedSimulation, Simulation, SimulationLimits};
-use ulam_leapers::util::memory::MemSize;
-use crate::gui::simulation_resumer::SimulationResumer;
-use crate::gui::simulation_runner::SimulationRunner;
 
 #[derive(Default)]
 enum SubwindowState {
@@ -51,6 +46,7 @@ impl TabIdAllocator {
 pub struct Tab {
     id: TabId,
     subwindow: SubwindowState,
+    highlight_until_selected: bool,
 }
 
 pub struct State {
@@ -190,6 +186,7 @@ impl App {
         self.state.tabs.push(Tab {
             id,
             subwindow: SubwindowState::Active(subwindow),
+            highlight_until_selected: true,
         });
         if self.state.selected_tab_id == TabIdAllocator::invalid_id() {
             self.state.selected_tab_id = id;
@@ -245,8 +242,20 @@ impl App {
                         .sense(Sense::click() | Sense::drag());
 
                     let tab_label = ui.add(tab_label_widget);
+
+                    if subwindow.highligh_until_selected() {
+                        tab.highlight_until_selected = true;
+                    }
+
                     if tab_label.clicked() {
                         selected_tab_id = tab.id;
+                    }
+
+                    // Highlight tabs that the user has not yet discovered
+                    if tab.highlight_until_selected {
+                        let mut painter = ui.painter_at(tab_label.rect);
+                        painter.set_opacity(0.25);
+                        painter.rect_filled(tab_label.rect, 3, Color32::GREEN);
                     }
 
                     if subwindow.is_closeable() {
@@ -330,21 +339,33 @@ impl App {
             tab.subwindow = match subwindow {
                 SubwindowState::Active(subwindow) => {
                     let cmd = if is_selected {
+                        tab.highlight_until_selected = false;
                         subwindow.ui(ui)
                     } else {
                         subwindow.not_ui(ui.ctx())
                     };
                     match cmd {
                         SubwindowResult::Keep(kept) => SubwindowState::Active(kept),
+                        SubwindowResult::KeepAndHighlightUntilSelected(kept) => {
+                            tab.highlight_until_selected = true;
+                            ui.ctx().request_repaint();
+                            SubwindowState::Active(kept)
+                        }
                         SubwindowResult::Spawn((kept, mut children)) => {
                             pending_children.append(&mut children);
+                            ui.ctx().request_repaint();
                             SubwindowState::Active(kept)
                         }
                         SubwindowResult::Replace(replacement) => {
                             // Same as Kept, but it's valuable to have a syntactic distinction.
+                            tab.highlight_until_selected = true;
+                            ui.ctx().request_repaint();
                             SubwindowState::Active(replacement)
                         }
-                        SubwindowResult::Close => SubwindowState::Closed,
+                        SubwindowResult::Close => {
+                            ui.ctx().request_repaint();
+                            SubwindowState::Closed
+                        }
                     }
                 }
                 SubwindowState::Closed => SubwindowState::Closed,
