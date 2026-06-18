@@ -1,5 +1,4 @@
-﻿use std::cmp;
-use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
+﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
 use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
     default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
@@ -15,11 +14,12 @@ use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
 use eframe::egui::{
-    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
-    Ui,
+    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense,
+    Stroke, StrokeKind, Ui,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
+use std::cmp;
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
@@ -248,63 +248,131 @@ impl GridExplorer {
         }
     }
 
+    fn draw_overlay_rect(
+        canvas: &GridCanvas,
+        painter: &Painter,
+        rect: &GridRect,
+        stroke: Stroke,
+        stroke_kind: StrokeKind,
+    ) {
+        let rect_screen_space = canvas.world_to_screen_rect(*rect);
+        painter.rect(
+            grid_rect_to_egui(rect_screen_space),
+            0,
+            Color32::TRANSPARENT,
+            stroke,
+            stroke_kind,
+        );
+    }
+
+    fn draw_overlay_point(
+        canvas: &GridCanvas,
+        painter: &Painter,
+        point: GridPoint,
+        stroke: Stroke,
+        stroke_kind: StrokeKind,
+    ) {
+        let rect = GridRect::with_size(point, 1, 1);
+        Self::draw_overlay_rect(canvas, painter, &rect, stroke, stroke_kind);
+    }
+
+    fn draw_overlay_shell(canvas: &GridCanvas, painter: &Painter, shell: u32, stroke: Stroke) {
+        let shell = shell as i32;
+        let inner_shell_bounds = GridRect::with_size(
+            GridPoint::new(-shell + 1, -shell + 1),
+            shell * 2 - 1,
+            shell * 2 - 1,
+        );
+        let outer_shell_bounds =
+            GridRect::with_size(GridPoint::new(-shell, -shell), shell * 2 + 1, shell * 2 + 1);
+        match canvas.zoom() {
+            Zoom::Magnification(_) => {
+                if shell > 0 {
+                    Self::draw_overlay_rect(
+                        canvas,
+                        painter,
+                        &inner_shell_bounds,
+                        stroke,
+                        StrokeKind::Inside,
+                    );
+                }
+                Self::draw_overlay_rect(
+                    canvas,
+                    painter,
+                    &outer_shell_bounds,
+                    stroke,
+                    StrokeKind::Outside,
+                );
+            }
+            Zoom::Minification(_) => {
+                Self::draw_overlay_rect(
+                    canvas,
+                    painter,
+                    &outer_shell_bounds,
+                    stroke,
+                    StrokeKind::Middle,
+                );
+            }
+        }
+    }
+
     fn show_pointer_overlays(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
         if canvas.is_zero_area() {
             return;
         }
 
         if let Some(egui_mouse_pos) = ui.pointer_latest_pos() {
-            let is_magnification = matches!(self.camera.zoom(), Zoom::Magnification(_));
             let painter = canvas.make_painter(ui);
             let mouse_pos = egui_to_grid_point(egui_mouse_pos);
             let pointed_coords = canvas.screen_to_world(mouse_pos);
+
+            if matches!(self.camera.zoom(), Zoom::Magnification(_))
+                && let Some(pid) = self.grid_cell_accessor.get(pointed_coords)
+                && let Some(player) = self.finalized_simulation.player(pid)
+            {
+                for attacked_coords in player.attacks().get_attacks_from(&pointed_coords) {
+                    if let Some(attacked_pid) = self.grid_cell_accessor.get(attacked_coords) {
+                        let is_attacked_pid_enemy = player.enemies().is_set(attacked_pid);
+                        let color = match is_attacked_pid_enemy {
+                            true => Color32::DARK_RED,
+                            false => Color32::DARK_GRAY,
+                        };
+                        Self::draw_overlay_point(
+                            canvas,
+                            &painter,
+                            attacked_coords,
+                            Stroke::new(2.0, color),
+                            StrokeKind::Inside,
+                        );
+                    }
+                }
+            }
+
+            Self::draw_overlay_point(
+                canvas,
+                &painter,
+                pointed_coords,
+                Stroke::new(1.0, Color32::LIGHT_BLUE),
+                StrokeKind::Outside,
+            );
+
+            let shell = cmp::max(
+                pointed_coords.x.unsigned_abs(),
+                pointed_coords.y.unsigned_abs(),
+            );
+            Self::draw_overlay_shell(canvas, &painter, shell, Stroke::new(1.0, Color32::GOLD));
+
             let chunk = self
                 .finalized_simulation
                 .get_chunk_containing(&pointed_coords);
+
             if let Some(chunk) = chunk {
                 let chunk_bounds = chunk.bounds();
-                let chunk_bounds_screen_space = canvas.world_to_screen_rect(*chunk_bounds);
-                painter.rect(
-                    grid_rect_to_egui(chunk_bounds_screen_space),
-                    0,
-                    Color32::TRANSPARENT,
+                Self::draw_overlay_rect(
+                    canvas,
+                    &painter,
+                    chunk_bounds,
                     Stroke::new(2.0, Color32::LIGHT_GREEN),
-                    StrokeKind::Outside,
-                );
-
-                let coords_bounds = GridRect::with_size(pointed_coords, 1, 1);
-                let coords_bounds_screen_space = canvas.world_to_screen_rect(coords_bounds);
-                painter.rect(
-                    grid_rect_to_egui(coords_bounds_screen_space),
-                    0,
-                    Color32::TRANSPARENT,
-                    Stroke::new(1.0, Color32::LIGHT_BLUE),
-                    StrokeKind::Outside,
-                );
-
-                let shell = cmp::max(pointed_coords.x.unsigned_abs(), pointed_coords.y.unsigned_abs()) as i32;
-
-                if is_magnification && shell > 0 {
-                    let inner_shell_bounds = GridRect::with_size(GridPoint::new(-shell + 1, -shell + 1), shell * 2 - 1, shell * 2 - 1);
-                    let inner_shell_bounds_screen_space = canvas.world_to_screen_rect(inner_shell_bounds);
-
-                    painter.rect(
-                        grid_rect_to_egui(inner_shell_bounds_screen_space),
-                        0,
-                        Color32::TRANSPARENT,
-                        Stroke::new(1.0, Color32::GOLD),
-                        StrokeKind::Inside,
-                    );
-                }
-
-                let outer_shell_bounds = GridRect::with_size(GridPoint::new(-shell, -shell), shell * 2 + 1, shell * 2 + 1);
-                let outer_shell_bounds_screen_space = canvas.world_to_screen_rect(outer_shell_bounds);
-
-                painter.rect(
-                    grid_rect_to_egui(outer_shell_bounds_screen_space),
-                    0,
-                    Color32::TRANSPARENT,
-                    Stroke::new(1.0, Color32::GOLD),
                     StrokeKind::Outside,
                 );
 
@@ -342,30 +410,6 @@ impl GridExplorer {
                     Color32::BLACK,
                     text,
                 );
-            }
-
-            if is_magnification
-                && let Some(pid) = self.grid_cell_accessor.get(pointed_coords)
-                && let Some(player) = self.finalized_simulation.player(pid)
-            {
-                for attacked_coords in player.attacks().get_attacks_from(&pointed_coords) {
-                    if let Some(attacked_pid) = self.grid_cell_accessor.get(attacked_coords) {
-                        let coords_bounds = GridRect::with_size(attacked_coords, 1, 1);
-                        let coords_bounds_screen_space = canvas.world_to_screen_rect(coords_bounds);
-                        let is_attacked_pid_enemy = player.enemies().is_set(attacked_pid);
-                        let color = match is_attacked_pid_enemy {
-                            true => Color32::DARK_RED,
-                            false => Color32::DARK_GRAY,
-                        };
-                        painter.rect(
-                            grid_rect_to_egui(coords_bounds_screen_space),
-                            0,
-                            Color32::TRANSPARENT,
-                            Stroke::new(2.0, color),
-                            StrokeKind::Inside,
-                        );
-                    }
-                }
             }
         }
     }
