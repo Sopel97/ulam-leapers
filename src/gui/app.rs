@@ -153,7 +153,7 @@ impl eframe::App for App {
             });
 
         for tab in tabs_to_spawn {
-            self.add_tab(tab);
+            self.add_tab(tab, true);
         }
 
         self.drop_closed_tabs();
@@ -170,7 +170,7 @@ impl App {
             state: State::default(),
         };
 
-        slf.add_tab(Box::new(SimulationCreator::new()));
+        slf.add_tab(Box::new(SimulationCreator::new()), true);
 
         slf
     }
@@ -181,14 +181,15 @@ impl App {
             .retain(|tab| !matches!(tab.subwindow, SubwindowState::Closed));
     }
 
-    pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>) {
+    pub fn add_tab(&mut self, subwindow: Box<dyn Subwindow>, mark_as_selected: bool) {
         let id = self.state.tab_id_allocator.next_tab_id();
         self.state.tabs.push(Tab {
             id,
             subwindow: SubwindowState::Active(subwindow),
             highlight_until_selected: true,
         });
-        if self.state.selected_tab_id == TabIdAllocator::invalid_id() {
+
+        if mark_as_selected || self.state.selected_tab_id == TabIdAllocator::invalid_id() {
             self.state.selected_tab_id = id;
         }
     }
@@ -372,7 +373,7 @@ impl App {
         }
 
         for pending_child in pending_children {
-            self.add_tab(pending_child);
+            self.add_tab(pending_child, false);
         }
     }
 }
