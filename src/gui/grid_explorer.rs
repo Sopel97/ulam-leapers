@@ -255,14 +255,21 @@ impl GridExplorer {
         stroke: Stroke,
         stroke_kind: StrokeKind,
     ) {
-        let rect_screen_space = canvas.world_to_screen_rect(*rect);
-        painter.rect(
-            grid_rect_to_egui(rect_screen_space),
-            0,
-            Color32::TRANSPARENT,
-            stroke,
-            stroke_kind,
-        );
+        if let Some(rect_screen_space) = canvas
+            .world_to_screen_rect(*rect)
+            // This intersection is required because egui cannot properly render
+            // rects that extend far beyond the visible area.
+            // We expand the clipping area slightly to account for the stroke.
+            .intersection(&canvas.screen_rect().expanded(stroke.width as i32 + 1))
+        {
+            painter.rect(
+                grid_rect_to_egui(rect_screen_space),
+                0,
+                Color32::TRANSPARENT,
+                stroke,
+                stroke_kind,
+            );
+        }
     }
 
     fn draw_overlay_point(
@@ -572,8 +579,7 @@ impl GridExplorer {
                 .clicked()
             {
                 self.mipmap_generation_progress = Some(
-                    self
-                        .grid_renderer
+                    self.grid_renderer
                         .generate_mipmaps_async(MIP_LOWEST_MINIFICATION, MIP_HIGHEST_MINIFICATION),
                 );
             }

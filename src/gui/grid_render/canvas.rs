@@ -220,6 +220,11 @@ impl GridCanvas {
     pub fn world_rect(&self) -> GridRect {
         self.projection.world_rect()
     }
+    
+    /// Returns the screen-space rect that the canvas maps world-space rect into.
+    pub fn screen_rect(&self) -> GridRect {
+        self.projection.screen_rect()
+    }
 
     /// Returns the screen-space rect of this canvas.
     pub fn rect(&self) -> GridRect {

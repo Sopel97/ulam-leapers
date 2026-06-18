@@ -64,6 +64,21 @@ where
 
 impl<T> Rect2D<T>
 where
+    T: Add<Output = T> + Sub<Output = T> + Clone + Copy,
+{
+
+    /// Moves each side outwards by `amount`
+    pub fn expanded(&self, amount: T) -> Rect2D<T> {
+        let v = Vector2D::new(amount, amount);
+        Rect2D {
+            start: self.start - v,
+            end: self.end + v,
+        }
+    }
+}
+
+impl<T> Rect2D<T>
+where
     T: Shl<Output = T> + Shr<Output = T> + From<u8> + Eq + Clone + Copy,
 {
     pub fn is_aligned_to_pow2(&self, align: Pow2) -> bool {
