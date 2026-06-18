@@ -9,23 +9,29 @@ use crate::gui::util::{format_zoom_slider_text, scroll_delta_in_ui};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
+use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
-use eframe::egui::{vec2, Align2, Button, Checkbox, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
+use eframe::egui::{
+    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense,
+    Stroke, StrokeKind, Ui,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
+use std::sync::Arc;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::persist::uls::{UlsError, UlsSimulation};
-use ulam_leapers::game::simulation::{FinalizedSimulation, Game};
+use ulam_leapers::game::sampler::FrozenGridCellAccessor;
+use ulam_leapers::game::simulation::{FinalizedSimulation, Game, PlayerId};
 use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
+use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -42,7 +48,8 @@ const MAX_PNG_EXTENT: i32 = 8192;
 const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
-const OVERLAYS_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
+const OVERLAYS_UI_TOGGLE_SHORTCUT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::NONE, Key::F3);
 
 const MAX_CONTROLS_WINDOW_WIDTH: f32 = 200.0;
 
@@ -61,6 +68,8 @@ pub struct GridExplorer {
     grid_renderer: GridRenderer,
     grid_render: Option<GridRender>,
     camera: GridCamera,
+
+    grid_cell_accessor: FrozenGridCellAccessor<PlayerId>,
 
     mipmap_generation_progress: Option<MipmapGenerationProgress>,
 
@@ -136,11 +145,15 @@ impl GridExplorer {
             default_player_colors(max_id).as_slice(),
         );
 
+        let grid_ref = Arc::clone(&finalized_simulation.grid());
+
         Self {
             grid_renderer,
             finalized_simulation,
             grid_render: None,
             camera: GridCamera::new(DEFAULT_ZOOM_POW2, Point2D::new(0.0, 0.0)),
+
+            grid_cell_accessor: FrozenGridCellAccessor::new(grid_ref, 4),
 
             mipmap_generation_progress: None,
 
@@ -239,6 +252,7 @@ impl GridExplorer {
         }
 
         if let Some(egui_mouse_pos) = ui.pointer_latest_pos() {
+            let painter = canvas.make_painter(ui);
             let mouse_pos = egui_to_grid_point(egui_mouse_pos);
             let pointed_coords = canvas.screen_to_world(mouse_pos);
             let chunk = self
@@ -247,7 +261,6 @@ impl GridExplorer {
             if let Some(chunk) = chunk {
                 let chunk_bounds = chunk.bounds();
                 let chunk_bounds_screen_space = canvas.world_to_screen_rect(*chunk_bounds);
-                let painter = canvas.make_painter(ui);
                 painter.rect(
                     grid_rect_to_egui(chunk_bounds_screen_space),
                     0,
@@ -287,6 +300,30 @@ impl GridExplorer {
                     Color32::BLACK,
                     text,
                 );
+            }
+
+            if matches!(self.camera.zoom(), Zoom::Magnification(_))
+                && let Some(pid) = self.grid_cell_accessor.get(pointed_coords)
+                && let Some(player) = self.finalized_simulation.player(pid)
+            {
+                for attacked_coords in player.attacks().get_attacks_from(&pointed_coords) {
+                    if let Some(attacked_pid) = self.grid_cell_accessor.get(attacked_coords) {
+                        let coords_bounds = GridRect::with_size(attacked_coords, 1, 1);
+                        let coords_bounds_screen_space = canvas.world_to_screen_rect(coords_bounds);
+                        let is_attacked_pid_enemy = player.enemies().is_set(attacked_pid);
+                        let color = match is_attacked_pid_enemy {
+                            true => Color32::DARK_RED,
+                            false => Color32::DARK_GRAY,
+                        };
+                        painter.rect(
+                            grid_rect_to_egui(coords_bounds_screen_space),
+                            0,
+                            Color32::TRANSPARENT,
+                            Stroke::new(2.0, color),
+                            StrokeKind::Inside,
+                        );
+                    }
+                }
             }
         }
     }

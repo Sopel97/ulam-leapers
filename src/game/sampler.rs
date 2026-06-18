@@ -9,10 +9,11 @@ use crate::util::blit::{blit_array2d_unchecked, Blit2D};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::cancel::{Canceled, CancellationToken};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::collections::BTreeMap;
 use std::ops::Range;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 
 pub trait SampleCollector: Send + Sync {
     type InputType: Default + Clone + Copy + Send + Sync;
@@ -22,6 +23,74 @@ pub trait SampleCollector: Send + Sync {
     fn zero(&self) -> Self::AccumulatorType;
     fn push(&self, acc: &mut Self::AccumulatorType, input: Self::InputType);
     fn finalize(&self, acc: Self::AccumulatorType, size: (usize, usize)) -> Self::OutputType;
+}
+
+struct FrozenGridCellAccessorCacheEntry<T> {
+    chunk: Chunk<T>,
+    last_access_gen: u64,
+}
+
+/// This structure provides access to individual cells. Up to 4 last accessed chunks are cached.
+/// The intended use case is for sparse access for user interaction or other specific probes.
+/// While this structure is safe for concurrent access it is NOT advised, as `get` blocks.
+pub struct FrozenGridCellAccessor<T> {
+    grid: Arc<FrozenGrid<T>>,
+    chunk_cache: Mutex<BTreeMap<ChunkOrigin, FrozenGridCellAccessorCacheEntry<T>>>,
+    access_gen: AtomicU64,
+    max_cached_chunk_count: usize,
+}
+
+impl<T> FrozenGridCellAccessor<T>
+where
+    T: Default + Clone + Copy + Send + Sync,
+{
+    pub fn new(grid: Arc<FrozenGrid<T>>, max_cached_chunk_count: usize) -> Self {
+        Self {
+            grid,
+            chunk_cache: Mutex::new(BTreeMap::new()),
+            access_gen: AtomicU64::new(0),
+            max_cached_chunk_count,
+        }
+    }
+
+    pub fn get(&self, point: GridPoint) -> Option<T> {
+        let current_gen = self.access_gen.fetch_add(1, Ordering::Relaxed);
+
+        if let Some(desired_chunk) = self.grid.get_chunk_containing(&point) {
+            // We can just hold it for the whole duration of `get` because we don't care about concurrency.
+            let mut chunk_cache = self.chunk_cache.lock().unwrap();
+            let desired_chunk_origin = desired_chunk.origin();
+            if !chunk_cache.contains_key(&desired_chunk_origin) {
+                let decompressed_chunk = desired_chunk.decompress();
+                if chunk_cache.len() >= self.max_cached_chunk_count {
+                    Self::purge_oldest_cache_entry(&mut chunk_cache);
+                }
+
+                chunk_cache.insert(
+                    desired_chunk_origin,
+                    FrozenGridCellAccessorCacheEntry {
+                        chunk: decompressed_chunk,
+                        last_access_gen: current_gen,
+                    },
+                );
+            }
+
+            Some(chunk_cache.get(&desired_chunk_origin)?.chunk[point])
+        } else {
+            None
+        }
+    }
+
+    fn purge_oldest_cache_entry(
+        cache: &mut MutexGuard<BTreeMap<ChunkOrigin, FrozenGridCellAccessorCacheEntry<T>>>,
+    ) {
+        if let Some(oldest_gen) = cache.values().map(|e| e.last_access_gen).min() {
+            cache
+                .extract_if(.., |_k, v| v.last_access_gen == oldest_gen)
+                .take(1)
+                .for_each(|_| {});
+        }
+    }
 }
 
 /// Intended for sampling the grid with small power of 2 minification factors due
@@ -362,6 +431,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::compression::zstd::ZstdCompression;
+    use crate::compression::AnyCompression;
     use crate::game::chunker::SquareChunker;
     use crate::game::grid::{FrozenGrid, Grid};
     use crate::game::sampler::{FrozenGridSampler, SampleCollector};
@@ -370,7 +440,6 @@ mod tests {
     use crate::math::rect::GridRect;
     use crate::util::cache::CacheEnabled;
     use std::panic::AssertUnwindSafe;
-    use crate::compression::AnyCompression;
 
     fn point(x: i32, y: i32) -> GridPoint {
         GridPoint::new(x, y)
@@ -378,9 +447,7 @@ mod tests {
 
     // Helper: create a FrozenGrid<u8> populated with a function of (x, y).
     fn make_frozen_grid(chunk_size: Pow2, points: &[(i32, i32, u8)]) -> FrozenGrid<u8> {
-        let mut grid: Grid<u8> = Grid::new(
-            Box::new(SquareChunker::new(chunk_size)),
-        );
+        let mut grid: Grid<u8> = Grid::new(Box::new(SquareChunker::new(chunk_size)));
         for &(x, y, v) in points {
             grid[point(x, y)] = v;
         }

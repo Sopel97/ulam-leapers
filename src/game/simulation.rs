@@ -170,6 +170,11 @@ const DEFAULT_CHUNK_STRIP_THICKNESS: Pow2 = Pow2::from_exponent(8);
 
 pub trait Game {
     fn players(&self) -> &Vec<Player>;
+
+    fn player(&self, pid: PlayerId) -> Option<&Player> {
+        self.players().get(pid.index() - 1)
+    }
+    
     fn complete_turns(&self) -> u64;
 
     fn complete_shells(&self) -> u64 {
