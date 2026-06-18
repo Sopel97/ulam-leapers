@@ -336,7 +336,7 @@ impl PlayerRelationsView {
         for (attacker, player) in players.iter().enumerate() {
             let enemies_mask = player.enemies();
             for attacked in 0..player_count {
-                enemy_map[(attacker, attacked)] =
+                enemy_map[(attacked, attacker)] =
                     enemies_mask.is_set(PlayerId::new((attacked + 1) as u8));
             }
         }
