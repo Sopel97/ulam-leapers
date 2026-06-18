@@ -1104,4 +1104,36 @@ mod tests {
         assert_eq!(grid[GridPoint::new(-1, -1)], p2);
         assert_eq!(grid[GridPoint::new(2, 0)], p2);
     }
+
+    #[test]
+    fn resume_after_roundtrip_conversion() {
+        let smaller_chunker = StripChunker::with_strip_length_and_thickness(
+            Pow2::from_exponent(8),
+            Pow2::from_exponent(6),
+        );
+        let mut sim = Simulation::with_chunker(Box::new(smaller_chunker));
+        let _p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        let _p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim.add_all_pairwise_player_enemies();
+
+        let mut sim_oneshot = Simulation::with_chunker(Box::new(smaller_chunker));
+        let _p1 = sim_oneshot.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        let _p2 = sim_oneshot.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
+        sim_oneshot.add_all_pairwise_player_enemies();
+
+        sim_oneshot
+            .simulate(SimulationLimits::new().with_turn_limit(20000))
+            .unwrap();
+
+        sim.simulate(SimulationLimits::new().with_turn_limit(10000))
+            .unwrap();
+        let finsim = FinalizedSimulation::from(sim);
+        let mut resumed = finsim.to_simulation(|_| {});
+        resumed
+            .simulate(SimulationLimits::new().with_turn_limit(20000))
+            .unwrap();
+
+        assert_eq!(resumed.simulated_turns, sim_oneshot.simulated_turns);
+        assert_eq!(resumed.players, sim_oneshot.players);
+    }
 }

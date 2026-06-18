@@ -33,6 +33,7 @@ pub fn leaper_name_from_attack_vector(v: &GridVector) -> Option<&'static str> {
     LEAPER_NAMES.get(&(canonical.x, canonical.y)).copied()
 }
 
+/// The stored attack vectors are fully ordered, so equality comparison is well-defined.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacks {
     attack_vectors: Vec<GridVector>,
@@ -40,25 +41,19 @@ pub struct LeaperAttacks {
 
 impl LeaperAttacks {
     pub fn from_offsets(offsets: HashSet<GridVector>) -> Self {
+        let mut sorted_offsets: Vec<_> = offsets.into_iter().collect();
+        sorted_offsets.sort();
         Self {
-            attack_vectors: offsets.into_iter().collect(),
+            attack_vectors: sorted_offsets,
         }
     }
 
     pub fn from_canonical(v: &GridVector) -> LeaperAttacks {
-        LeaperAttacks {
-            attack_vectors: symmetries(v).collect(),
-        }
+        LeaperAttacks::from_offsets(symmetries(v).collect())
     }
 
     pub fn from_canonicals<'a>(vs: impl Iterator<Item = &'a GridVector>) -> LeaperAttacks {
-        LeaperAttacks {
-            attack_vectors: vs
-                .flat_map(symmetries)
-                .collect::<HashSet<GridVector>>() // collect to a set first to deduplicate
-                .into_iter()
-                .collect(), // recollect into a vec
-        }
+        LeaperAttacks::from_offsets(vs.flat_map(symmetries).collect::<HashSet<GridVector>>())
     }
 
     pub fn get_attacks_from(&self, base: &GridPoint) -> impl Iterator<Item = GridPoint> {
@@ -68,7 +63,7 @@ impl LeaperAttacks {
     pub fn attack_vectors(&self) -> &[GridVector] {
         self.attack_vectors.as_slice()
     }
-    
+
     pub fn radius(&self) -> usize {
         self.attack_vectors
             .iter()
@@ -76,7 +71,7 @@ impl LeaperAttacks {
             .max()
             .unwrap_or(0) as usize
     }
-    
+
     pub fn is_symmetric(&self) -> bool {
         // NOTE: quite a naive implementation, but should be fine.
         let all_symmetric = Self::from_canonicals(self.attack_vectors.iter());
