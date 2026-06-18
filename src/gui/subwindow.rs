@@ -27,7 +27,7 @@ pub trait Subwindow {
     /// Called when the subwindow is closed by the close button if allowed by is_closeable.
     fn on_close(&mut self) {}
     
-    fn highligh_until_selected(&self) -> bool {
+    fn highlight_until_selected(&self) -> bool {
         false
     }
 }

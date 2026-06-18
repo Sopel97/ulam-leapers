@@ -244,7 +244,7 @@ impl App {
 
                     let tab_label = ui.add(tab_label_widget);
 
-                    if subwindow.highligh_until_selected() {
+                    if subwindow.highlight_until_selected() {
                         tab.highlight_until_selected = true;
                     }
 
