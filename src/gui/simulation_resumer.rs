@@ -322,7 +322,8 @@ impl SimulationResumer {
                     ui.vertical(|ui| {
                         for (i, player) in players.iter().enumerate() {
                             let name = Self::make_player_name(i);
-                            let mut widget = LeaperAttacksView::with_name(name, player.attacks());
+                            ui.label(format!("{name} attacks"));
+                            let mut widget = LeaperAttacksView::new(player.attacks());
                             widget.ui(ui);
                         }
                     });

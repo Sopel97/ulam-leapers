@@ -418,16 +418,11 @@ impl JsonWidget for LeaperAttacksInput {
 
 #[derive(Debug, Clone)]
 pub struct LeaperAttacksView {
-    name: Option<String>,
     attack_map: Array2D<bool>, // NOTE: y is flipped with respect to grid coordinates!
 }
 
 impl LeaperAttacksView {
-    pub fn with_name(name: String, attacks: &LeaperAttacks) -> Self {
-        Self::new(Some(name), attacks)
-    }
-
-    pub fn new(name: Option<String>, attacks: &LeaperAttacks) -> Self {
+    pub fn new(attacks: &LeaperAttacks) -> Self {
         let attack_vectors = attacks.attack_vectors();
         let radius = attacks.radius();
         let mut attack_map = Array2D::new(radius * 2 + 1, radius * 2 + 1);
@@ -437,7 +432,7 @@ impl LeaperAttacksView {
             }
         }
 
-        Self { name, attack_map }
+        Self { attack_map }
     }
 
     fn show_attack_map(&mut self, ui: &mut Ui) {
@@ -461,14 +456,6 @@ impl StatefulWidget for LeaperAttacksView {
         egui::Frame::default()
             .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        if let Some(name) = &self.name {
-                            ui.label(format!("{} Attacks", name));
-                        } else {
-                            ui.label("Attacks");
-                        }
-                    });
-
                     self.show_attack_map(ui);
                 });
             })
