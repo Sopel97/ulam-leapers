@@ -59,6 +59,8 @@ const MOVEMENT_KEYS: [(Key, Vec2); 8] = [
     (Key::D, vec2(1.0, 0.0)),
     (Key::ArrowRight, vec2(1.0, 0.0)),
 ];
+const SLOW_MOVEMENT_MODIFIER_KEY: Modifiers = Modifiers::SHIFT;
+const SLOW_MOVEMENT_SPEED_MULTIPLIER: f32 = 0.25;
 
 const MAX_CONTROLS_WINDOW_WIDTH: f32 = 200.0;
 
@@ -486,6 +488,12 @@ impl GridExplorer {
 
         let mut any_key_input = false;
         ui.input_mut(|i| {
+            let slow_modifier = if i.modifiers.contains(SLOW_MOVEMENT_MODIFIER_KEY) {
+                SLOW_MOVEMENT_SPEED_MULTIPLIER
+            } else {
+                1.0
+            };
+
             for (key, dir) in MOVEMENT_KEYS {
                 if i.key_down(key) {
                     // We need to make sure we have forced this frame to be rendered
@@ -493,7 +501,7 @@ impl GridExplorer {
                     // a long time gap that would cause this to blow up.
                     // This introduces a single frame of a delay, but we can't do better reliably.
                     if self.is_delta_time_safe_for_movement {
-                        total_drag += dir * key_drag_delta_base * dt;
+                        total_drag += dir * key_drag_delta_base * dt * slow_modifier;
                     }
                     any_key_input = true;
                 }
