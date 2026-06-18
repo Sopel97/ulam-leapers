@@ -252,7 +252,7 @@ impl GridExplorer {
                     grid_rect_to_egui(chunk_bounds_screen_space),
                     0,
                     Color32::TRANSPARENT,
-                    Stroke::new(2.0, Color32::GREEN),
+                    Stroke::new(2.0, Color32::LIGHT_GREEN),
                     StrokeKind::Outside,
                 );
 
@@ -262,7 +262,7 @@ impl GridExplorer {
                     grid_rect_to_egui(coords_bounds_screen_space),
                     0,
                     Color32::TRANSPARENT,
-                    Stroke::new(1.0, Color32::BLUE),
+                    Stroke::new(1.0, Color32::LIGHT_BLUE),
                     StrokeKind::Outside,
                 );
 
