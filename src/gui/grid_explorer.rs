@@ -1,4 +1,5 @@
-﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
+﻿use std::cmp;
+use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
 use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
     default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
@@ -253,6 +254,7 @@ impl GridExplorer {
         }
 
         if let Some(egui_mouse_pos) = ui.pointer_latest_pos() {
+            let is_magnification = matches!(self.camera.zoom(), Zoom::Magnification(_));
             let painter = canvas.make_painter(ui);
             let mouse_pos = egui_to_grid_point(egui_mouse_pos);
             let pointed_coords = canvas.screen_to_world(mouse_pos);
@@ -280,6 +282,32 @@ impl GridExplorer {
                     StrokeKind::Outside,
                 );
 
+                let shell = cmp::max(pointed_coords.x.unsigned_abs(), pointed_coords.y.unsigned_abs()) as i32;
+
+                if is_magnification && shell > 0 {
+                    let inner_shell_bounds = GridRect::with_size(GridPoint::new(-shell + 1, -shell + 1), shell * 2 - 1, shell * 2 - 1);
+                    let inner_shell_bounds_screen_space = canvas.world_to_screen_rect(inner_shell_bounds);
+
+                    painter.rect(
+                        grid_rect_to_egui(inner_shell_bounds_screen_space),
+                        0,
+                        Color32::TRANSPARENT,
+                        Stroke::new(1.0, Color32::GOLD),
+                        StrokeKind::Inside,
+                    );
+                }
+
+                let outer_shell_bounds = GridRect::with_size(GridPoint::new(-shell, -shell), shell * 2 + 1, shell * 2 + 1);
+                let outer_shell_bounds_screen_space = canvas.world_to_screen_rect(outer_shell_bounds);
+
+                painter.rect(
+                    grid_rect_to_egui(outer_shell_bounds_screen_space),
+                    0,
+                    Color32::TRANSPARENT,
+                    Stroke::new(1.0, Color32::GOLD),
+                    StrokeKind::Outside,
+                );
+
                 let cursor_line = match self.grid_cell_accessor.get(pointed_coords) {
                     Some(pid) => {
                         let name = make_player_name(pid);
@@ -295,8 +323,10 @@ impl GridExplorer {
 
                 let text = format!(
                     "{cursor_line}\n\
+                    Shell: {}\n\
                     Bounds: ({}, {}), ({}, {})\n\
                     Memsize: {}",
+                    shell,
                     chunk_bounds.start.x,
                     chunk_bounds.start.y,
                     chunk_bounds.end.x,
@@ -314,7 +344,7 @@ impl GridExplorer {
                 );
             }
 
-            if matches!(self.camera.zoom(), Zoom::Magnification(_))
+            if is_magnification
                 && let Some(pid) = self.grid_cell_accessor.get(pointed_coords)
                 && let Some(player) = self.finalized_simulation.player(pid)
             {
