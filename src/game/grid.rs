@@ -1,5 +1,4 @@
-﻿use crate::compression::zstd::ZstdCompression;
-use crate::compression::AnyCompression;
+﻿use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::persist::uls::{UlsChunk, UlsChunker};
@@ -9,7 +8,6 @@ use crate::math::rect::GridRect;
 use crate::util::memory::MemSize;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
 use std::ops::{Index, IndexMut};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -240,7 +238,7 @@ impl<T: Default + Clone + Copy> Index<GridPoint> for Grid<T> {
     type Output = T;
 
     fn index(&self, point: GridPoint) -> &Self::Output {
-        if let Some(chunk) = self.get_frozen_chunk_containing(&point) {
+        if let Some(_chunk) = self.get_frozen_chunk_containing(&point) {
             // TODO: indexing into a compressed chunk, possibly with some cache
             // &chunk[point]
             panic!("Unimplemented");
@@ -363,7 +361,9 @@ mod tests {
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
-        Grid::new(StripChunker::with_strip_length_and_thickness(chunk_size, chunk_size))
+        Grid::new(StripChunker::with_strip_length_and_thickness(
+            chunk_size, chunk_size,
+        ))
     }
 
     #[test]

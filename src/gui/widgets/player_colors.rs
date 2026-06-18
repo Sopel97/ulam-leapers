@@ -1,8 +1,12 @@
-﻿use eframe::egui::{Color32, Response, Ui};
-use crate::gui::widgets::misc::srgb_color_button;
+﻿use crate::gui::widgets::misc::srgb_color_button;
+use eframe::egui::{Color32, Ui};
 
 /// Returns `true` if any color has changed. Returns `false` otherwise.
-pub fn show_player_colors_ui(ui: &mut Ui, player_colors: &mut [Color32], allow_change: bool) -> bool {
+pub fn show_player_colors_ui(
+    ui: &mut Ui,
+    player_colors: &mut [Color32],
+    allow_change: bool,
+) -> bool {
     let mut any_change = false;
 
     // TODO: Columns for some reason take more space than necessary.
@@ -12,9 +16,7 @@ pub fn show_player_colors_ui(ui: &mut Ui, player_colors: &mut [Color32], allow_c
         for (player_id, color) in player_colors.iter_mut().enumerate() {
             let column = &mut columns[player_id % 2];
             column.horizontal_wrapped(|ui| {
-                if srgb_color_button(ui, color, allow_change)
-                    .changed()
-                {
+                if srgb_color_button(ui, color, allow_change).changed() {
                     any_change = true;
                 }
 
@@ -26,6 +28,6 @@ pub fn show_player_colors_ui(ui: &mut Ui, player_colors: &mut [Color32], allow_c
             });
         }
     });
-    
+
     any_change
 }

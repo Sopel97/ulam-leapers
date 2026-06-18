@@ -11,7 +11,6 @@ use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::grid_render::render::default_player_colors;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationConfigInputConstraints {

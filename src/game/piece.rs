@@ -1,8 +1,7 @@
-﻿use crate::game::persist::uls::{UlsAttackVector, ULS_MAX_ATTACK_VECTOR_COORD};
+﻿use crate::game::persist::uls::UlsAttackVector;
 use crate::math::coords::{symmetries, GridPoint, GridVector};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::io::{ErrorKind, Read, Write};
 
 static LEAPER_NAMES: std::sync::LazyLock<BTreeMap<(i32, i32), &str>> =
     std::sync::LazyLock::new(|| {
@@ -89,31 +88,6 @@ impl LeaperAttacks {
             .collect();
 
         Self { attack_vectors }
-    }
-}
-
-fn err_on_attack_offset_too_large(attack_vectors: &[GridVector]) -> std::io::Result<()> {
-    for attack_vector in attack_vectors.iter() {
-        if attack_vector.x.unsigned_abs() as usize > ULS_MAX_ATTACK_VECTOR_COORD as usize
-            || attack_vector.y.unsigned_abs() as usize > ULS_MAX_ATTACK_VECTOR_COORD as usize
-        {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("Attack offset larger than {}", ULS_MAX_ATTACK_VECTOR_COORD),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn err_on_duplicate_attack_vectors(attack_vectors: &[GridVector]) -> std::io::Result<()> {
-    if attack_vectors.iter().collect::<BTreeSet<_>>().len() != attack_vectors.len() {
-        Err(std::io::Error::new(
-            ErrorKind::InvalidData,
-            "Duplicated attack offsets found.",
-        ))
-    } else {
-        Ok(())
     }
 }
 

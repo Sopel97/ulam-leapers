@@ -1,5 +1,6 @@
 ﻿use crate::collections::array2d::Array2D;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin};
+use crate::game::chunker::Chunker;
 use crate::game::grid::FrozenGrid;
 use crate::math::coords::GridPoint;
 use crate::math::pow2;
@@ -14,7 +15,6 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
-use crate::game::chunker::Chunker;
 
 pub trait SampleCollector: Send + Sync {
     type InputType: Default + Clone + Copy + Send + Sync;
@@ -433,7 +433,7 @@ where
 mod tests {
     use crate::compression::zstd::ZstdCompression;
     use crate::compression::AnyCompression;
-    use crate::game::chunker::{SquareChunker, StripChunker};
+    use crate::game::chunker::StripChunker;
     use crate::game::grid::{FrozenGrid, Grid};
     use crate::game::sampler::{FrozenGridSampler, SampleCollector};
     use crate::math::coords::GridPoint;
@@ -448,7 +448,9 @@ mod tests {
 
     // Helper: create a FrozenGrid<u8> populated with a function of (x, y).
     fn make_frozen_grid(chunk_size: Pow2, points: &[(i32, i32, u8)]) -> FrozenGrid<u8> {
-        let mut grid: Grid<u8> = Grid::new(StripChunker::with_strip_length_and_thickness(chunk_size, chunk_size));
+        let mut grid: Grid<u8> = Grid::new(StripChunker::with_strip_length_and_thickness(
+            chunk_size, chunk_size,
+        ));
         for &(x, y, v) in points {
             grid[point(x, y)] = v;
         }

@@ -448,9 +448,7 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
 
         let turn_count = simulation.complete_turns();
         if turn_count > ULS_MAX_TURN_COUNT {
-            return Err(UlsError::TooManyTurns {
-                actual: turn_count,
-            });
+            return Err(UlsError::TooManyTurns { actual: turn_count });
         }
 
         let players = simulation.players();
@@ -460,8 +458,7 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
             .collect::<Result<Vec<_>, _>>()?;
 
         let grid = simulation.grid_ref();
-        let chunker = grid
-            .chunker();
+        let chunker = grid.chunker();
         let uls_chunker = UlsChunker::try_from(chunker)?;
 
         let chunk_count = grid.chunk_count();
@@ -519,13 +516,11 @@ impl UlsChunker {
         let strip_thickness = read_u16_le(reader)?;
 
         if strip_thickness > strip_length {
-            return Err(
-                UlsError::ChunkerStripThicknessHigherThanLength {
-                    actual_strip_length: strip_length as u64,
-                    actual_strip_thickness: strip_thickness as u64,
-                }
-                .into(),
-            );
+            return Err(UlsError::ChunkerStripThicknessHigherThanLength {
+                actual_strip_length: strip_length as u64,
+                actual_strip_thickness: strip_thickness as u64,
+            }
+            .into());
         }
 
         if !strip_length.is_power_of_two() || !strip_thickness.is_power_of_two() {
@@ -790,11 +785,15 @@ impl UlsSimulation<'_> {
             .map(|_| Self::read_chunk(reader, &actual_chunker, highest_player_id))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let origins: BTreeSet<_> = chunks.iter().map(|chunk| (chunk.origin_x, chunk.origin_y)).collect();
+        let origins: BTreeSet<_> = chunks
+            .iter()
+            .map(|chunk| (chunk.origin_x, chunk.origin_y))
+            .collect();
         if origins.len() != chunks.len() {
             return Err(UlsError::DuplicateChunks {
                 duplicate_count: (chunks.len() - origins.len()) as u64,
-            }.into());
+            }
+            .into());
         }
 
         Ok(Self {
@@ -804,7 +803,7 @@ impl UlsSimulation<'_> {
             chunks,
         })
     }
-    
+
     /// Reads just the player configuration. Useful if the grid is not important.
     pub fn read_just_players_from(reader: &mut impl Read) -> std::io::Result<Vec<UlsPlayer>> {
         let mut magic = [0u8; ULS_MAGIC_FORMAT_SIGNATURE.len()];
@@ -813,7 +812,7 @@ impl UlsSimulation<'_> {
             return Err(UlsError::InvalidMagicFormatSignature {
                 actual: magic.to_vec().into_boxed_slice(),
             }
-                .into());
+            .into());
         }
 
         let turn_count = read_u64_le(reader)?;
@@ -826,7 +825,7 @@ impl UlsSimulation<'_> {
             return Err(UlsError::TooManyPlayers {
                 actual: player_count as u64,
             }
-                .into());
+            .into());
         }
 
         (0..player_count)
@@ -838,7 +837,6 @@ impl UlsSimulation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::chunker::Chunker;
     use crate::game::piece::LeaperAttacks;
     use crate::game::simulation::{Simulation, SimulationLimits};
     use crate::math::coords::GridVector;

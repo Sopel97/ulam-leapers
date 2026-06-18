@@ -1,6 +1,5 @@
 ﻿use std::cmp;
 use std::collections::HashSet;
-use std::io::{Read, Write};
 use std::ops::*;
 
 /// Models a point in a 2-dimensional Cartesian coordinate system.

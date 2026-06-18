@@ -3,7 +3,6 @@ use crate::game::persist::uls::UlsChunker;
 use crate::math::coords::GridPoint;
 use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
-use std::io::{Read, Write};
 
 pub trait Chunker {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin;

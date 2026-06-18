@@ -9,7 +9,6 @@ use crate::math::rect::GridRect;
 use crate::util::align::CACHE_LINE_SIZE;
 use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
 use std::borrow::Cow;
-use std::cmp;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, RangeInclusive};
@@ -59,7 +58,7 @@ impl<T> Chunk<T> {
 
     pub fn for_each_cell_in_shells<F>(&self, shell_range: RangeInclusive<u32>, mut f: F)
     where
-        F: FnMut(GridPoint, &T)
+        F: FnMut(GridPoint, &T),
     {
         let near = *shell_range.start() as i32;
         let far = *shell_range.end() as i32;
@@ -83,10 +82,8 @@ impl<T> Chunk<T> {
         );
 
         // Right slice WITH corners.
-        let right_shells_rect = GridRect::with_start_end(
-            GridPoint::new(near, -far),
-            GridPoint::new(far + 1, far + 1),
-        );
+        let right_shells_rect =
+            GridRect::with_start_end(GridPoint::new(near, -far), GridPoint::new(far + 1, far + 1));
 
         debug_assert!(!top_shells_rect.intersects(&left_shells_rect));
         debug_assert!(!top_shells_rect.intersects(&right_shells_rect));
@@ -102,7 +99,7 @@ impl<T> Chunk<T> {
     /// `region` will be intersected with this chunk's bounds.
     pub fn for_each_cell_in_region<F>(&self, region: GridRect, f: &mut F)
     where
-        F: FnMut(GridPoint, &T)
+        F: FnMut(GridPoint, &T),
     {
         let region = region.intersection(&self.bounds);
         if let Some(region) = region {
@@ -117,7 +114,10 @@ impl<T> Chunk<T> {
 
                 for global_x in region.start.x..region.end.x {
                     let local_x = global_x - self.bounds.start.x;
-                    f(GridPoint::new(global_x, global_y), &self.cells[(local_x as usize, local_y as usize)]);
+                    f(
+                        GridPoint::new(global_x, global_y),
+                        &self.cells[(local_x as usize, local_y as usize)],
+                    );
                 }
             }
         }
@@ -125,7 +125,7 @@ impl<T> Chunk<T> {
 
     pub fn for_each_cell<F>(&self, mut f: F)
     where
-        F: FnMut(GridPoint, &T)
+        F: FnMut(GridPoint, &T),
     {
         let ox = self.bounds().start.x;
         let oy = self.bounds().start.y;

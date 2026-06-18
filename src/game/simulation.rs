@@ -14,7 +14,6 @@ use crate::util::memory::MemSize;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::cmp::{max, min};
-use std::io::{Read, Write};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -174,7 +173,7 @@ pub trait Game {
     fn player(&self, pid: PlayerId) -> Option<&Player> {
         self.players().get(pid.index() - 1)
     }
-    
+
     fn complete_turns(&self) -> u64;
 
     fn complete_shells(&self) -> u64 {

@@ -271,15 +271,9 @@ impl Subwindow for SimulationRunner {
                     "Simulator".to_string()
                 }
             }
-            SimulationRunnerState::Finished(_) => {
-                "Finished".to_string()
-            }
-            SimulationRunnerState::Finalized(_) => {
-                "Finalized".to_string()
-            }
-            SimulationRunnerState::Errored(_, _) => {
-                "Errored".to_string()
-            }
+            SimulationRunnerState::Finished(_) => "Finished".to_string(),
+            SimulationRunnerState::Finalized(_) => "Finalized".to_string(),
+            SimulationRunnerState::Errored(_, _) => "Errored".to_string(),
             SimulationRunnerState::ResolvingStateChange => "Simulation".to_string(),
         }
     }
@@ -318,10 +312,10 @@ impl Subwindow for SimulationRunner {
 impl SimulationRunner {
     fn get_subwindow_result(mut self: Box<Self>) -> SubwindowResult {
         if self.submit_to_explorer {
-            if let SimulationRunnerState::Finalized(
-                finalized_simulation,
-            ) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::ResolvingStateChange)
-            {
+            if let SimulationRunnerState::Finalized(finalized_simulation) = std::mem::replace(
+                &mut self.simulation_state,
+                SimulationRunnerState::ResolvingStateChange,
+            ) {
                 Replace(Box::new(GridExplorer::new(finalized_simulation)))
             } else {
                 panic!("Tried submitting to explorer while in an unsuitable state.")
@@ -400,9 +394,7 @@ impl SimulationRunner {
                     {
                         finalize_simulation(simulation, ctxui.ctx())
                     } else {
-                        SimulationRunnerState::Paused(
-                            simulation,
-                        )
+                        SimulationRunnerState::Paused(simulation)
                     }
                 } else {
                     SimulationRunnerState::Paused(simulation)
@@ -411,15 +403,10 @@ impl SimulationRunner {
             SimulationRunnerState::Finished(simulation) => {
                 finalize_simulation(simulation, ctxui.ctx())
             }
-            SimulationRunnerState::Errored(
-                _simulation,
-                error,
-            ) => {
+            SimulationRunnerState::Errored(_simulation, error) => {
                 panic!("Simulation error {:?}", error);
             }
-            SimulationRunnerState::Finalized(
-                finalized_simulation,
-            ) => {
+            SimulationRunnerState::Finalized(finalized_simulation) => {
                 if let Some(ui) = ctxui.ui()
                     && ui
                         .add(Button::new(RichText::new("Explore").heading()))
@@ -427,9 +414,7 @@ impl SimulationRunner {
                 {
                     self.submit_to_explorer = true;
                 }
-                SimulationRunnerState::Finalized(
-                    finalized_simulation,
-                )
+                SimulationRunnerState::Finalized(finalized_simulation)
             }
             SimulationRunnerState::ResolvingStateChange => panic!("Invalid state."),
         };

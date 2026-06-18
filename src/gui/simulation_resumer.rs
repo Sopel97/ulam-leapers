@@ -4,6 +4,7 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{make_player_name, ContextOrUi};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
+use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
@@ -11,12 +12,12 @@ use eframe::egui::{Context, ScrollArea, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{sleep, JoinHandle};
-use std::time::Duration;
+use std::thread::JoinHandle;
 use ulam_leapers::game::persist::uls::UlsSimulation;
-use ulam_leapers::game::simulation::{FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, PlayerId, Simulation};
+use ulam_leapers::game::simulation::{
+    FinalizedSimulation, FinalizedSimulationToSimulationProgress, Game, PlayerId, Simulation,
+};
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 
 const MIN_TURNS: u64 = 1_000_000;
 const MAX_TURNS: u64 = 1_000_000 * 1_000_000;

@@ -8,13 +8,14 @@ use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{format_zoom_slider_text, make_player_name, scroll_delta_in_ui};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
+use crate::gui::widgets::player_colors::show_player_colors_ui;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
 use eframe::egui::{
-    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense,
-    Stroke, StrokeKind, Ui,
+    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
+    Ui,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -32,7 +33,6 @@ use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
-use crate::gui::widgets::player_colors::show_player_colors_ui;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -283,17 +283,13 @@ impl GridExplorer {
                 let cursor_line = match self.grid_cell_accessor.get(pointed_coords) {
                     Some(pid) => {
                         let name = make_player_name(pid);
-                        format!("Cursor: {} at ({}, {})",
-                            name,
-                            pointed_coords.x,
-                            pointed_coords.y,
+                        format!(
+                            "Cursor: {} at ({}, {})",
+                            name, pointed_coords.x, pointed_coords.y,
                         )
                     }
                     None => {
-                        format!("Cursor: ({}, {})",
-                            pointed_coords.x,
-                            pointed_coords.y,
-                        )
+                        format!("Cursor: ({}, {})", pointed_coords.x, pointed_coords.y,)
                     }
                 };
 
