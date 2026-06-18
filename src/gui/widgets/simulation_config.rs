@@ -24,8 +24,8 @@ pub struct SimulationConfigInputConstraints {
     pub turns: RangeInclusive<u64>,
     pub complete_shells: RangeInclusive<u64>,
     pub zstd_compression_level: RangeInclusive<i32>,
-    pub chunk_strip_length_pow2: RangeInclusive<u32>,
-    pub chunk_strip_thickness_pow2: RangeInclusive<u32>,
+    pub chunk_strip_length: RangeInclusive<Pow2>,
+    pub chunk_strip_thickness: RangeInclusive<Pow2>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -41,6 +41,10 @@ pub struct SimulationConfigInput {
     chunk_strip_thickness_pow2: u32,
 
     constraints: SimulationConfigInputConstraints,
+}
+
+fn pow2_range_to_u32_range(range: &RangeInclusive<Pow2>) -> RangeInclusive<u32> {
+    (range.start().as_u64() as u32)..=(range.end().as_u64() as u32)
 }
 
 impl SimulationConfigInput {
@@ -60,14 +64,14 @@ impl SimulationConfigInput {
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
         let zstd_compression_level = *constraints.zstd_compression_level.start();
-        let chunk_strip_length_pow2 = *constraints.chunk_strip_length_pow2.start();
-        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness_pow2.start();
+        let chunk_strip_length_pow2 = *constraints.chunk_strip_length.start();
+        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness.start();
 
         if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Minimum chunk strip thickness {} > minimum chunk strip length {}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(chunk_strip_length_pow2)
+                chunk_strip_thickness_pow2,
+                chunk_strip_length_pow2
             )));
         }
 
@@ -79,8 +83,8 @@ impl SimulationConfigInput {
             simulation_limits,
 
             zstd_compression_level,
-            chunk_strip_length_pow2,
-            chunk_strip_thickness_pow2,
+            chunk_strip_length_pow2: chunk_strip_length_pow2.as_u64() as u32,
+            chunk_strip_thickness_pow2: chunk_strip_thickness_pow2.as_u64() as u32,
 
             constraints,
         })
@@ -134,14 +138,14 @@ impl SimulationConfigInput {
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
         let zstd_compression_level = *constraints.zstd_compression_level.start();
-        let chunk_strip_length_pow2 = *constraints.chunk_strip_length_pow2.start();
-        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness_pow2.start();
+        let chunk_strip_length_pow2 = *constraints.chunk_strip_length.start();
+        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness.start();
 
         if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Minimum chunk strip thickness {} > minimum chunk strip length {}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(chunk_strip_length_pow2)
+                chunk_strip_thickness_pow2,
+                chunk_strip_length_pow2
             )));
         }
 
@@ -153,8 +157,8 @@ impl SimulationConfigInput {
             simulation_limits,
 
             zstd_compression_level,
-            chunk_strip_length_pow2,
-            chunk_strip_thickness_pow2,
+            chunk_strip_length_pow2: chunk_strip_length_pow2.as_u64() as u32,
+            chunk_strip_thickness_pow2: chunk_strip_thickness_pow2.as_u64() as u32,
 
             constraints,
         })
@@ -243,45 +247,43 @@ impl SimulationConfigInput {
 
     pub fn set_chunk_strip_length_and_thickness_pow2(
         &mut self,
-        chunk_strip_length_pow2: u32,
-        chunk_strip_thickness_pow2: u32,
+        chunk_strip_length: Pow2,
+        chunk_strip_thickness: Pow2,
     ) -> Result<(), WidgetError> {
         if !self
             .constraints
-            .chunk_strip_length_pow2
-            .contains(&chunk_strip_length_pow2)
+            .chunk_strip_length
+            .contains(&chunk_strip_length)
         {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Chunk strip length {} is outside allowed range {:?}",
-                2_i32.pow(chunk_strip_length_pow2),
-                2_i32.pow(*self.constraints.chunk_strip_length_pow2.start())
-                    ..2_i32.pow(*self.constraints.chunk_strip_length_pow2.end())
+                chunk_strip_length,
+                self.constraints.chunk_strip_length,
             )));
         }
 
         if !self
             .constraints
-            .chunk_strip_thickness_pow2
-            .contains(&chunk_strip_thickness_pow2)
+            .chunk_strip_thickness
+            .contains(&chunk_strip_thickness)
         {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Chunk strip thickness {} is outside allowed range {:?}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(*self.constraints.chunk_strip_thickness_pow2.start())
-                    ..2_i32.pow(*self.constraints.chunk_strip_thickness_pow2.end())
+                chunk_strip_thickness,
+                self.constraints.chunk_strip_thickness,
             )));
         }
 
-        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+        if chunk_strip_thickness > chunk_strip_length {
             return Err(WidgetError::InvalidState(format!(
                 "Chunk strip thickness {} > chunk strip length {}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(chunk_strip_length_pow2)
+                chunk_strip_thickness,
+                chunk_strip_length,
             )));
         }
 
-        self.chunk_strip_length_pow2 = chunk_strip_length_pow2;
-        self.chunk_strip_thickness_pow2 = chunk_strip_thickness_pow2;
+        self.chunk_strip_length_pow2 = chunk_strip_length.as_u64() as u32;
+        self.chunk_strip_thickness_pow2 = chunk_strip_thickness.as_u64() as u32;
 
         Ok(())
     }
@@ -449,39 +451,37 @@ impl JsonWidget for SimulationConfigInput {
             .into());
         }
 
-        let chunk_strip_length_pow2 = json.read_u64("chunk_strip_length_pow2")? as u32;
+        let chunk_strip_length = Pow2::from_exponent(json.read_u64("chunk_strip_length_pow2")? as u8);
         if !constraints
-            .chunk_strip_length_pow2
-            .contains(&chunk_strip_length_pow2)
+            .chunk_strip_length
+            .contains(&chunk_strip_length)
         {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Chunk strip length {} is outside allowed range {:?}",
-                2_i32.pow(chunk_strip_length_pow2),
-                2_i32.pow(*constraints.chunk_strip_length_pow2.start())
-                    ..2_i32.pow(*constraints.chunk_strip_length_pow2.end())
+                chunk_strip_length,
+                constraints.chunk_strip_length,
             ))
             .into());
         }
 
-        let chunk_strip_thickness_pow2 = json.read_u64("chunk_strip_thickness_pow2")? as u32;
+        let chunk_strip_thickness = Pow2::from_exponent(json.read_u64("chunk_strip_thickness_pow2")? as u8);
         if !constraints
-            .chunk_strip_thickness_pow2
-            .contains(&chunk_strip_thickness_pow2)
+            .chunk_strip_thickness
+            .contains(&chunk_strip_thickness)
         {
             return Err(WidgetError::ConstraintViolation(format!(
                 "Chunk strip thickness {} is outside allowed range {:?}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(*constraints.chunk_strip_thickness_pow2.start())
-                    ..2_i32.pow(*constraints.chunk_strip_thickness_pow2.end())
+                chunk_strip_thickness,
+                constraints.chunk_strip_thickness,
             ))
             .into());
         }
 
-        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+        if chunk_strip_thickness > chunk_strip_length {
             return Err(WidgetError::InvalidState(format!(
                 "Chunk strip thickness {} > chunk strip length {}",
-                2_i32.pow(chunk_strip_thickness_pow2),
-                2_i32.pow(chunk_strip_length_pow2)
+                chunk_strip_thickness,
+                chunk_strip_length,
             ))
             .into());
         }
@@ -494,8 +494,8 @@ impl JsonWidget for SimulationConfigInput {
             simulation_limits,
 
             zstd_compression_level,
-            chunk_strip_length_pow2,
-            chunk_strip_thickness_pow2,
+            chunk_strip_length_pow2: chunk_strip_length.as_u64() as u32,
+            chunk_strip_thickness_pow2: chunk_strip_thickness.as_u64() as u32,
 
             constraints,
         })
@@ -545,14 +545,15 @@ impl SimulationConfigInput {
             ui.add(
                 Slider::new(
                     &mut self.chunk_strip_length_pow2,
-                    self.constraints.chunk_strip_length_pow2.clone(),
+                    pow2_range_to_u32_range(&self.constraints.chunk_strip_length),
                 )
                 .custom_formatter(format_pow2_slider_text),
             );
 
             ui.label("Chunk strip thickness:");
             let chunk_strip_thickness_range_pow2 =
-                *self.constraints.chunk_strip_thickness_pow2.start()..=self.chunk_strip_length_pow2;
+                self.constraints.chunk_strip_thickness.start().as_u64() as u32
+                    ..=self.chunk_strip_length_pow2;
             ui.add(
                 Slider::new(
                     &mut self.chunk_strip_thickness_pow2,
