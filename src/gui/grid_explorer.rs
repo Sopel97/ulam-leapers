@@ -32,6 +32,7 @@ use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::player_colors::show_player_colors_ui;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -541,30 +542,11 @@ impl GridExplorer {
     }
 
     fn show_player_colors_ui(&mut self, ui: &mut Ui) {
-        let player_count = self.finalized_simulation.player_count();
         let allow_color_change = self.grid_renderer.can_set_colors();
 
-        // TODO: Columns for some reason take more space than necessary.
-        //       This `set_max_width` is a hack to make it about as much as it should.
-        ui.set_max_width(MAX_CONTROLS_WINDOW_WIDTH);
-        ui.columns(2, |columns| {
-            for player_id in 0..=player_count {
-                let column = &mut columns[player_id % 2];
-                column.horizontal_wrapped(|ui| {
-                    if srgb_color_button(ui, &mut self.player_colors[player_id], allow_color_change)
-                        .changed()
-                    {
-                        self.grid_renderer.set_colors(self.player_colors.as_slice())
-                    }
-
-                    if player_id == 0 {
-                        ui.label("Empty");
-                    } else {
-                        ui.label(format!("Player {}", player_id));
-                    }
-                });
-            }
-        })
+        if show_player_colors_ui(ui, &mut self.player_colors, allow_color_change) {
+            self.grid_renderer.set_colors(self.player_colors.as_slice());
+        }
     }
 
     fn show_info_ui(&mut self, ui: &mut Ui) {

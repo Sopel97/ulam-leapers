@@ -11,6 +11,7 @@ use std::ops::RangeInclusive;
 use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::grid_render::render::default_player_colors;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SimulationConfigInputConstraints {
@@ -214,6 +215,10 @@ impl SimulationConfigInput {
         self.player_count = player_count;
 
         Ok(())
+    }
+    
+    pub fn player_count(&self) -> usize {
+        self.player_configs.len()
     }
 }
 

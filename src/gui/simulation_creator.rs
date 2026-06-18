@@ -3,14 +3,15 @@ use crate::gui::grid_render::samplers::MapLastCollector;
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
+use crate::gui::widgets::player_colors::show_player_colors_ui;
 use crate::gui::widgets::simulation_config::{
     SimulationConfigInput, SimulationConfigInputConstraints,
 };
 use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{
-    pos2, vec2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect, ScrollArea,
-    Slider, Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2,
+    pos2, vec2, Align2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect,
+    ScrollArea, Slider, Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2,
 };
 use eframe::epaint::TextureHandle;
 use std::fs::File;
@@ -21,7 +22,9 @@ use std::thread::JoinHandle;
 use ulam_leapers::collections::array2d::Array2D;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::sampler::FrozenGridSampler;
-use ulam_leapers::game::simulation::{FinalizedSimulation, Player, Simulation, SimulationLimits};
+use ulam_leapers::game::simulation::{
+    FinalizedSimulation, Player, PlayerId, Simulation, SimulationLimits,
+};
 use ulam_leapers::math::coords::GridPoint;
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::util::memory::MemSize;
@@ -235,9 +238,9 @@ impl SimulationCreator {
         let uls_players = UlsSimulation::read_just_players_from(&mut reader)?;
         let players: Vec<_> = uls_players.into_iter().map(Player::from).collect();
         Self::with_players(&players).map_err(|e| {
-            std::io::Error::other(
-                format!("Simulation creator does not support this configuration: {e}"),
-            )
+            std::io::Error::other(format!(
+                "Simulation creator does not support this configuration: {e}"
+            ))
         })
     }
 }
@@ -352,6 +355,17 @@ impl SimulationCreator {
         });
 
         egui::Frame::default().show(ui, |ui| {
+            egui::Window::new("Legend")
+                .scroll(false)
+                .resizable([false, false])
+                .constrain_to(ui.available_rect_before_wrap())
+                .anchor(Align2::LEFT_TOP, vec2(0.0, 0.0))
+                .show(ui, |ui| {
+                    let mut colors =
+                        default_player_colors(PlayerId::new(self.state.player_count() as u8));
+                    show_player_colors_ui(ui, &mut colors, false);
+                });
+
             let rect = ui.max_rect();
 
             let mut last_result = None;

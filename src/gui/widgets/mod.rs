@@ -5,3 +5,4 @@ pub mod simulation_config;
 pub mod simulation_info;
 pub mod simulation_limits;
 pub mod widget;
+pub mod player_colors;
