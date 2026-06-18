@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 pub struct Grid<T> {
-    chunker: Box<dyn Chunker + Send + Sync>,
+    chunker: StripChunker,
     active_chunks: BTreeMap<ChunkOrigin, Chunk<T>>,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     frozen_chunks_memory_usage: MemSize, // to reduce the amount of redundant iteration over chunks
@@ -171,8 +171,8 @@ impl<T> Grid<T> {
         self.is_chunk_at_frozen(&origin)
     }
 
-    pub fn chunker(&self) -> &dyn Chunker {
-        self.chunker.as_ref()
+    pub fn chunker(&self) -> &StripChunker {
+        &self.chunker
     }
 
     pub fn active_chunks(&self) -> &BTreeMap<ChunkOrigin, Chunk<T>> {
@@ -181,7 +181,7 @@ impl<T> Grid<T> {
 }
 
 impl<T: Default + Clone + Copy> Grid<T> {
-    pub fn new(chunker: Box<dyn Chunker + Send + Sync>) -> Self {
+    pub fn new(chunker: StripChunker) -> Self {
         Grid {
             chunker,
             active_chunks: BTreeMap::new(),
@@ -261,7 +261,7 @@ impl<T: Default + Clone + Copy> IndexMut<GridPoint> for Grid<T> {
 }
 
 pub struct FrozenGrid<T> {
-    chunker: Box<dyn Chunker>,
+    chunker: StripChunker,
     frozen_chunks: BTreeMap<ChunkOrigin, CompressedChunk<T>>,
     memory_usage: MemSize,
 }
@@ -300,8 +300,8 @@ impl<T> FrozenGrid<T> {
         self.get_chunk_at(&origin)
     }
 
-    pub fn chunker(&self) -> &dyn Chunker {
-        self.chunker.as_ref()
+    pub fn chunker(&self) -> &StripChunker {
+        &self.chunker
     }
 }
 
@@ -336,7 +336,7 @@ impl FrozenGrid<PlayerId> {
             .sum();
 
         Self {
-            chunker: Box::new(chunker),
+            chunker,
             frozen_chunks,
             memory_usage,
         }
@@ -347,7 +347,6 @@ impl FrozenGrid<PlayerId> {
 mod tests {
     use super::*;
     use crate::compression::zstd::ZstdCompression;
-    use crate::game::chunker::SquareChunker;
     use crate::math::pow2::Pow2;
     use std::panic::AssertUnwindSafe;
 
@@ -364,7 +363,7 @@ mod tests {
     }
 
     fn make_grid(chunk_size: Pow2) -> Grid<i32> {
-        Grid::new(Box::new(SquareChunker::new(chunk_size)))
+        Grid::new(StripChunker::with_strip_length_and_thickness(chunk_size, chunk_size))
     }
 
     #[test]

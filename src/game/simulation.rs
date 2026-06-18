@@ -386,13 +386,13 @@ impl Simulation {
     }
 
     pub fn new() -> Simulation {
-        Self::with_chunker(Box::new(StripChunker::with_strip_length_and_thickness(
+        Self::with_chunker(StripChunker::with_strip_length_and_thickness(
             DEFAULT_CHUNK_STRIP_LENGTH,
             DEFAULT_CHUNK_STRIP_THICKNESS,
-        )))
+        ))
     }
 
-    pub fn with_chunker(chunker: Box<dyn Chunker>) -> Simulation {
+    pub fn with_chunker(chunker: StripChunker) -> Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(chunker)),
@@ -1116,12 +1116,12 @@ mod tests {
             Pow2::from_exponent(8),
             Pow2::from_exponent(6),
         );
-        let mut sim = Simulation::with_chunker(Box::new(smaller_chunker));
+        let mut sim = Simulation::with_chunker(smaller_chunker);
         let _p1 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let _p2 = sim.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim.add_all_pairwise_player_enemies();
 
-        let mut sim_oneshot = Simulation::with_chunker(Box::new(smaller_chunker));
+        let mut sim_oneshot = Simulation::with_chunker(smaller_chunker);
         let _p1 = sim_oneshot.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         let _p2 = sim_oneshot.add_player(LeaperAttacks::from_canonical(&GridVector::new(1, 2)));
         sim_oneshot.add_all_pairwise_player_enemies();

@@ -5,7 +5,7 @@ use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
 use crate::math::rect::GridRect;
 use std::io::{Read, Write};
 
-pub trait Chunker: Send + Sync {
+pub trait Chunker {
     fn resolve_chunk_origin(&self, point: &GridPoint) -> ChunkOrigin;
     fn resolve_chunk_bounds(&self, point: &GridPoint) -> GridRect;
     fn origins_of_intersecting_chunks(&self, region: &GridRect) -> Vec<ChunkOrigin>;
@@ -14,10 +14,11 @@ pub trait Chunker: Send + Sync {
     fn minimum_covered_shells(&self) -> u64;
     fn average_cell_count(&self) -> u64;
     fn maximum_cells_created_by_spiral_steps(&self, steps: u64) -> u64;
-
-    fn as_strip_chunker(&self) -> Option<StripChunker>;
 }
 
+/// Subdivides the grid into square chunks of fixed size and alignment equal to size.
+/// While this chunker is unused because [StripChunker] is a superset of it, it is
+/// utilized in some tests.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct SquareChunker {
     size: Pow2,
@@ -75,12 +76,6 @@ impl Chunker for SquareChunker {
         } else {
             (4 + div_ceil(steps - 4, self.size)) * chunk_size
         }
-    }
-
-    fn as_strip_chunker(&self) -> Option<StripChunker> {
-        Some(StripChunker::with_strip_length_and_thickness(
-            self.size, self.size,
-        ))
     }
 }
 
@@ -333,10 +328,6 @@ impl Chunker for StripChunker {
             // Strips are aligned with the spiral traversal wherever possible.
             (4 + div_ceil(steps - 4, self.strip_length)) * chunk_size
         }
-    }
-
-    fn as_strip_chunker(&self) -> Option<StripChunker> {
-        Some(*self)
     }
 }
 

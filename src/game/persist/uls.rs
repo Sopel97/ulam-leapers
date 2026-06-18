@@ -461,10 +461,8 @@ impl<'a> TryFrom<&'a FinalizedSimulation> for UlsSimulation<'a> {
 
         let grid = simulation.grid_ref();
         let chunker = grid
-            .chunker()
-            .as_strip_chunker()
-            .expect("All current chunkers are compatible with strip chunker");
-        let uls_chunker = UlsChunker::try_from(&chunker)?;
+            .chunker();
+        let uls_chunker = UlsChunker::try_from(chunker)?;
 
         let chunk_count = grid.chunk_count();
         if chunk_count as u64 > ULS_MAX_CHUNK_COUNT {
@@ -846,11 +844,11 @@ mod tests {
     use crate::math::coords::GridVector;
     use crate::math::pow2::Pow2;
 
-    fn make_chunker() -> Box<dyn Chunker> {
-        Box::new(StripChunker::with_strip_length_and_thickness(
+    fn make_chunker() -> StripChunker {
+        StripChunker::with_strip_length_and_thickness(
             Pow2::from_exponent(8),
             Pow2::from_exponent(6),
-        ))
+        )
     }
 
     #[test]
