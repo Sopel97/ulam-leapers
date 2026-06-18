@@ -94,6 +94,12 @@ where
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct SamplerProgress {
+    pub done: u64,
+    pub total: u64,
+}
+
 /// Intended for sampling the grid with small power of 2 minification factors due
 /// to overall complexity being linear with the number of cells visited.
 /// If higher minification is required consider an approach with pregenerated mip-maps
@@ -347,7 +353,7 @@ where
         progress_callback: C,
     ) -> Option<Array2D<TCollector::OutputType>>
     where
-        C: Fn(usize, usize) + Send + Sync,
+        C: Fn(SamplerProgress) + Send + Sync,
     {
         rayon::scope(|s| {
             let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
@@ -401,8 +407,10 @@ where
                         .unwrap();
 
                         progress_callback(
-                            num_finished_chunks.fetch_add(1, Ordering::Relaxed),
-                            num_chunks_to_process,
+                            SamplerProgress {
+                                done: num_finished_chunks.fetch_add(1, Ordering::Relaxed) as u64,
+                                total: num_chunks_to_process as u64,
+                            }
                         );
 
                         Ok(())
@@ -423,7 +431,7 @@ where
 
     pub fn par_sample(&self) -> Array2D<TCollector::OutputType> {
         let cancellation_token = CancellationToken::new();
-        let callback = |_: usize, _: usize| {};
+        let callback = |_| {};
         self.par_sample_cancellable(cancellation_token, callback)
             .expect("This job should never be cancelled.")
     }

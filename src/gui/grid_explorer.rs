@@ -24,7 +24,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::persist::uls::{UlsError, UlsSimulation};
 use ulam_leapers::game::sampler::FrozenGridCellAccessor;
@@ -73,7 +73,7 @@ pub struct GridExplorer {
 
     grid_cell_accessor: FrozenGridCellAccessor<PlayerId>,
 
-    mipmap_generation_progress: Option<MipmapGenerationProgress>,
+    mipmap_generation_progress: Option<Arc<Mutex<MipmapGenerationProgress>>>,
 
     player_colors: Vec<Color32>,
     save_state: SaveState,
@@ -572,7 +572,8 @@ impl GridExplorer {
                 .clicked()
             {
                 self.mipmap_generation_progress = Some(
-                    self.grid_renderer
+                    self
+                        .grid_renderer
                         .generate_mipmaps_async(MIP_LOWEST_MINIFICATION, MIP_HIGHEST_MINIFICATION),
                 );
             }
@@ -582,12 +583,23 @@ impl GridExplorer {
             if ui.button("Cancel mipmap generation.").clicked() {
                 self.grid_renderer.cancel_mipmap_generation();
             } else if let Some(progress) = &self.mipmap_generation_progress {
-                let progress = progress.get();
-                let progress_pct = (progress.0 * 100).checked_div(progress.1).unwrap_or(0);
-                ui.label(format!(
-                    "{} / {} chunks ({}%)",
-                    progress.0, progress.1, progress_pct
-                ));
+                let progress = *progress.lock().unwrap();
+                match progress {
+                    MipmapGenerationProgress::LargestMipmap {
+                        chunks_done,
+                        chunks_total,
+                    } => {
+                        let progress_pct =
+                            (chunks_done * 100).checked_div(chunks_total).unwrap_or(0);
+                        ui.label(format!(
+                            "{} / {} chunks ({}%)",
+                            chunks_done, chunks_total, progress_pct
+                        ));
+                    }
+                    MipmapGenerationProgress::SmallerMipmap { zoom } => {
+                        ui.label(format!("Processing zoom {}", zoom));
+                    }
+                }
                 // Maybe some better notification in the future, but chunks get processed fast
                 // enough that this shouldn't be doing any redundant work.
                 ui.ctx().request_repaint();

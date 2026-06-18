@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use ulam_leapers::collections::array2d::{Array2D, MutSlice2D};
 use ulam_leapers::game::chunk::ChunkOrigin;
 use ulam_leapers::game::grid::FrozenGrid;
-use ulam_leapers::game::sampler::FrozenGridSampler;
+use ulam_leapers::game::sampler::{FrozenGridSampler, SamplerProgress};
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::pow2::{div_floor, Pow2};
 use ulam_leapers::math::rect::GridRect;
@@ -69,18 +69,14 @@ pub struct GridRenderer {
     cache: Option<RefCell<CacheType>>,
 }
 
-#[derive(Debug)]
-pub struct MipmapGenerationProgress {
-    slot: Arc<Mutex<(usize, usize)>>,
-}
-
-impl MipmapGenerationProgress {
-    pub fn new(slot: Arc<Mutex<(usize, usize)>>) -> MipmapGenerationProgress {
-        MipmapGenerationProgress { slot }
-    }
-
-    pub fn get(&self) -> (usize, usize) {
-        *self.slot.lock().unwrap()
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum MipmapGenerationProgress {
+    LargestMipmap {
+        chunks_done: u64,
+        chunks_total: u64,
+    },
+    SmallerMipmap {
+        zoom: Zoom<Pow2>,
     }
 }
 
@@ -375,7 +371,7 @@ impl GridRenderer {
         &mut self,
         lowest_minification: Pow2,
         highest_minification: Pow2,
-    ) -> MipmapGenerationProgress {
+    ) -> Arc<Mutex<MipmapGenerationProgress>> {
         // We allow a single level, but not less than that.
         assert!(lowest_minification <= highest_minification);
 
@@ -392,10 +388,16 @@ impl GridRenderer {
         assert!(grid_bounds.height() > 0);
 
         let is_finished = Arc::new(AtomicBool::new(false));
-        let progress = Arc::new(Mutex::new((0usize, 1usize)));
+        let progress = Arc::new(Mutex::new(MipmapGenerationProgress::LargestMipmap {
+            chunks_done: 0,
+            chunks_total: 0,
+        }));
         let progress_clone = Arc::clone(&progress);
-        let progress_callback = move |done: usize, total: usize| {
-            *progress_clone.lock().unwrap() = (done, total);
+        let progress_callback = move |p: SamplerProgress| {
+            *progress_clone.lock().unwrap() = MipmapGenerationProgress::LargestMipmap {
+                chunks_done: p.done,
+                chunks_total: p.total,
+            };
         };
 
         let grid_ref = Arc::clone(&self.grid);
@@ -448,7 +450,7 @@ impl GridRenderer {
             Err(err) => panic!("{:?}", err),
         }
 
-        MipmapGenerationProgress::new(progress)
+        progress
     }
 
     fn reduce_mipmap_2x(prev_mipmap: &Array2D<Color32>) -> Array2D<Color32> {
