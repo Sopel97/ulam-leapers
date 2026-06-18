@@ -385,20 +385,27 @@ impl Simulation {
     }
 
     pub fn new() -> Simulation {
-        Self::with_chunker(StripChunker::with_strip_length_and_thickness(
-            DEFAULT_CHUNK_STRIP_LENGTH,
-            DEFAULT_CHUNK_STRIP_THICKNESS,
-        ))
+        Self::with_chunker_and_compression(
+            StripChunker::with_strip_length_and_thickness(
+                DEFAULT_CHUNK_STRIP_LENGTH,
+                DEFAULT_CHUNK_STRIP_THICKNESS,
+            ), 
+            Self::make_default_compression()
+        )
     }
 
     pub fn with_chunker(chunker: StripChunker) -> Simulation {
+        Self::with_chunker_and_compression(chunker, Self::make_default_compression())
+    }
+    
+    pub fn with_chunker_and_compression(chunker: StripChunker, compression: AnyCompression) -> Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(chunker)),
             forbiddances: SlidingWindow::with_origin(0),
 
             simulated_turns: 0,
-            compression: Self::make_default_compression(),
+            compression,
         }
     }
 

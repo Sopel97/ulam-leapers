@@ -1,4 +1,5 @@
-﻿use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
+﻿use crate::gui::util::format_pow2_slider_text;
+use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
 use crate::gui::widgets::player_relations::{
     PlayerRelationsInput, PlayerRelationsInputConstraints,
 };
@@ -8,7 +9,10 @@ use eframe::egui;
 use eframe::egui::{Color32, Response, ScrollArea, Slider, Ui, Vec2b};
 use serde_json::{json, Value};
 use std::ops::RangeInclusive;
+use ulam_leapers::compression::zstd::ZstdCompression;
+use ulam_leapers::game::chunker::StripChunker;
 use ulam_leapers::game::simulation::{Player, Simulation, SimulationLimits};
+use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 use ulam_leapers::util::memory::MemSize;
 
@@ -19,6 +23,9 @@ pub struct SimulationConfigInputConstraints {
     pub memory_usage: RangeInclusive<MemSize>,
     pub turns: RangeInclusive<u64>,
     pub complete_shells: RangeInclusive<u64>,
+    pub zstd_compression_level: RangeInclusive<i32>,
+    pub chunk_strip_length_pow2: RangeInclusive<u32>,
+    pub chunk_strip_thickness_pow2: RangeInclusive<u32>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -28,6 +35,10 @@ pub struct SimulationConfigInput {
     player_configs: Vec<LeaperAttacksInput>,
     player_relations: PlayerRelationsInput,
     simulation_limits: SimulationLimitsInput,
+
+    zstd_compression_level: i32,
+    chunk_strip_length_pow2: u32,
+    chunk_strip_thickness_pow2: u32,
 
     constraints: SimulationConfigInputConstraints,
 }
@@ -48,12 +59,29 @@ impl SimulationConfigInput {
         let simulation_limits =
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
+        let zstd_compression_level = *constraints.zstd_compression_level.start();
+        let chunk_strip_length_pow2 = *constraints.chunk_strip_length_pow2.start();
+        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness_pow2.start();
+
+        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Minimum chunk strip thickness {} > minimum chunk strip length {}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(chunk_strip_length_pow2)
+            )));
+        }
+
         Ok(SimulationConfigInput {
             player_count,
             attack_radius,
             player_configs,
             player_relations,
             simulation_limits,
+
+            zstd_compression_level,
+            chunk_strip_length_pow2,
+            chunk_strip_thickness_pow2,
+
             constraints,
         })
     }
@@ -105,12 +133,29 @@ impl SimulationConfigInput {
         let simulation_limits =
             SimulationLimitsInput::new(constraints.simulation_limits_input_constraints());
 
+        let zstd_compression_level = *constraints.zstd_compression_level.start();
+        let chunk_strip_length_pow2 = *constraints.chunk_strip_length_pow2.start();
+        let chunk_strip_thickness_pow2 = *constraints.chunk_strip_thickness_pow2.start();
+
+        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Minimum chunk strip thickness {} > minimum chunk strip length {}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(chunk_strip_length_pow2)
+            )));
+        }
+
         Ok(SimulationConfigInput {
             player_count,
             attack_radius,
             player_configs,
             player_relations,
             simulation_limits,
+
+            zstd_compression_level,
+            chunk_strip_length_pow2,
+            chunk_strip_thickness_pow2,
+
             constraints,
         })
     }
@@ -126,7 +171,12 @@ impl SimulationConfigInput {
     }
 
     pub fn build_simulation(&self) -> (Simulation, SimulationLimits) {
-        let mut sim = Simulation::new();
+        let chunker = StripChunker::with_strip_length_and_thickness(
+            Pow2::from_exponent(self.chunk_strip_length_pow2 as u8),
+            Pow2::from_exponent(self.chunk_strip_thickness_pow2 as u8),
+        );
+        let compression = ZstdCompression::new_with_level(self.zstd_compression_level);
+        let mut sim = Simulation::with_chunker_and_compression(chunker, compression.into());
 
         for player_config in self.player_configs.iter() {
             sim.add_player(player_config.build_leaper_attacks());
@@ -169,6 +219,71 @@ impl SimulationConfigInput {
 
     fn on_attack_radius_changed(&mut self) -> Result<(), WidgetError> {
         self.set_attack_radius_ignore_current(self.attack_radius)
+    }
+
+    pub fn set_zstd_compression_level(
+        &mut self,
+        zstd_compression_level: i32,
+    ) -> Result<(), WidgetError> {
+        if !self
+            .constraints
+            .zstd_compression_level
+            .contains(&zstd_compression_level)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Zstd compression level {} outside of allowed range {:?}",
+                zstd_compression_level, self.constraints.zstd_compression_level
+            )));
+        }
+
+        self.zstd_compression_level = zstd_compression_level;
+
+        Ok(())
+    }
+
+    pub fn set_chunk_strip_length_and_thickness_pow2(
+        &mut self,
+        chunk_strip_length_pow2: u32,
+        chunk_strip_thickness_pow2: u32,
+    ) -> Result<(), WidgetError> {
+        if !self
+            .constraints
+            .chunk_strip_length_pow2
+            .contains(&chunk_strip_length_pow2)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Chunk strip length {} is outside allowed range {:?}",
+                2_i32.pow(chunk_strip_length_pow2),
+                2_i32.pow(*self.constraints.chunk_strip_length_pow2.start())
+                    ..2_i32.pow(*self.constraints.chunk_strip_length_pow2.end())
+            )));
+        }
+
+        if !self
+            .constraints
+            .chunk_strip_thickness_pow2
+            .contains(&chunk_strip_thickness_pow2)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Chunk strip thickness {} is outside allowed range {:?}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(*self.constraints.chunk_strip_thickness_pow2.start())
+                    ..2_i32.pow(*self.constraints.chunk_strip_thickness_pow2.end())
+            )));
+        }
+
+        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+            return Err(WidgetError::InvalidState(format!(
+                "Chunk strip thickness {} > chunk strip length {}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(chunk_strip_length_pow2)
+            )));
+        }
+
+        self.chunk_strip_length_pow2 = chunk_strip_length_pow2;
+        self.chunk_strip_thickness_pow2 = chunk_strip_thickness_pow2;
+
+        Ok(())
     }
 
     /// Ignores the current value of `self.attack_radius`.
@@ -253,6 +368,9 @@ impl JsonWidget for SimulationConfigInput {
             "player_relations": self.player_relations.to_json(),
             "simulation_limits": self.simulation_limits.to_json(),
             "attack_radius": self.attack_radius,
+            "zstd_compression_level": self.zstd_compression_level,
+            "chunk_strip_length_pow2": self.chunk_strip_length_pow2,
+            "chunk_strip_thickness_pow2": self.chunk_strip_thickness_pow2,
         })
     }
 
@@ -319,12 +437,66 @@ impl JsonWidget for SimulationConfigInput {
             simulation_limits_constraints,
         )?;
 
+        let zstd_compression_level = json.read_i64("zstd_compression_level")? as i32;
+        if !constraints
+            .zstd_compression_level
+            .contains(&zstd_compression_level)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Zstd compression level {} is outside allowed range {:?}",
+                zstd_compression_level, constraints.zstd_compression_level
+            ))
+            .into());
+        }
+
+        let chunk_strip_length_pow2 = json.read_u64("chunk_strip_length_pow2")? as u32;
+        if !constraints
+            .chunk_strip_length_pow2
+            .contains(&chunk_strip_length_pow2)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Chunk strip length {} is outside allowed range {:?}",
+                2_i32.pow(chunk_strip_length_pow2),
+                2_i32.pow(*constraints.chunk_strip_length_pow2.start())
+                    ..2_i32.pow(*constraints.chunk_strip_length_pow2.end())
+            ))
+            .into());
+        }
+
+        let chunk_strip_thickness_pow2 = json.read_u64("chunk_strip_thickness_pow2")? as u32;
+        if !constraints
+            .chunk_strip_thickness_pow2
+            .contains(&chunk_strip_thickness_pow2)
+        {
+            return Err(WidgetError::ConstraintViolation(format!(
+                "Chunk strip thickness {} is outside allowed range {:?}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(*constraints.chunk_strip_thickness_pow2.start())
+                    ..2_i32.pow(*constraints.chunk_strip_thickness_pow2.end())
+            ))
+            .into());
+        }
+
+        if chunk_strip_thickness_pow2 > chunk_strip_length_pow2 {
+            return Err(WidgetError::InvalidState(format!(
+                "Chunk strip thickness {} > chunk strip length {}",
+                2_i32.pow(chunk_strip_thickness_pow2),
+                2_i32.pow(chunk_strip_length_pow2)
+            ))
+            .into());
+        }
+
         Ok(Self {
             player_count,
             attack_radius,
             player_configs,
             player_relations,
             simulation_limits,
+
+            zstd_compression_level,
+            chunk_strip_length_pow2,
+            chunk_strip_thickness_pow2,
+
             constraints,
         })
     }
@@ -358,6 +530,39 @@ impl SimulationConfigInput {
         config_responses
     }
 
+    fn show_advanced_simulation_config(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.label("Advanced settings ❓:")
+                .on_hover_text("WARNING: DO NOT TOUCH UNLESS YOU KNOW WHAT YOU'RE DOING");
+
+            ui.label("Zstd compression level:");
+            ui.add(Slider::new(
+                &mut self.zstd_compression_level,
+                self.constraints.zstd_compression_level.clone(),
+            ));
+
+            ui.label("Chunk strip length:");
+            ui.add(
+                Slider::new(
+                    &mut self.chunk_strip_length_pow2,
+                    self.constraints.chunk_strip_length_pow2.clone(),
+                )
+                .custom_formatter(format_pow2_slider_text),
+            );
+
+            ui.label("Chunk strip thickness:");
+            let chunk_strip_thickness_range_pow2 =
+                *self.constraints.chunk_strip_thickness_pow2.start()..=self.chunk_strip_length_pow2;
+            ui.add(
+                Slider::new(
+                    &mut self.chunk_strip_thickness_pow2,
+                    chunk_strip_thickness_range_pow2,
+                )
+                .custom_formatter(format_pow2_slider_text),
+            );
+        });
+    }
+
     fn show_simulation_config(&mut self, ui: &mut Ui) {
         ui.horizontal_top(|ui| {
             let mut config_responses = Vec::new();
@@ -373,6 +578,8 @@ impl SimulationConfigInput {
                     self.player_relations.ui(ui);
 
                     self.simulation_limits.ui(ui);
+
+                    self.show_advanced_simulation_config(ui);
                 });
             });
 

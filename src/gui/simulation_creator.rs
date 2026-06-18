@@ -49,6 +49,18 @@ const MIN_PREVIEW_SHELLS: u64 = 100;
 const DEFAULT_PREVIEW_SHELLS: u64 = 250;
 const MAX_PREVIEW_SHELLS: u64 = 1000;
 
+const MIN_ZSTD_COMPRESSION_LEVEL: i32 = 1;
+const DEFAULT_ZSTD_COMPRESSION_LEVEL: i32 = 6;
+const MAX_ZSTD_COMPRESSION_LEVEL: i32 = 19;
+
+const MIN_CHUNK_STRIP_LENGTH_POW2: u32 = 6;
+const DEFAULT_CHUNK_STRIP_LENGTH_POW2: u32 = 12;
+const MAX_CHUNK_STRIP_LENGTH_POW2: u32 = 13;
+
+const MIN_CHUNK_STRIP_THICKNESS_POW2: u32 = 6;
+const DEFAULT_CHUNK_STRIP_THICKNESS_POW2: u32 = 8;
+const MAX_CHUNK_STRIP_THICKNESS_POW2: u32 = 13;
+
 enum SimulationCreatorWorkerJob {
     Stop,
     CancelAll,
@@ -176,6 +188,9 @@ impl SimulationCreator {
             complete_shells: MIN_COMPLETE_SHELLS..=MAX_COMPLETE_SHELLS,
             player_count: Self::get_player_count_range(),
             turns: MIN_TURNS..=MAX_TURNS,
+            zstd_compression_level: MIN_ZSTD_COMPRESSION_LEVEL..=MAX_ZSTD_COMPRESSION_LEVEL,
+            chunk_strip_length_pow2: MIN_CHUNK_STRIP_LENGTH_POW2..=MAX_CHUNK_STRIP_LENGTH_POW2,
+            chunk_strip_thickness_pow2: MIN_CHUNK_STRIP_THICKNESS_POW2..=MAX_CHUNK_STRIP_THICKNESS_POW2,
         }
     }
 
@@ -212,6 +227,8 @@ impl SimulationCreator {
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
+        state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL).unwrap();
+        state.set_chunk_strip_length_and_thickness_pow2(DEFAULT_CHUNK_STRIP_LENGTH_POW2, DEFAULT_CHUNK_STRIP_THICKNESS_POW2).unwrap();
 
         Self::with_state(state)
     }

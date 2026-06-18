@@ -45,6 +45,11 @@ pub fn format_zoom_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
     }
 }
 
+pub fn format_pow2_slider_text(n: f64, _: RangeInclusive<usize>) -> String {
+    let n = n.round() as u32;
+    2_u64.pow(n).to_string()
+}
+
 pub fn make_player_name(pid: PlayerId) -> String {
     if pid == PlayerId::new(0) {
         "Empty".to_owned()
