@@ -13,10 +13,7 @@ use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
-use eframe::egui::{
-    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense,
-    Stroke, StrokeKind, Ui,
-};
+use eframe::egui::{vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::cmp;
@@ -52,10 +49,22 @@ const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
 const OVERLAYS_UI_TOGGLE_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::NONE, Key::F3);
+const MOVEMENT_KEYS: [(Key, Vec2); 8] = [
+    (Key::W, vec2(0.0, 1.0)),
+    (Key::ArrowUp, vec2(0.0, 1.0)),
+    (Key::S, vec2(0.0, -1.0)),
+    (Key::ArrowDown, vec2(0.0, -1.0)),
+    (Key::A, vec2(-1.0, 0.0)),
+    (Key::ArrowLeft, vec2(-1.0, 0.0)),
+    (Key::D, vec2(1.0, 0.0)),
+    (Key::ArrowRight, vec2(1.0, 0.0)),
+];
 
 const MAX_CONTROLS_WINDOW_WIDTH: f32 = 200.0;
 
 const DEFAULT_SIMULATION_FILE_NAME: &str = "simulation.uls";
+
+const MAX_MOVEMENT_DELTA_TIME: f64 = 1.0;
 
 #[derive(Debug)]
 pub enum SaveState {
@@ -82,6 +91,9 @@ pub struct GridExplorer {
     png_extent: i32,
 
     are_overlays_enabled: bool,
+
+    last_frame_timestamp: f64,
+    is_delta_time_safe_for_movement: bool,
 }
 
 impl Subwindow for GridExplorer {
@@ -112,10 +124,6 @@ impl Subwindow for GridExplorer {
                 .show(ui, |ui| {
                     self.show_players_ui(ui);
                 });
-
-            if ui.input_mut(|i| i.consume_shortcut(&OVERLAYS_UI_TOGGLE_SHORTCUT)) {
-                self.are_overlays_enabled = !self.are_overlays_enabled;
-            }
 
             // The projection will give us a more restricted viewport.
             let mut canvas = GridCanvas::in_ui(ui, self.camera);
@@ -166,6 +174,9 @@ impl GridExplorer {
             png_extent: DEFAULT_PNG_EXTENT,
 
             are_overlays_enabled: false,
+
+            last_frame_timestamp: 0.0,
+            is_delta_time_safe_for_movement: false,
         }
     }
 
@@ -460,11 +471,51 @@ impl GridExplorer {
 
         new_camera.add_zoom_with_invariant_point(canvas, zoom_delta, mouse_pos);
 
+        let mut total_drag = vec2(0.0, 0.0);
         // Drag keeping origin at the pointer.
         if response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
+            total_drag += vec2(-delta.x, delta.y);
+        }
+
+        // Keyboard shortcuts for movement
+        let key_drag_delta_base = canvas.screen_rect().width() as f32;
+        let current_timestamp = ui.time();
+        let dt = (current_timestamp - self.last_frame_timestamp).min(MAX_MOVEMENT_DELTA_TIME) as f32;
+        self.last_frame_timestamp = current_timestamp;
+
+        let mut any_key_input = false;
+        ui.input_mut(|i| {
+            for (key, dir) in MOVEMENT_KEYS {
+                if i.key_down(key) {
+                    // We need to make sure we have forced this frame to be rendered
+                    // immediately after the previous one, as other there may have been
+                    // a long time gap that would cause this to blow up.
+                    // This introduces a single frame of a delay, but we can't do better reliably.
+                    if self.is_delta_time_safe_for_movement {
+                        total_drag += dir * key_drag_delta_base * dt;
+                    }
+                    any_key_input = true;
+                }
+            }
+        });
+
+        if any_key_input {
+            // Can't do this inside the loop due to a mutex on ctx.
+            // We need to request a repaint because otherwise the next repaint would
+            // happen only on key pressed event, but we need key down.
+            ui.ctx().request_repaint();
+        }
+
+        // Due to lazy nature of egui rendering we can only get right timings
+        // between two frames that we forced to redraw. Otherwise, there may have been
+        // a long gap that would cause this to blow up.
+        // We set this to true iff we know the next frame is going to be rendered as soon as possible.
+        self.is_delta_time_safe_for_movement = any_key_input;
+
+        if total_drag.length_sq() > 1e-5 {
             // Normally both would be negated but we flip y.
-            new_camera.drag(-delta.x, delta.y);
+            new_camera.drag(total_drag.x, total_drag.y);
         }
 
         // Set origin to current pointer placement scaled to the size of the whole grid.
@@ -654,6 +705,10 @@ impl GridExplorer {
 
     fn show_info_ui(&mut self, ui: &mut Ui) {
         show_finalized_simulation_info_ui(&self.finalized_simulation, ui);
+
+        if ui.input_mut(|i| i.consume_shortcut(&OVERLAYS_UI_TOGGLE_SHORTCUT)) {
+            self.are_overlays_enabled = !self.are_overlays_enabled;
+        }
 
         ui.checkbox(&mut self.are_overlays_enabled, "Overlays");
     }
