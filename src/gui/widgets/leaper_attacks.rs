@@ -1,5 +1,7 @@
 ﻿use crate::gui::widgets::misc::ui_layout_2d;
-use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+use crate::gui::widgets::widget::{
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+};
 use eframe::egui;
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
 use serde_json::{json, Value};
@@ -15,6 +17,12 @@ use ulam_leapers::util::json::SerdeJsonValueExt;
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct LeaperAttacksInputConstraints {
     pub radius: RangeInclusive<usize>,
+}
+
+impl LeaperAttacksInputConstraints {
+    pub fn check_radius(&self, radius: usize) -> Result<(), WidgetError> {
+        self.radius.check_constraint(&radius, "Radius")
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,12 +70,7 @@ impl LeaperAttacksInput {
         attacks: &LeaperAttacks,
         constraints: LeaperAttacksInputConstraints,
     ) -> Result<Self, WidgetError> {
-        if !constraints.radius.contains(&radius) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Attack radius {} outside of allowed range {:?}",
-                radius, constraints.radius
-            )));
-        }
+        constraints.check_radius(radius)?;
 
         let wh = radius * 2 + 1;
         let mut attack_map = Array2D::new(wh, wh);
@@ -87,12 +90,7 @@ impl LeaperAttacksInput {
     }
 
     pub fn set_radius(&mut self, radius: usize) -> Result<(), WidgetError> {
-        if !self.constraints.radius.contains(&radius) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Radius {} outside of allowed range {:?}",
-                radius, self.constraints.radius
-            )));
-        }
+        self.constraints.check_radius(radius)?;
 
         let wh = radius * 2 + 1;
         let diff = radius as i32 - self.radius as i32;
@@ -379,13 +377,7 @@ impl JsonWidget for LeaperAttacksInput {
         constraints: LeaperAttacksInputConstraints,
     ) -> Result<Self, JsonWidgetError> {
         let radius = json.read_u64("radius")? as usize;
-        if !constraints.radius.contains(&radius) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "radius {} is outside of range {:?}",
-                radius, constraints.radius
-            ))
-            .into());
-        }
+        constraints.check_radius(radius)?;
 
         let is_symmetric = json.read_bool("is_symmetric")?;
 

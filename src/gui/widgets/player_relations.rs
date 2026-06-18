@@ -1,5 +1,7 @@
 ﻿use crate::gui::widgets::misc::ui_layout_2d;
-use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+use crate::gui::widgets::widget::{
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+};
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
 use serde_json::{json, Value};
 use std::cmp;
@@ -17,6 +19,13 @@ const ENEMY_MAP_HELP_TEXT: &str = "Specifies which player can and cannot be plac
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct PlayerRelationsInputConstraints {
     pub player_count: RangeInclusive<usize>,
+}
+
+impl PlayerRelationsInputConstraints {
+    pub fn check_player_count(&self, player_count: usize) -> Result<(), WidgetError> {
+        self.player_count
+            .check_constraint(&player_count, "Player count")
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -65,12 +74,7 @@ impl PlayerRelationsInput {
     ) -> Result<Self, WidgetError> {
         let player_count = players.len();
 
-        if !constraints.player_count.contains(&player_count) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Player count {} outside of allowed range {:?}",
-                player_count, constraints.player_count
-            )));
-        }
+        constraints.check_player_count(player_count)?;
 
         let mut enemy_map = Array2D::new(player_count, player_count);
         for (attacker, player) in players.iter().enumerate() {
@@ -132,12 +136,7 @@ impl PlayerRelationsInput {
             return Ok(());
         }
 
-        if !self.constraints.player_count.contains(&player_count) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Player count {} outside of allowed range {:?}",
-                player_count, self.constraints.player_count
-            )));
-        }
+        self.constraints.check_player_count(player_count)?;
 
         let mut new_enemy_map = Self::make_default_enemy_map(player_count);
         let common_size = cmp::min(self.player_count, player_count);
@@ -277,13 +276,7 @@ impl JsonWidget for PlayerRelationsInput {
         constraints: PlayerRelationsInputConstraints,
     ) -> Result<Self, JsonWidgetError> {
         let player_count = json.read_u64("player_count")? as usize;
-        if !constraints.player_count.contains(&player_count) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "player count {} is outside of range {:?}",
-                player_count, constraints.player_count
-            ))
-            .into());
-        }
+        constraints.check_player_count(player_count)?;
 
         let is_symmetric = json.read_bool("is_symmetric")?;
         let mut enemy_map = Array2D::new(player_count, player_count);

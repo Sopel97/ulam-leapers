@@ -1,7 +1,8 @@
 ﻿use eframe::egui::{Response, Ui};
 use serde_json::Value;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::RangeInclusive;
 use ulam_leapers::util::json::JsonError;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -30,8 +31,8 @@ impl Error for WidgetError {}
 impl Display for JsonWidgetError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            JsonWidgetError::JsonError(e) => e.fmt(f),
-            JsonWidgetError::WidgetError(e) => e.fmt(f),
+            JsonWidgetError::JsonError(e) => Display::fmt(&e, f),
+            JsonWidgetError::WidgetError(e) => Display::fmt(&e, f),
         }
     }
 }
@@ -68,4 +69,23 @@ where
     Self: Sized,
 {
     fn ui(&mut self, ui: &mut Ui) -> Response;
+}
+
+pub trait WidgetConstraint<T> {
+    fn check_constraint(&self, val: &T, name: &str) -> Result<(), WidgetError>;
+}
+
+impl<T> WidgetConstraint<T> for RangeInclusive<T>
+where
+    T: Debug + Display + PartialOrd,
+{
+    fn check_constraint(&self, val: &T, name: &str) -> Result<(), WidgetError> {
+        if !self.contains(val) {
+            Err(WidgetError::ConstraintViolation(format!(
+                "{name} {val} outside allowed range {self:?}"
+            )))
+        } else {
+            Ok(())
+        }
+    }
 }

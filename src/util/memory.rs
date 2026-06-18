@@ -38,6 +38,12 @@ impl Default for MemSize {
     }
 }
 
+impl Display for MemSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.display().si().fmt(f)
+    }
+}
+
 impl MemSize {
     pub const ZERO: Self = Self { bytes: 0 };
 

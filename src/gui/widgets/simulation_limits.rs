@@ -1,4 +1,6 @@
-﻿use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
+﻿use crate::gui::widgets::widget::{
+    JsonWidget, JsonWidgetError, StatefulWidget, WidgetConstraint, WidgetError,
+};
 use eframe::egui::{Response, Slider, Ui};
 use serde_json::{json, Value};
 use std::ops::RangeInclusive;
@@ -11,6 +13,22 @@ pub struct SimulationLimitsConstraints {
     pub memory_usage: RangeInclusive<MemSize>,
     pub turns: RangeInclusive<u64>,
     pub complete_shells: RangeInclusive<u64>,
+}
+
+impl SimulationLimitsConstraints {
+    pub fn check_memory_usage(&self, memory_usage: MemSize) -> Result<(), WidgetError> {
+        self.memory_usage
+            .check_constraint(&memory_usage, "Memory usage")
+    }
+
+    pub fn check_turns(&self, turns: u64) -> Result<(), WidgetError> {
+        self.turns.check_constraint(&turns, "Turns")
+    }
+
+    pub fn check_complete_shells(&self, complete_shells: u64) -> Result<(), WidgetError> {
+        self.complete_shells
+            .check_constraint(&complete_shells, "Complete shells")
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -40,13 +58,7 @@ impl SimulationLimitsInput {
     }
 
     pub fn set_memory_usage(&mut self, memory_usage: MemSize) -> Result<(), WidgetError> {
-        if !self.constraints.memory_usage.contains(&memory_usage) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Memory usage {} outside of allowed range {:?}",
-                memory_usage.bytes(),
-                self.constraints.memory_usage
-            )));
-        }
+        self.constraints.check_memory_usage(memory_usage)?;
 
         self.memory_usage = memory_usage.bytes();
 
@@ -54,12 +66,7 @@ impl SimulationLimitsInput {
     }
 
     pub fn set_turns(&mut self, turns: u64) -> Result<(), WidgetError> {
-        if !self.constraints.turns.contains(&turns) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Turns {} outside of allowed range {:?}",
-                turns, self.constraints.turns
-            )));
-        }
+        self.constraints.check_turns(turns)?;
 
         self.turns = turns;
 
@@ -67,12 +74,7 @@ impl SimulationLimitsInput {
     }
 
     pub fn set_complete_shells(&mut self, complete_shells: u64) -> Result<(), WidgetError> {
-        if !self.constraints.complete_shells.contains(&complete_shells) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Complete shells {} outside of allowed range {:?}",
-                complete_shells, self.constraints.complete_shells
-            )));
-        }
+        self.constraints.check_complete_shells(complete_shells)?;
 
         self.complete_shells = complete_shells;
 
@@ -138,31 +140,13 @@ impl JsonWidget for SimulationLimitsInput {
         constraints: SimulationLimitsConstraints,
     ) -> Result<Self, JsonWidgetError> {
         let memory_usage = json.read_u64("memory_usage")? as usize;
-        if !constraints.memory_usage.contains(&MemSize::b(memory_usage)) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "memory_usage {} is outside of range {:?}",
-                memory_usage, constraints.memory_usage
-            ))
-            .into());
-        }
+        constraints.check_memory_usage(MemSize::b(memory_usage))?;
 
         let turns = json.read_u64("turns")?;
-        if !constraints.turns.contains(&turns) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "turns {} is outside of range {:?}",
-                turns, constraints.turns
-            ))
-            .into());
-        }
+        constraints.check_turns(turns)?;
 
         let complete_shells = json.read_u64("complete_shells")?;
-        if !constraints.complete_shells.contains(&complete_shells) {
-            return Err(WidgetError::ConstraintViolation(format!(
-                "Complete shells {} is outside of range {:?}",
-                complete_shells, complete_shells
-            ))
-            .into());
-        }
+        constraints.check_complete_shells(complete_shells)?;
 
         Ok(Self {
             memory_usage,
