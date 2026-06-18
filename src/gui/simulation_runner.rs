@@ -33,11 +33,25 @@ enum SimulationRunnerWorkerResult {
 }
 
 enum SimulationRunnerState {
-    Idle(SimulationRunnerWorkerResult),
+    Errored(Simulation, SimulationError),
+    Paused(Simulation),
+    Finished(Simulation),
+    Finalized(FinalizedSimulation),
     Init(Simulation),
     Simulating,
     Finalizing,
-    Closing,
+    ResolvingStateChange,
+}
+
+impl From<SimulationRunnerWorkerResult> for SimulationRunnerState {
+    fn from(result: SimulationRunnerWorkerResult) -> Self {
+        match result {
+            SimulationRunnerWorkerResult::Errored(s, e) => SimulationRunnerState::Errored(s, e),
+            SimulationRunnerWorkerResult::Paused(s) => SimulationRunnerState::Paused(s),
+            SimulationRunnerWorkerResult::Finished(s) => SimulationRunnerState::Finished(s),
+            SimulationRunnerWorkerResult::Finalized(fs) => SimulationRunnerState::Finalized(fs),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -248,7 +262,7 @@ impl Subwindow for SimulationRunner {
                 }
             }
             SimulationRunnerState::Finalizing => "Finalizing...".to_string(),
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(_)) => {
+            SimulationRunnerState::Paused(_) => {
                 if let Some(limit_turns) = self.limits.turns() {
                     let progress_turns = self.progress.lock().unwrap().turns();
                     let pct = progress_turns * 100 / limit_turns;
@@ -257,16 +271,16 @@ impl Subwindow for SimulationRunner {
                     "Simulator".to_string()
                 }
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(_)) => {
+            SimulationRunnerState::Finished(_) => {
                 "Finished".to_string()
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(_)) => {
+            SimulationRunnerState::Finalized(_) => {
                 "Finalized".to_string()
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(_, _)) => {
+            SimulationRunnerState::Errored(_, _) => {
                 "Errored".to_string()
             }
-            SimulationRunnerState::Closing => "Simulation".to_string(),
+            SimulationRunnerState::ResolvingStateChange => "Simulation".to_string(),
         }
     }
 
@@ -304,9 +318,9 @@ impl Subwindow for SimulationRunner {
 impl SimulationRunner {
     fn get_subwindow_result(mut self: Box<Self>) -> SubwindowResult {
         if self.submit_to_explorer {
-            if let SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+            if let SimulationRunnerState::Finalized(
                 finalized_simulation,
-            )) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::Closing)
+            ) = std::mem::replace(&mut self.simulation_state, SimulationRunnerState::ResolvingStateChange)
             {
                 Replace(Box::new(GridExplorer::new(finalized_simulation)))
             } else {
@@ -322,12 +336,8 @@ impl SimulationRunner {
 
     fn handle_state_changes(&mut self, mut ctxui: ContextOrUi) {
         while let Ok(result) = self.worker_results.try_recv() {
-            let new_state = SimulationRunnerState::Idle(result);
-            if std::mem::discriminant(&new_state) != std::mem::discriminant(&self.simulation_state)
-            {
-                self.highlight_until_selected = true;
-            }
-            self.simulation_state = new_state;
+            self.highlight_until_selected = true;
+            self.simulation_state = result.into();
         }
 
         let old_simulation_state = std::mem::replace(
@@ -345,12 +355,14 @@ impl SimulationRunner {
                     ctx.clone(),
                 ))
                 .unwrap();
+            SimulationRunnerState::Simulating
         };
 
         let finalize_simulation = |sim, ctx: &Context| {
             self.worker_jobs
                 .send(SimulationRunnerWorkerJob::Finalize(sim, ctx.clone()))
                 .unwrap();
+            SimulationRunnerState::Finalizing
         };
 
         self.simulation_state = match old_simulation_state {
@@ -375,42 +387,39 @@ impl SimulationRunner {
                 }
                 SimulationRunnerState::Finalizing
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(simulation)) => {
+            SimulationRunnerState::Paused(simulation) => {
                 if let Some(ui) = ctxui.ui() {
                     if ui
                         .add(Button::new(RichText::new("Resume simulation").heading()))
                         .clicked()
                     {
-                        start_simulation(simulation, ctxui.ctx());
-                        SimulationRunnerState::Simulating
+                        start_simulation(simulation, ctxui.ctx())
                     } else if ui
                         .add(Button::new(RichText::new("Stop and finalize").heading()))
                         .clicked()
                     {
-                        finalize_simulation(simulation, ctxui.ctx());
-                        SimulationRunnerState::Finalizing
+                        finalize_simulation(simulation, ctxui.ctx())
                     } else {
-                        SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(
+                        SimulationRunnerState::Paused(
                             simulation,
-                        ))
+                        )
                     }
                 } else {
-                    SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Paused(simulation))
+                    SimulationRunnerState::Paused(simulation)
                 }
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finished(simulation)) => {
-                finalize_simulation(simulation, ctxui.ctx());
-                SimulationRunnerState::Finalizing
+            SimulationRunnerState::Finished(simulation) => {
+                finalize_simulation(simulation, ctxui.ctx())
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Errored(
+            SimulationRunnerState::Errored(
                 _simulation,
                 error,
-            )) => {
+            ) => {
                 panic!("Simulation error {:?}", error);
             }
-            SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+            SimulationRunnerState::Finalized(
                 finalized_simulation,
-            )) => {
+            ) => {
                 if let Some(ui) = ctxui.ui()
                     && ui
                         .add(Button::new(RichText::new("Explore").heading()))
@@ -418,11 +427,11 @@ impl SimulationRunner {
                 {
                     self.submit_to_explorer = true;
                 }
-                SimulationRunnerState::Idle(SimulationRunnerWorkerResult::Finalized(
+                SimulationRunnerState::Finalized(
                     finalized_simulation,
-                ))
+                )
             }
-            SimulationRunnerState::Closing => panic!("Invalid state."),
+            SimulationRunnerState::ResolvingStateChange => panic!("Invalid state."),
         };
     }
 
