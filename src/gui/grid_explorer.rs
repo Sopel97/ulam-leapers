@@ -11,10 +11,7 @@ use crate::gui::widgets::misc::srgb_color_button;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
-use eframe::egui::{
-    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind,
-    Ui,
-};
+use eframe::egui::{vec2, Align2, Button, Checkbox, Context, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::fs::File;
@@ -28,6 +25,7 @@ use ulam_leapers::math::coords::{GridPoint, Point2D};
 use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::util::memory::MemSize;
+use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -44,7 +42,7 @@ const MAX_PNG_EXTENT: i32 = 8192;
 const MIN_MIPMAP_MEMORY_REQUIREMENT_TO_SHOW_WARNING: MemSize = MemSize::mb(128);
 
 const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CTRL, Key::S);
-const DEBUG_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
+const OVERLAYS_UI_TOGGLE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F3);
 
 const MAX_CONTROLS_WINDOW_WIDTH: f32 = 200.0;
 
@@ -72,7 +70,7 @@ pub struct GridExplorer {
     zoom_pow2_png: i32,
     png_extent: i32,
 
-    is_debug_ui_enabled: bool,
+    are_overlays_enabled: bool,
 }
 
 impl Subwindow for GridExplorer {
@@ -104,8 +102,8 @@ impl Subwindow for GridExplorer {
                     self.show_players_ui(ui);
                 });
 
-            if ui.input_mut(|i| i.consume_shortcut(&DEBUG_UI_TOGGLE_SHORTCUT)) {
-                self.is_debug_ui_enabled = !self.is_debug_ui_enabled;
+            if ui.input_mut(|i| i.consume_shortcut(&OVERLAYS_UI_TOGGLE_SHORTCUT)) {
+                self.are_overlays_enabled = !self.are_overlays_enabled;
             }
 
             // The projection will give us a more restricted viewport.
@@ -116,8 +114,8 @@ impl Subwindow for GridExplorer {
             self.maybe_update_canvas_texture(ui, &canvas);
             self.draw_canvas_texture(ui, &canvas);
 
-            if self.is_debug_ui_enabled {
-                self.show_debug_ui(ui, &canvas);
+            if self.are_overlays_enabled {
+                self.show_overlays_ui(ui, &canvas);
             }
         });
 
@@ -152,7 +150,7 @@ impl GridExplorer {
             zoom_pow2_png: DEFAULT_ZOOM_POW2,
             png_extent: DEFAULT_PNG_EXTENT,
 
-            is_debug_ui_enabled: false,
+            are_overlays_enabled: false,
         }
     }
 
@@ -235,7 +233,7 @@ impl GridExplorer {
         }
     }
 
-    fn show_pointed_chunk_overlay(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
+    fn show_pointer_overlays(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
         if canvas.is_zero_area() {
             return;
         }
@@ -293,8 +291,8 @@ impl GridExplorer {
         }
     }
 
-    fn show_debug_ui(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
-        self.show_pointed_chunk_overlay(ui, canvas);
+    fn show_overlays_ui(&mut self, ui: &mut Ui, canvas: &GridCanvas) {
+        self.show_pointer_overlays(ui, canvas);
     }
 
     fn make_camera_position_bounds(&self) -> Rect2D<f32> {
@@ -533,18 +531,9 @@ impl GridExplorer {
     }
 
     fn show_info_ui(&mut self, ui: &mut Ui) {
-        let turns = self.finalized_simulation.complete_turns();
-        let complete_shells = self.finalized_simulation.complete_shells();
-        let side_cells = complete_shells.max(1) as usize * 2 - 1;
-        let cells = side_cells * side_cells;
-        let chunks = self.finalized_simulation.chunk_count();
-        let memory_usage = self.finalized_simulation.memory_usage();
+        show_finalized_simulation_info_ui(&self.finalized_simulation, ui);
 
-        ui.label(format!("Turns: {}M", turns / 1000 / 1000));
-        ui.label(format!("Complete shells: {}", complete_shells));
-        ui.label(format!("Number of cells: {}M", cells / 1000 / 1000));
-        ui.label(format!("Number of chunks: {}", chunks));
-        ui.label(format!("Size in memory: {}", memory_usage.display().si()));
+        ui.checkbox(&mut self.are_overlays_enabled, "Overlays");
     }
 
     fn show_screenshots_ui(&mut self, ui: &mut Ui) {
