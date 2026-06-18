@@ -8,7 +8,7 @@ use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
-use eframe::egui::{Context, ScrollArea, Ui, Vec2b};
+use eframe::egui::{Context, ScrollArea, Slider, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
@@ -25,6 +25,10 @@ const MIN_COMPLETE_SHELLS: u64 = 10;
 const MAX_COMPLETE_SHELLS: u64 = 1_000_000;
 const MIN_MEMORY_USAGE: MemSize = MemSize::gb(1);
 const MAX_MEMORY_USAGE: MemSize = MemSize::tb(4);
+
+const MIN_ZSTD_COMPRESSION_LEVEL: i32 = 1;
+const DEFAULT_ZSTD_COMPRESSION_LEVEL: i32 = 6;
+const MAX_ZSTD_COMPRESSION_LEVEL: i32 = 19;
 
 enum SimulationResumerWorkerJob {
     Stop,
@@ -84,6 +88,8 @@ pub struct SimulationResumer {
 
     simulation_limits_input: SimulationLimitsInput,
 
+    zstd_compression_level: i32,
+
     submit_to_runner: bool,
 
     worker: Option<JoinHandle<()>>,
@@ -142,6 +148,7 @@ impl SimulationResumer {
             simulation_limits_input,
 
             submit_to_runner: false,
+            zstd_compression_level: DEFAULT_ZSTD_COMPRESSION_LEVEL,
 
             worker: Some(std::thread::spawn(move || {
                 SimulationResumerWorker {
@@ -271,6 +278,19 @@ impl SimulationResumer {
         });
     }
 
+    fn show_advanced_settings_ui(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.label("Advanced settings ❓:")
+                .on_hover_text("WARNING: DO NOT TOUCH UNLESS YOU KNOW WHAT YOU'RE DOING");
+
+            ui.label("Zstd compression level:");
+            ui.add(Slider::new(
+                &mut self.zstd_compression_level,
+                MIN_ZSTD_COMPRESSION_LEVEL..=MAX_ZSTD_COMPRESSION_LEVEL,
+            ));
+        });
+    }
+
     #[must_use]
     fn show_finalized_simulation_ui(
         &mut self,
@@ -292,6 +312,8 @@ impl SimulationResumer {
 
                     ui.vertical(|ui| {
                         self.simulation_limits_input.ui(ui);
+
+                        self.show_advanced_settings_ui(ui);
 
                         if ui.button("Resume").clicked() {
                             submit = true;
