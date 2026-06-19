@@ -13,7 +13,10 @@ use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
-use eframe::egui::{vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use eframe::egui::{
+    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense,
+    Stroke, StrokeKind, Ui, Vec2,
+};
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
 use std::cmp;
@@ -100,10 +103,14 @@ pub struct GridExplorer {
 
 impl Subwindow for GridExplorer {
     fn name(&self) -> String {
-        if self.is_saved() {
-            "Explorer".to_owned()
-        } else {
-            "*Explorer".to_owned()
+        match &self.save_state {
+            SaveState::Saved(path) => String::from(
+                path.file_name()
+                    .expect("Should be saved to a file")
+                    .to_str()
+                    .unwrap(),
+            ),
+            _ => String::from("*Explorer"),
         }
     }
 
@@ -483,7 +490,8 @@ impl GridExplorer {
         // Keyboard shortcuts for movement
         let key_drag_delta_base = canvas.screen_rect().width() as f32;
         let current_timestamp = ui.time();
-        let dt = (current_timestamp - self.last_frame_timestamp).min(MAX_MOVEMENT_DELTA_TIME) as f32;
+        let dt =
+            (current_timestamp - self.last_frame_timestamp).min(MAX_MOVEMENT_DELTA_TIME) as f32;
         self.last_frame_timestamp = current_timestamp;
 
         let mut any_key_input = false;
