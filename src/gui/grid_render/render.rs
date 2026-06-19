@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_render::samplers::{AccColLinear16, AvgMapColor32Collector, MapLastCollector};
+﻿use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
 use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
@@ -14,6 +14,7 @@ use ulam_leapers::game::chunk::ChunkOrigin;
 use ulam_leapers::game::grid::FrozenGrid;
 use ulam_leapers::game::sampler::{FrozenGridSampler, SamplerProgress};
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
+use ulam_leapers::math::color::Color32Accumulator;
 use ulam_leapers::math::pow2::{div_floor, Pow2};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
@@ -473,10 +474,10 @@ impl GridRenderer {
         assert!(prev_mipmap.height().is_multiple_of(2));
 
         let lerp4 = |c0: Color32, c1: Color32, c2: Color32, c3: Color32| {
-            let mut acc = AccColLinear16::from_srgb(c0);
-            acc += AccColLinear16::from_srgb(c1);
-            acc += AccColLinear16::from_srgb(c2);
-            acc += AccColLinear16::from_srgb(c3);
+            let mut acc = Color32Accumulator::from_srgb(c0);
+            acc += Color32Accumulator::from_srgb(c1);
+            acc += Color32Accumulator::from_srgb(c2);
+            acc += Color32Accumulator::from_srgb(c3);
             acc.average_to_srgb_pow2_count(Pow2::from_exponent(2))
         };
 
