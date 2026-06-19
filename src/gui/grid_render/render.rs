@@ -184,13 +184,6 @@ impl GridRenderer {
         world_bounds: GridRect,
         factor: Pow2,
     ) -> FrozenGridSampler<'_, PlayerId, AvgMapColor32Collector> {
-        // u32 is enough for 4096x4096 worst case
-        // We do alpha too in case the compiler can vectorize it better than just rgb.
-        assert!(
-            factor < Pow2::from_exponent(12),
-            "Minification too high, could overflow accumulator"
-        );
-
         FrozenGridSampler::new_with_minification(
             &self.grid,
             world_bounds,
