@@ -3,9 +3,11 @@ use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
     default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
 };
-use crate::gui::subwindow::SubwindowResult::Keep;
+use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::util::{format_zoom_slider_text, make_player_name, scroll_delta_in_ui};
+use crate::gui::util::{
+    format_zoom_slider_text, make_player_name, scroll_delta_in_ui, ContextOrUi,
+};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
 use crate::gui::widgets::player_colors::show_player_colors_ui;
@@ -25,6 +27,7 @@ use std::io::BufWriter;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use ulam_leapers::game::chunk::BoundedChunk;
 use ulam_leapers::game::persist::uls::{UlsError, UlsSimulation};
 use ulam_leapers::game::sampler::FrozenGridCellAccessor;
@@ -34,6 +37,7 @@ use ulam_leapers::math::pow2::Pow2;
 use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
+use ulam_leapers::util::sync::DeferredValue;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -77,6 +81,93 @@ pub enum SaveState {
     Saved(PathBuf),
     Incompatible(UlsError),
     Errored(std::io::Error),
+}
+
+pub struct GridExplorerLoader {
+    path: PathBuf,
+    simulation: DeferredValue<std::io::Result<FinalizedSimulation>>,
+}
+
+impl GridExplorerLoader {
+    pub fn load_from_file(path: PathBuf) -> Result<Self, std::io::Error> {
+        let path_cpy = path.clone();
+        let mut simulation = DeferredValue::new();
+        simulation
+            .try_set_with_async(move |_c| {
+                let file = match File::open(path.clone()) {
+                    Ok(f) => f,
+                    Err(err) => return Ok(Err(err)),
+                };
+                let mut reader = std::io::BufReader::new(file);
+                let uls_sim = match UlsSimulation::read_from(&mut reader) {
+                    Ok(u) => u,
+                    Err(err) => return Ok(Err(err)),
+                };
+                Ok(Ok(FinalizedSimulation::from(uls_sim)))
+            })
+            .expect("Nothing to cancel it");
+        Ok(Self {
+            simulation,
+            path: path_cpy,
+        })
+    }
+}
+
+impl Subwindow for GridExplorerLoader {
+    fn name(&self) -> String {
+        if let Some(Err(_)) = self.simulation.get() {
+            "Error".to_owned()
+        } else {
+            format!(
+                "Loading {}",
+                self.path.file_name().unwrap().to_str().unwrap()
+            )
+        }
+    }
+
+    fn ui(self: Box<Self>, ui: &mut Ui) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Ui(ui))
+    }
+
+    fn not_ui(self: Box<Self>, ctx: &Context) -> SubwindowResult {
+        self.handle_state_changes(ContextOrUi::Context(ctx))
+    }
+}
+
+impl GridExplorerLoader {
+    fn handle_state_changes(self: Box<Self>, mut ctxui: ContextOrUi) -> SubwindowResult {
+        let mut submit = false;
+        if let Some(res) = self.simulation.get() {
+            match res {
+                Ok(_) => {
+                    submit = true;
+                }
+                Err(e) => {
+                    if let Some(ui) = ctxui.ui() {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(format!("Error loading {}: {}", self.path.display(), e));
+                        });
+                    }
+                }
+            }
+        } else {
+            if let Some(ui) = ctxui.ui() {
+                ui.centered_and_justified(|ui| {
+                    ui.label("Loading...");
+                });
+                // We don't have a good way to get a notification that the deferred value
+                // has been constructed, so do a speculative repaint, but not urgent.
+                ui.ctx().request_repaint_after(Duration::from_millis(100));
+            }
+        }
+
+        if submit {
+            let grid_explorer = GridExplorer::from_loader(*self);
+            Replace(Box::new(grid_explorer))
+        } else {
+            Keep(self)
+        }
+    }
 }
 
 pub struct GridExplorer {
@@ -189,18 +280,14 @@ impl GridExplorer {
         }
     }
 
-    pub fn load_from_file(path: PathBuf) -> Result<GridExplorer, std::io::Error> {
-        let file = File::open(path.clone())?;
-        let mut reader = std::io::BufReader::new(file);
-        let uls_sim = UlsSimulation::read_from(&mut reader)?;
-        let simulation = FinalizedSimulation::from(uls_sim);
-        let mut explorer = GridExplorer::new(simulation);
-        explorer.assume_saved(path);
-        Ok(explorer)
-    }
-
-    fn is_saved(&self) -> bool {
-        matches!(self.save_state, SaveState::Saved(_))
+    fn from_loader(loader: GridExplorerLoader) -> GridExplorer {
+        let sim = loader
+            .simulation
+            .take()
+            .expect("We should have ensured its existence when setting submit to true.");
+        let mut explorer = GridExplorer::new(sim);
+        explorer.assume_saved(loader.path);
+        explorer
     }
 
     fn assume_saved(&mut self, path: PathBuf) {

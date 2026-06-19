@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_explorer::GridExplorer;
+﻿use crate::gui::grid_explorer::GridExplorerLoader;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::simulation_resumer::SimulationResumer;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
@@ -71,7 +71,7 @@ pub struct App {
 
 impl App {
     fn try_open_simulation(path: PathBuf) -> Result<Box<dyn Subwindow>, std::io::Error> {
-        GridExplorer::load_from_file(path).map(|v| Box::new(v) as Box<dyn Subwindow>)
+        GridExplorerLoader::load_from_file(path).map(|v| Box::new(v) as Box<dyn Subwindow>)
     }
 
     fn try_open_simulations(

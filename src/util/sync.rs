@@ -86,6 +86,14 @@ impl<T> DeferredValue<T> {
         self.value.get()
     }
 
+    /// Takes ownership of the underlying value.
+    /// Since this function takes `self` by value the value must be ready.
+    pub fn take(mut self) -> T {
+        assert!(self.is_ready());
+
+        self.value.take().unwrap()
+    }
+
     pub fn is_ready(&self) -> bool {
         self.poll();
 
