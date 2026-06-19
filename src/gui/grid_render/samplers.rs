@@ -64,7 +64,7 @@ impl AccColLinear16 {
             a: color.a() as u64,
         }
     }
-    
+
     pub fn zero() -> Self {
         Self {
             r: 0,
@@ -73,7 +73,7 @@ impl AccColLinear16 {
             a: 0,
         }
     }
-    
+
     pub fn average_to_srgb(&self, count: usize) -> Color32 {
         Color32::from_rgba_unmultiplied(
             LINEAR16_TO_SRGB8[(self.r / count as u64) as usize],

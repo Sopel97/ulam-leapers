@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
+﻿use crate::gui::grid_render::samplers::{AccColLinear16, AvgMapColor32Collector, MapLastCollector};
 use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
@@ -421,6 +421,18 @@ impl GridRenderer {
             }
 
             mipmaps.insert(lowest_minification, master_mipmap.unwrap());
+
+            // IMPLEMENTATION NOTE:
+            // We reduce mipmaps iteratively as a whole, by 2x each iteration.
+            // This introduces some accumulated error as we repeatedly convert between
+            // 8-bit SRGB and 16-bit linear color.
+            // Ideally we would reduce each chunk pyramid at once to allow maintaining higher
+            // precision accumulators and round only once for each mipmap level,
+            // however, this is exceedingly hard to parallelize in safe rust.
+            // It would require a `Array2D::as_positioned_chunks_mut` alternative spanning
+            // the whole pyramid of mipmaps. It would also require temporary accumulators
+            // that should somehow be thread local to minimize allocations.
+            // Way too much hassle for little gain, so for now we eat the loss of accuracy.
             let mut prev_minification = lowest_minification;
             let mut curr_minification = lowest_minification.next();
             while curr_minification <= highest_minification {
@@ -461,11 +473,11 @@ impl GridRenderer {
         assert!(prev_mipmap.height().is_multiple_of(2));
 
         let lerp4 = |c0: Color32, c1: Color32, c2: Color32, c3: Color32| {
-            Color32::from_rgb(
-                ((c0.r() as u32 + c1.r() as u32 + c2.r() as u32 + c3.r() as u32) / 4) as u8,
-                ((c0.g() as u32 + c1.g() as u32 + c2.g() as u32 + c3.g() as u32) / 4) as u8,
-                ((c0.b() as u32 + c1.b() as u32 + c2.b() as u32 + c3.b() as u32) / 4) as u8,
-            )
+            let mut acc = AccColLinear16::from_srgb(c0);
+            acc += AccColLinear16::from_srgb(c1);
+            acc += AccColLinear16::from_srgb(c2);
+            acc += AccColLinear16::from_srgb(c3);
+            acc.average_to_srgb_pow2_count(Pow2::from_exponent(2))
         };
 
         let kernel = |(base_ox, base_oy, mut chunk): (usize, usize, MutSlice2D<Color32>)| {
