@@ -16,3 +16,19 @@ number of players, pieces, and player relations.
 **Ulam Leapers Explorer** allowing easy creation and visualization of simulations
 - a specification for a persistent binary format [ULS](docs/uls) used to store simulations
 
+## Installation
+
+TODO:
+
+## Ulam Leapers Explorer
+
+## Technical details
+
+## AI policy
+
+ChatGPT and Claude have been used for consultation, debugging, and tests.
+
+There are no restrictions on who can contribute - anyone from plumbers 
+to fully automated AI systems is welcome here. 
+Note, however, that all contributions are going to be held to the 
+same standards and nonsense considered spam.
