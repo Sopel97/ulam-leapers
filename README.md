@@ -12,15 +12,31 @@ The scope of this project:
 - a library crate **ulam-leapers** providing necessary infrastructure for creating, running, saving, and loading
 simulations of such mathematical constructs, with generous constraints on the 
 number of players, pieces, and player relations.
-- a binary crate with an [egui](https://github.com/emilk/egui) GUI application
+- [a binary crate](#ulam-leapers-explorer) with an [egui](https://github.com/emilk/egui) GUI application
 **Ulam Leapers Explorer** allowing easy creation and visualization of simulations
 - a specification for a persistent binary format [ULS](./docs/uls) used to store simulations
 
 ## Installation
 
-TODO:
+### With Cargo (recommended)
+
+```bash
+cargo install ulam-leapers
+```
+
+### Prebuilt binaries
+
+If you don’t have Rust installed, you can download a precompiled binary 
+for your system from the releases page: https://github.com/Sopel97/ulam-leapers/releases/latest
 
 ## Ulam Leapers Explorer
+
+The primary focus of this repository for end-users is the GUI application,
+containing most required functionality to explore various configurations.
+
+The interface is very simple, so the demo below should be self-sufficient.
+
+Some small simulation file samples are available [here](./docs/uls/samples)
 
 ![](./assets/gui_creator.png)
 
