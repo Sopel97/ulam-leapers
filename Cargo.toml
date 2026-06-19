@@ -5,6 +5,7 @@ edition = "2024"
 repository = "https://github.com/Sopel97/ulam-leapers"
 license = "The Unlicense"
 license-file = "LICENSE"
+include = ["/assets", "/src", "/docs/uls/README.md", "/docs/uls/uls.ksy", "/docs/uls/uls.svg", "LICENSE", "README.md", "Cargo.toml"]
 
 [dependencies]
 eframe = "0.34.2"
