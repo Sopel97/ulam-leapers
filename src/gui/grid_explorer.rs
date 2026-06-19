@@ -38,6 +38,7 @@ use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
+use crate::gui::simulation_resumer::SimulationResumer;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -190,6 +191,8 @@ pub struct GridExplorer {
 
     last_frame_timestamp: f64,
     is_delta_time_safe_for_movement: bool,
+
+    submit_to_resumer: bool,
 }
 
 impl Subwindow for GridExplorer {
@@ -238,7 +241,15 @@ impl Subwindow for GridExplorer {
             }
         });
 
-        Keep(self)
+        if self.submit_to_resumer {
+            let GridExplorer { finalized_simulation, grid_renderer, .. } = *self;
+            // It's holding an Arc to the grid, we need to drop it first.
+            drop(grid_renderer);
+            let resumer = SimulationResumer::from_finalized_simulation(finalized_simulation);
+            Replace(Box::new(resumer))
+        } else {
+            Keep(self)
+        }
     }
 
     fn not_ui(self: Box<Self>, _ctx: &Context) -> SubwindowResult {
@@ -277,6 +288,8 @@ impl GridExplorer {
 
             last_frame_timestamp: 0.0,
             is_delta_time_safe_for_movement: false,
+
+            submit_to_resumer: false,
         }
     }
 
@@ -867,6 +880,11 @@ impl GridExplorer {
         ui.heading("Info");
 
         self.show_info_ui(ui);
+
+        if ui.button("Resume simulation").clicked() {
+            self.submit_to_resumer = true;
+        }
+
         self.show_save_ui(ui);
 
         ui.heading("Controls");

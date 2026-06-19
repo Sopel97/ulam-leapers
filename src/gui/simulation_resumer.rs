@@ -129,20 +129,22 @@ impl SimulationResumer {
         let mut reader = std::io::BufReader::new(file);
         let uls_sim = UlsSimulation::read_from(&mut reader)?;
         let fin_sim = FinalizedSimulation::from(uls_sim);
+        Ok(Self::from_finalized_simulation(fin_sim))
+    }
+
+    pub fn from_finalized_simulation(fin_sim: FinalizedSimulation) -> Self {
+        let limits = Self::make_simulation_limits_constraints();
+        let max_turns = *limits.turns.end();
         let mut simulation_limits_input =
-            SimulationLimitsInput::new(Self::make_simulation_limits_constraints());
+            SimulationLimitsInput::new(limits);
         simulation_limits_input
-            .set_turns(fin_sim.complete_turns() * 2)
-            .map_err(|e| {
-                std::io::Error::other(format!(
-                    "Simulation resumer does not support this simulation: {e}"
-                ))
-            })?;
+            .set_turns(max_turns.min(fin_sim.complete_turns() * 2))
+            .expect("We clamped it");
 
         let (job_sender, job_receiver) = mpsc::channel();
         let (result_sender, result_receiver) = mpsc::channel();
 
-        Ok(Self {
+        Self {
             state: State::FinalizedSimulation(fin_sim),
 
             simulation_limits_input,
@@ -155,11 +157,11 @@ impl SimulationResumer {
                     job_receiver,
                     result_sender,
                 }
-                .run()
+                    .run()
             })),
             worker_jobs: job_sender,
             worker_results: result_receiver,
-        })
+        }
     }
 }
 
