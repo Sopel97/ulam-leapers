@@ -1,7 +1,7 @@
-﻿use crate::gui::simulation_runner::SimulationRunner;
+use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
-use crate::gui::util::{make_player_name, ContextOrUi};
+use crate::gui::util::{ContextOrUi, make_player_name};
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::player_relations::PlayerRelationsView;
 use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
@@ -11,7 +11,7 @@ use eframe::egui;
 use eframe::egui::{Context, ScrollArea, Slider, Ui, Vec2b};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use ulam_leapers::game::persist::uls::UlsSimulation;
 use ulam_leapers::game::simulation::{
@@ -135,8 +135,7 @@ impl SimulationResumer {
     pub fn from_finalized_simulation(fin_sim: FinalizedSimulation) -> Self {
         let limits = Self::make_simulation_limits_constraints();
         let max_turns = *limits.turns.end();
-        let mut simulation_limits_input =
-            SimulationLimitsInput::new(limits);
+        let mut simulation_limits_input = SimulationLimitsInput::new(limits);
         simulation_limits_input
             .set_turns(max_turns.min(fin_sim.complete_turns() * 2))
             .expect("We clamped it");
@@ -157,7 +156,7 @@ impl SimulationResumer {
                     job_receiver,
                     result_sender,
                 }
-                    .run()
+                .run()
             })),
             worker_jobs: job_sender,
             worker_results: result_receiver,

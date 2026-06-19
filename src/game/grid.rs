@@ -1,4 +1,4 @@
-﻿use crate::compression::AnyCompression;
+use crate::compression::AnyCompression;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin, CompressedChunk};
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::persist::uls::{UlsChunk, UlsChunker};
@@ -9,8 +9,8 @@ use crate::util::memory::MemSize;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::{Index, IndexMut};
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 pub struct Grid<T> {
     chunker: StripChunker,

@@ -1,11 +1,11 @@
-﻿pub mod align;
+pub mod align;
 pub mod bitstream;
 pub mod blit;
 pub mod bytestream;
 pub mod cache;
 pub mod cancel;
+pub mod constraint;
 pub mod json;
 pub mod memory;
 pub mod sync;
 pub mod time;
-pub mod constraint;

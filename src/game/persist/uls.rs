@@ -1,11 +1,11 @@
-﻿use crate::compression::inspect::zstd::{max_byte_in_zstd_stream, ZstdInspectError};
 use crate::compression::CompressionKind;
+use crate::compression::inspect::zstd::{ZstdInspectError, max_byte_in_zstd_stream};
 use crate::game::chunk::{BoundedChunk, CompressedChunk, CompressedChunkTransform};
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::simulation::{FinalizedSimulation, Game, Player, PlayerId};
 use crate::io::{
-    read_i32_le, read_i8_le, read_u16_le, read_u32_le, read_u64_le, read_u8_le, write_i32_le,
-    write_i8_le, write_u16_le, write_u32_le, write_u64_le, write_u8_le,
+    read_i8_le, read_i32_le, read_u8_le, read_u16_le, read_u32_le, read_u64_le, write_i8_le,
+    write_i32_le, write_u8_le, write_u16_le, write_u32_le, write_u64_le,
 };
 use crate::math::coords::GridPoint;
 use crate::util::memory::view_as_bytes_mut;

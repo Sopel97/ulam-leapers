@@ -1,17 +1,15 @@
-﻿use crate::gui::widgets::misc::ui_layout_2d;
-use crate::gui::widgets::widget::{
-    JsonWidget, JsonWidgetError, StatefulWidget, WidgetError,
-};
+use crate::gui::widgets::misc::ui_layout_2d;
+use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Checkbox, Color32, Response, Sense, Ui};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::ops::RangeInclusive;
 use ulam_leapers::collections::array2d::Array2D;
-use ulam_leapers::game::piece::{leaper_name_from_attack_vector, LeaperAttacks};
-use ulam_leapers::math::coords::{symmetries, GridVector};
-use ulam_leapers::util::blit::{blit_array2d, Blit2D};
+use ulam_leapers::game::piece::{LeaperAttacks, leaper_name_from_attack_vector};
+use ulam_leapers::math::coords::{GridVector, symmetries};
+use ulam_leapers::util::blit::{Blit2D, blit_array2d};
 use ulam_leapers::util::constraint::Constraint;
 use ulam_leapers::util::json::SerdeJsonValueExt;
 
@@ -22,7 +20,9 @@ pub struct LeaperAttacksInputConstraints {
 
 impl LeaperAttacksInputConstraints {
     pub fn check_radius(&self, radius: usize) -> Result<(), WidgetError> {
-        self.radius.check_constraint(&radius, "Radius").map_err(WidgetError::from)
+        self.radius
+            .check_constraint(&radius, "Radius")
+            .map_err(WidgetError::from)
     }
 }
 

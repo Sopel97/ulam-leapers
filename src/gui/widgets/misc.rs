@@ -1,5 +1,5 @@
-﻿use eframe::egui::color_picker::Alpha;
-use eframe::egui::{color_picker, vec2, Color32, Response, Ui, Vec2};
+use eframe::egui::color_picker::Alpha;
+use eframe::egui::{Color32, Response, Ui, Vec2, color_picker, vec2};
 
 pub fn ui_layout_2d<F>(ui: &mut Ui, width: usize, height: usize, mut func: F)
 where

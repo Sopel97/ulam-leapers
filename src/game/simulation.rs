@@ -1,6 +1,6 @@
-﻿use crate::collections::sliding_window::SlidingWindow;
-use crate::compression::zstd::ZstdCompression;
+use crate::collections::sliding_window::SlidingWindow;
 use crate::compression::AnyCompression;
+use crate::compression::zstd::ZstdCompression;
 use crate::game::chunk::CompressedChunk;
 use crate::game::chunker::{Chunker, StripChunker};
 use crate::game::grid::{FrozenGrid, Grid};
@@ -16,7 +16,7 @@ use rayon::iter::ParallelIterator;
 use std::cmp::{max, min};
 use std::ops::{BitAnd, BitOr, BitOrAssign, BitXor};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 #[derive(Debug, Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord)]
@@ -389,16 +389,19 @@ impl Simulation {
             StripChunker::with_strip_length_and_thickness(
                 DEFAULT_CHUNK_STRIP_LENGTH,
                 DEFAULT_CHUNK_STRIP_THICKNESS,
-            ), 
-            Self::make_default_compression()
+            ),
+            Self::make_default_compression(),
         )
     }
 
     pub fn with_chunker(chunker: StripChunker) -> Simulation {
         Self::with_chunker_and_compression(chunker, Self::make_default_compression())
     }
-    
-    pub fn with_chunker_and_compression(chunker: StripChunker, compression: AnyCompression) -> Simulation {
+
+    pub fn with_chunker_and_compression(
+        chunker: StripChunker,
+        compression: AnyCompression,
+    ) -> Simulation {
         Simulation {
             players: vec![],
             grid: Some(Grid::new(chunker)),
@@ -981,10 +984,10 @@ impl From<UlsSimulation<'_>> for FinalizedSimulation {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
     use super::*;
     use crate::game::piece::LeaperAttacks;
     use crate::math::coords::GridVector;
+    use std::collections::HashSet;
 
     #[test]
     fn empty_cell_distinguishable_from_player() {
@@ -1124,7 +1127,8 @@ mod tests {
         for _ in 0..8 {
             sim.add_player(LeaperAttacks::from_offsets(HashSet::new()));
         }
-        sim.simulate(SimulationLimits::new().with_turn_limit(400 * 400)).unwrap();
+        sim.simulate(SimulationLimits::new().with_turn_limit(400 * 400))
+            .unwrap();
 
         let grid = match &sim.grid {
             Some(grid) => grid,

@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
+use crate::gui::grid_render::samplers::{AvgMapColor32Collector, MapLastCollector};
 use eframe::egui;
 use eframe::egui::{
     Color32, ColorImage, TextureFilter, TextureHandle, TextureOptions, TextureWrapMode,
@@ -15,11 +15,11 @@ use ulam_leapers::game::grid::FrozenGrid;
 use ulam_leapers::game::sampler::{FrozenGridSampler, SamplerProgress};
 use ulam_leapers::game::simulation::{FinalizedSimulation, PlayerId};
 use ulam_leapers::math::color::Color32Accumulator;
-use ulam_leapers::math::pow2::{div_floor, Pow2};
+use ulam_leapers::math::pow2::{Pow2, div_floor};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::align::CACHE_LINE_SIZE;
-use ulam_leapers::util::blit::{blit_array2d, Blit2D};
+use ulam_leapers::util::blit::{Blit2D, blit_array2d};
 use ulam_leapers::util::cache::LockStepCache;
 use ulam_leapers::util::cancel::{Canceled, CancellationToken};
 use ulam_leapers::util::memory::MemSize;
@@ -72,13 +72,8 @@ pub struct GridRenderer {
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum MipmapGenerationProgress {
-    LargestMipmap {
-        chunks_done: u64,
-        chunks_total: u64,
-    },
-    SmallerMipmap {
-        zoom: Zoom<Pow2>,
-    }
+    LargestMipmap { chunks_done: u64, chunks_total: u64 },
+    SmallerMipmap { zoom: Zoom<Pow2> },
 }
 
 pub struct GridRender {

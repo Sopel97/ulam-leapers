@@ -1,5 +1,5 @@
-﻿use ulam_leapers::math::coords::GridPoint;
-use ulam_leapers::math::pow2::{div_floor, floor_to_multiple, Pow2};
+use ulam_leapers::math::coords::GridPoint;
+use ulam_leapers::math::pow2::{Pow2, div_floor, floor_to_multiple};
 use ulam_leapers::math::rect::GridRect;
 use ulam_leapers::math::zoom::Zoom;
 

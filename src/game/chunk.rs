@@ -1,4 +1,4 @@
-﻿use crate::algo::transpose::transpose_u8;
+use crate::algo::transpose::transpose_u8;
 use crate::collections::aligned_boxed_slice::AlignedBoxedSlice;
 use crate::collections::array2d::Array2D;
 use crate::compression::{AnyCompression, CompressedBlob, Compression, CompressionKind};
@@ -7,7 +7,7 @@ use crate::game::persist::uls::{UlsChunk, UlsChunkTransform};
 use crate::math::coords::GridPoint;
 use crate::math::rect::GridRect;
 use crate::util::align::CACHE_LINE_SIZE;
-use crate::util::memory::{view_as_bytes, view_as_bytes_mut, MemSize};
+use crate::util::memory::{MemSize, view_as_bytes, view_as_bytes_mut};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;

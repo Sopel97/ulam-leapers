@@ -1,11 +1,11 @@
-﻿use crate::gui::grid_explorer::GridExplorer;
+use crate::gui::grid_explorer::GridExplorer;
 use crate::gui::subwindow::SubwindowResult::{Keep, KeepAndHighlightUntilSelected, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::ContextOrUi;
 use eframe::egui;
 use eframe::egui::{Button, Context, ProgressBar, RichText, Ui};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use ulam_leapers::game::simulation::{

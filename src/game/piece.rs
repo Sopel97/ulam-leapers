@@ -1,5 +1,5 @@
-﻿use crate::game::persist::uls::UlsAttackVector;
-use crate::math::coords::{symmetries, GridPoint, GridVector};
+use crate::game::persist::uls::UlsAttackVector;
+use crate::math::coords::{GridPoint, GridVector, symmetries};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 

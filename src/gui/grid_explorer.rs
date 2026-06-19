@@ -1,12 +1,13 @@
-﻿use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
+use crate::gui::conv::{egui_to_grid_point, grid_rect_to_egui};
 use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
-    default_player_colors, GridRender, GridRenderer, MipmapGenerationProgress,
+    GridRender, GridRenderer, MipmapGenerationProgress, default_player_colors,
 };
+use crate::gui::simulation_resumer::SimulationResumer;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{
-    format_zoom_slider_text, make_player_name, scroll_delta_in_ui, ContextOrUi,
+    ContextOrUi, format_zoom_slider_text, make_player_name, scroll_delta_in_ui,
 };
 use crate::gui::widgets::leaper_attacks::LeaperAttacksView;
 use crate::gui::widgets::misc::srgb_color_button;
@@ -16,8 +17,8 @@ use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
 use eframe::egui::{
-    vec2, Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense,
-    Stroke, StrokeKind, Ui, Vec2,
+    Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke,
+    StrokeKind, Ui, Vec2, vec2,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -38,7 +39,6 @@ use ulam_leapers::math::rect::{GridRect, Rect2D};
 use ulam_leapers::math::zoom::Zoom;
 use ulam_leapers::util::memory::MemSize;
 use ulam_leapers::util::sync::DeferredValue;
-use crate::gui::simulation_resumer::SimulationResumer;
 
 const MIN_ZOOM_POW2: i32 = -5;
 const MIN_ZOOM_POW2_MIPS: i32 = -12;
@@ -242,7 +242,11 @@ impl Subwindow for GridExplorer {
         });
 
         if self.submit_to_resumer {
-            let GridExplorer { finalized_simulation, grid_renderer, .. } = *self;
+            let GridExplorer {
+                finalized_simulation,
+                grid_renderer,
+                ..
+            } = *self;
             // It's holding an Arc to the grid, we need to drop it first.
             drop(grid_renderer);
             let resumer = SimulationResumer::from_finalized_simulation(finalized_simulation);

@@ -1,4 +1,4 @@
-﻿use std::error::Error;
+use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::RangeInclusive;
 
@@ -17,9 +17,7 @@ impl Error for ConstraintViolationError {}
 
 impl ConstraintViolationError {
     pub fn new(message: String) -> Self {
-        Self {
-            message,
-        }
+        Self { message }
     }
 
     pub fn take_message(self) -> String {

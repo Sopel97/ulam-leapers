@@ -1,9 +1,9 @@
-﻿use crate::gui::grid_explorer::GridExplorerLoader;
+use crate::gui::grid_explorer::GridExplorerLoader;
 use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::simulation_resumer::SimulationResumer;
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use eframe::egui::{Button, Color32, PointerButton, Response, Sense, Ui};
-use eframe::{egui, Frame};
+use eframe::{Frame, egui};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

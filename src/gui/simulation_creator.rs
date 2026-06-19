@@ -1,4 +1,4 @@
-﻿use crate::gui::grid_render::render::default_player_colors;
+use crate::gui::grid_render::render::default_player_colors;
 use crate::gui::grid_render::samplers::MapLastCollector;
 use crate::gui::simulation_runner::SimulationRunner;
 use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
@@ -10,8 +10,8 @@ use crate::gui::widgets::simulation_config::{
 use crate::gui::widgets::widget::{JsonWidget, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{
-    pos2, vec2, Align2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect,
-    ScrollArea, Slider, Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2,
+    Align2, Button, Color32, ColorImage, Context, FontFamily, FontId, Rect, ScrollArea, Slider,
+    Stroke, TextStyle, TextureFilter, TextureOptions, TextureWrapMode, Ui, Vec2, pos2, vec2,
 };
 use eframe::epaint::TextureHandle;
 use std::fs::File;
@@ -228,8 +228,15 @@ impl SimulationCreator {
         state.set_turns_limit(DEFAULT_TURNS).unwrap();
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
-        state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL).unwrap();
-        state.set_chunk_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS).unwrap();
+        state
+            .set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL)
+            .unwrap();
+        state
+            .set_chunk_strip_length_and_thickness(
+                DEFAULT_CHUNK_STRIP_LENGTH,
+                DEFAULT_CHUNK_STRIP_THICKNESS,
+            )
+            .unwrap();
 
         Self::with_state(state)
     }
@@ -241,7 +248,10 @@ impl SimulationCreator {
         state.set_turns_limit(DEFAULT_TURNS)?;
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS)?;
         state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL)?;
-        state.set_chunk_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)?;
+        state.set_chunk_strip_length_and_thickness(
+            DEFAULT_CHUNK_STRIP_LENGTH,
+            DEFAULT_CHUNK_STRIP_THICKNESS,
+        )?;
 
         if players.is_empty() {
             state.set_player_count(DEFAULT_PLAYER_COUNT)?;

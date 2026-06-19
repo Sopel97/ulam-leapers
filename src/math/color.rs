@@ -1,4 +1,4 @@
-﻿use crate::math::pow2::{div_floor, Pow2};
+use crate::math::pow2::{Pow2, div_floor};
 use eframe::egui::Color32;
 use std::ops::AddAssign;
 use std::sync::LazyLock;

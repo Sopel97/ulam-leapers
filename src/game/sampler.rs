@@ -1,4 +1,4 @@
-﻿use crate::collections::array2d::Array2D;
+use crate::collections::array2d::Array2D;
 use crate::game::chunk::{BoundedChunk, Chunk, ChunkOrigin};
 use crate::game::chunker::Chunker;
 use crate::game::grid::FrozenGrid;
@@ -6,7 +6,7 @@ use crate::math::coords::GridPoint;
 use crate::math::pow2;
 use crate::math::pow2::Pow2;
 use crate::math::rect::GridRect;
-use crate::util::blit::{blit_array2d_unchecked, Blit2D};
+use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::cancel::{Canceled, CancellationToken};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{mpsc, Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 
 pub trait SampleCollector: Send + Sync {
     type InputType: Default + Clone + Copy + Send + Sync;
@@ -406,12 +406,10 @@ where
                         ))
                         .unwrap();
 
-                        progress_callback(
-                            SamplerProgress {
-                                done: num_finished_chunks.fetch_add(1, Ordering::Relaxed) as u64,
-                                total: num_chunks_to_process as u64,
-                            }
-                        );
+                        progress_callback(SamplerProgress {
+                            done: num_finished_chunks.fetch_add(1, Ordering::Relaxed) as u64,
+                            total: num_chunks_to_process as u64,
+                        });
 
                         Ok(())
                     });
@@ -439,8 +437,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::compression::zstd::ZstdCompression;
     use crate::compression::AnyCompression;
+    use crate::compression::zstd::ZstdCompression;
     use crate::game::chunker::StripChunker;
     use crate::game::grid::{FrozenGrid, Grid};
     use crate::game::sampler::{FrozenGridSampler, SampleCollector};

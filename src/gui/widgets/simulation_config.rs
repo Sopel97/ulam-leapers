@@ -1,15 +1,13 @@
-﻿use crate::gui::util::format_pow2_slider_text;
+use crate::gui::util::format_pow2_slider_text;
 use crate::gui::widgets::leaper_attacks::{LeaperAttacksInput, LeaperAttacksInputConstraints};
 use crate::gui::widgets::player_relations::{
     PlayerRelationsInput, PlayerRelationsInputConstraints,
 };
 use crate::gui::widgets::simulation_limits::{SimulationLimitsConstraints, SimulationLimitsInput};
-use crate::gui::widgets::widget::{
-    JsonWidget, JsonWidgetError, StatefulWidget, WidgetError,
-};
+use crate::gui::widgets::widget::{JsonWidget, JsonWidgetError, StatefulWidget, WidgetError};
 use eframe::egui;
 use eframe::egui::{Color32, Response, ScrollArea, Slider, Ui, Vec2b};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use ulam_leapers::compression::zstd::ZstdCompression;
@@ -35,26 +33,32 @@ pub struct SimulationConfigInputConstraints {
 impl SimulationConfigInputConstraints {
     pub fn check_attack_radius(&self, attack_radius: usize) -> Result<(), WidgetError> {
         self.attack_radius
-            .check_constraint(&attack_radius, "Attack radius").map_err(WidgetError::from)
+            .check_constraint(&attack_radius, "Attack radius")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_player_count(&self, player_count: usize) -> Result<(), WidgetError> {
         self.player_count
-            .check_constraint(&player_count, "Player count").map_err(WidgetError::from)
+            .check_constraint(&player_count, "Player count")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_memory_usage(&self, memory_usage: MemSize) -> Result<(), WidgetError> {
         self.memory_usage
-            .check_constraint(&memory_usage, "Memory usage").map_err(WidgetError::from)
+            .check_constraint(&memory_usage, "Memory usage")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_turns(&self, turns: u64) -> Result<(), WidgetError> {
-        self.turns.check_constraint(&turns, "Turns").map_err(WidgetError::from)
+        self.turns
+            .check_constraint(&turns, "Turns")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_complete_shells(&self, complete_shells: u64) -> Result<(), WidgetError> {
         self.complete_shells
-            .check_constraint(&complete_shells, "Complete shells").map_err(WidgetError::from)
+            .check_constraint(&complete_shells, "Complete shells")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_zstd_compression_level(
@@ -62,12 +66,14 @@ impl SimulationConfigInputConstraints {
         zstd_compression_level: i32,
     ) -> Result<(), WidgetError> {
         self.zstd_compression_level
-            .check_constraint(&zstd_compression_level, "Zstd compression level").map_err(WidgetError::from)
+            .check_constraint(&zstd_compression_level, "Zstd compression level")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_chunk_strip_length(&self, chunk_strip_length: Pow2) -> Result<(), WidgetError> {
         self.chunk_strip_length
-            .check_constraint(&chunk_strip_length, "Strip length").map_err(WidgetError::from)
+            .check_constraint(&chunk_strip_length, "Strip length")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_chunk_strip_thickness(
@@ -75,7 +81,8 @@ impl SimulationConfigInputConstraints {
         chunk_strip_thickness: Pow2,
     ) -> Result<(), WidgetError> {
         self.chunk_strip_thickness
-            .check_constraint(&chunk_strip_thickness, "Strip thickness").map_err(WidgetError::from)
+            .check_constraint(&chunk_strip_thickness, "Strip thickness")
+            .map_err(WidgetError::from)
     }
 
     pub fn check_chunk_strip_dimensions(

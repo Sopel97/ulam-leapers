@@ -1,5 +1,5 @@
-﻿use std::fmt::Display;
 use crate::math::pow2::Pow2;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zoom<T>
@@ -12,7 +12,7 @@ where
 
 impl<T> Display for Zoom<T>
 where
-    T: Display + Copy
+    T: Display + Copy,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

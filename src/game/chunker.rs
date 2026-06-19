@@ -1,7 +1,7 @@
-﻿use crate::game::chunk::ChunkOrigin;
+use crate::game::chunk::ChunkOrigin;
 use crate::game::persist::uls::UlsChunker;
 use crate::math::coords::GridPoint;
-use crate::math::pow2::{div_ceil, div_floor, floor_to_multiple, Pow2};
+use crate::math::pow2::{Pow2, div_ceil, div_floor, floor_to_multiple};
 use crate::math::rect::GridRect;
 
 pub trait Chunker {

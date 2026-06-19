@@ -1,4 +1,4 @@
-﻿use crate::util::memory::MemSize;
+use crate::util::memory::MemSize;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::ops::{Index, IndexMut, RangeFrom};
@@ -273,9 +273,6 @@ mod tests {
         w[20] = 1;
         w.set_origin(10);
 
-        assert_eq!(
-            w.position_or_end(15.., |_| false),
-            21
-        );
+        assert_eq!(w.position_or_end(15.., |_| false), 21);
     }
 }

@@ -1,6 +1,6 @@
-﻿use crate::math::coords::{Point2D, Vector2D};
+use crate::math::coords::{Point2D, Vector2D};
 use crate::math::pow2;
-use crate::math::pow2::{ceil_to_multiple, floor_to_multiple, mod_floor, Pow2};
+use crate::math::pow2::{Pow2, ceil_to_multiple, floor_to_multiple, mod_floor};
 use std::cmp;
 use std::ops::{Add, AddAssign, BitAnd, Not, Shl, Shr, Sub};
 
@@ -66,7 +66,6 @@ impl<T> Rect2D<T>
 where
     T: Add<Output = T> + Sub<Output = T> + Clone + Copy,
 {
-
     /// Moves each side outwards by `amount`
     pub fn expanded(&self, amount: T) -> Rect2D<T> {
         let v = Vector2D::new(amount, amount);
