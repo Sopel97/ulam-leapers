@@ -621,13 +621,15 @@ impl GridExplorer {
                 format!(
                     "WARNING: While this will enable up to {}x minification \
                 it does require roughly {} of RAM and may take a long time.\
-                This process is asynchronous.",
+                This process is asynchronous. Player colors can no longer be \
+                changed once mipmaps have been generated.",
                     MIP_HIGHEST_MINIFICATION,
                     estimated_mipmaps_memory_requirement.display().si(),
                 )
             } else {
                 format!(
-                    "This will enable up to {}x minification.",
+                    "This will enable up to {}x minification. Player colors can \
+                     no longer be changed once mipmaps have been generated.",
                     MIP_LOWEST_MINIFICATION
                 )
             };
