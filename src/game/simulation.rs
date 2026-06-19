@@ -495,7 +495,7 @@ impl Simulation {
                 *immediate_cell = PlayerIdSet::full();
             } else {
                 // Skip the current element because we checked for it earlier.
-                let pos = self.forbiddances.position_or_first_empty(
+                let pos = self.forbiddances.position_or_end(
                     player.cursor.spiral_position().as_u64() as isize + 1..,
                     |x| !x.is_set(pid),
                 );
@@ -981,6 +981,7 @@ impl From<UlsSimulation<'_>> for FinalizedSimulation {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use super::*;
     use crate::game::piece::LeaperAttacks;
     use crate::math::coords::GridVector;
@@ -1114,6 +1115,25 @@ mod tests {
         assert_eq!(grid[GridPoint::new(-1, 1)], p2);
         assert_eq!(grid[GridPoint::new(-1, -1)], p2);
         assert_eq!(grid[GridPoint::new(2, 0)], p2);
+    }
+
+    // We had a nasty failure that this test encompasses.
+    #[test]
+    fn eight_players_with_no_attacks() {
+        let mut sim = Simulation::new();
+        for _ in 0..8 {
+            sim.add_player(LeaperAttacks::from_offsets(HashSet::new()));
+        }
+        sim.simulate(SimulationLimits::new().with_turn_limit(400 * 400)).unwrap();
+
+        let grid = match &sim.grid {
+            Some(grid) => grid,
+            _ => panic!("No grid"),
+        };
+
+        // With no attacks they should be consecutive.
+        assert_eq!(grid[GridPoint::new(-50, 186)], PlayerId::new(1));
+        assert_eq!(grid[GridPoint::new(-51, 186)], PlayerId::new(2));
     }
 
     #[test]

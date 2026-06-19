@@ -13,6 +13,7 @@ use std::ops::{Index, IndexMut, RangeFrom};
 #[derive(Debug)]
 pub struct SlidingWindow<T> {
     origin: isize,
+    end: isize,
     elements: VecDeque<T>,
     out_of_bounds_value: T,
 }
@@ -35,6 +36,7 @@ impl<T: Default> SlidingWindow<T> {
     pub fn with_origin(origin: isize) -> SlidingWindow<T> {
         SlidingWindow::<T> {
             origin,
+            end: origin,
             elements: VecDeque::new(),
             out_of_bounds_value: T::default(),
         }
@@ -48,6 +50,7 @@ impl<T: Default> SlidingWindow<T> {
         let num_elements_to_drop = min(self.elements.len(), (origin - self.origin) as usize);
         self.elements.drain(..num_elements_to_drop);
 
+        self.end = self.end.max(origin);
         self.origin = origin;
     }
 
@@ -65,7 +68,7 @@ impl<T: Default> SlidingWindow<T> {
         Some((found_pos + mapped_range_start) as isize + self.origin)
     }
 
-    pub fn position_or_first_empty<P>(&self, range: RangeFrom<isize>, pred: P) -> isize
+    pub fn position_or_end<P>(&self, range: RangeFrom<isize>, pred: P) -> isize
     where
         P: Fn(&T) -> bool,
     {
@@ -73,7 +76,7 @@ impl<T: Default> SlidingWindow<T> {
         let found_pos = self.position(range, pred);
         match found_pos {
             Some(found_pos) => found_pos,
-            None => max(start, self.elements.len() as isize),
+            None => max(start, self.end),
         }
     }
 }
@@ -83,15 +86,13 @@ impl<T: Default> Index<isize> for SlidingWindow<T> {
 
     #[inline(always)]
     fn index(&self, index: isize) -> &Self::Output {
-        if index < self.origin {
+        debug_assert!(self.end >= self.origin);
+
+        if index < self.origin || index >= self.end {
             return &self.out_of_bounds_value;
         }
 
         let actual_idx = (index - self.origin) as usize;
-        if actual_idx >= self.elements.len() {
-            return &self.out_of_bounds_value;
-        }
-
         &self.elements[actual_idx]
     }
 }
@@ -111,10 +112,13 @@ impl<T: Default + Clone> SlidingWindow<T> {
 impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
     #[inline(always)]
     fn index_mut(&mut self, index: isize) -> &mut Self::Output {
+        debug_assert!(self.end >= self.origin);
+
         if index < self.origin {
             panic!("Index is before the origin.");
         }
 
+        self.end = self.end.max(index + 1);
         let actual_idx = (index - self.origin) as usize;
         if actual_idx >= self.elements.len() {
             self.index_mut_resize(actual_idx);
@@ -247,5 +251,30 @@ mod tests {
     fn can_move_origin_of_empty_window() {
         let mut w = make_window();
         w.set_origin(999999);
+    }
+
+    #[test]
+    fn read_after_set_origin() {
+        let mut w = SlidingWindow::<i32>::with_origin(0);
+        w[10] = 1;
+        w.set_origin(1);
+        w.set_origin(2);
+        w.set_origin(3);
+        w.set_origin(4);
+        w.set_origin(5);
+        assert_eq!(w[10], 1);
+    }
+
+    #[test]
+    fn position_after_origin_move() {
+        let mut w = SlidingWindow::<i32>::with_origin(0);
+
+        w[20] = 1;
+        w.set_origin(10);
+
+        assert_eq!(
+            w.position_or_end(15.., |_| false),
+            21
+        );
     }
 }
