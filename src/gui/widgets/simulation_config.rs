@@ -106,6 +106,7 @@ pub struct SimulationConfigInput {
     simulation_limits: SimulationLimitsInput,
 
     zstd_compression_level: i32,
+    // These cannot be Pow2 because we use them in an egui slider.
     chunk_strip_length_pow2: u32,
     chunk_strip_thickness_pow2: u32,
 
@@ -284,7 +285,7 @@ impl SimulationConfigInput {
         Ok(())
     }
 
-    pub fn set_chunk_strip_length_and_thickness_pow2(
+    pub fn set_chunk_strip_length_and_thickness(
         &mut self,
         chunk_strip_length: Pow2,
         chunk_strip_thickness: Pow2,

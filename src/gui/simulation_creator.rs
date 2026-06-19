@@ -229,7 +229,7 @@ impl SimulationCreator {
         state.set_player_count(DEFAULT_PLAYER_COUNT).unwrap();
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS).unwrap();
         state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL).unwrap();
-        state.set_chunk_strip_length_and_thickness_pow2(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS).unwrap();
+        state.set_chunk_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS).unwrap();
 
         Self::with_state(state)
     }
@@ -241,7 +241,7 @@ impl SimulationCreator {
         state.set_turns_limit(DEFAULT_TURNS)?;
         state.set_attack_radius(DEFAULT_ATTACK_RADIUS)?;
         state.set_zstd_compression_level(DEFAULT_ZSTD_COMPRESSION_LEVEL)?;
-        state.set_chunk_strip_length_and_thickness_pow2(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)?;
+        state.set_chunk_strip_length_and_thickness(DEFAULT_CHUNK_STRIP_LENGTH, DEFAULT_CHUNK_STRIP_THICKNESS)?;
 
         if players.is_empty() {
             state.set_player_count(DEFAULT_PLAYER_COUNT)?;
