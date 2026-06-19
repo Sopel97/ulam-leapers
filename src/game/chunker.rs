@@ -113,7 +113,7 @@ impl Chunker for SquareChunker {
 ///
 /// Table showing either `|` for vertical or `-` for horizontal strips
 /// for some superchunk coordinates.
-///
+///```markdown
 ///  +4  |  |  |  |  |  |  |  |  |  |
 ///  +3  -  |  |  |  |  |  |  |  |  -
 ///  +2  -  -  |  |  |  |  |  |  -  -
@@ -125,7 +125,7 @@ impl Chunker for SquareChunker {
 ///  -4  -  |  |  |  |  |  |  |  |  -
 ///  -5  |  |  |  |  |  |  |  |  |  |
 ///     -5 -4 -3 -2 -1 +0 +1 +2 +3 +4
-///
+///```
 /// # Example
 ///
 /// strip_length = 2
@@ -133,7 +133,7 @@ impl Chunker for SquareChunker {
 ///
 /// Numbers on both axes are the superchunk coordinates
 /// as computed by `div_floor`. `O` signifies the origin.
-///
+///```markdown
 ///    ┌───┬───┬───┬───┬───┬───┬───┬───┐
 ///  3 ├───┼───┼───┼───┼───┼───┼───┼───┤
 ///    ├─┬─┼───┼───┼───┼───┼───┼───┼─┬─┤
@@ -152,7 +152,7 @@ impl Chunker for SquareChunker {
 /// -4 ├───┼───┼───┼───┼───┼───┼───┼───┤
 ///    └───┴───┴───┴───┴───┴───┴───┴───┘
 ///     -4  -3  -2  -1   0   1   2   3
-///
+///```
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct StripChunker {
     strip_length: Pow2,
