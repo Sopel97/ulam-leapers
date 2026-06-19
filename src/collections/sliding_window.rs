@@ -65,18 +65,17 @@ impl<T: Default> SlidingWindow<T> {
         assert!(range.start >= self.origin);
         let mapped_range_start = (range.start - self.origin) as usize;
         let found_pos = self.elements.range(mapped_range_start..).position(pred)?;
-        Some((found_pos + mapped_range_start) as isize + self.origin)
+        Some(self.origin + (found_pos + mapped_range_start) as isize)
     }
 
     pub fn position_or_end<P>(&self, range: RangeFrom<isize>, pred: P) -> isize
     where
         P: Fn(&T) -> bool,
     {
-        let start = range.start;
         let found_pos = self.position(range, pred);
         match found_pos {
             Some(found_pos) => found_pos,
-            None => max(start, self.end),
+            None => self.end,
         }
     }
 }
@@ -118,10 +117,12 @@ impl<T: Default + Clone> IndexMut<isize> for SlidingWindow<T> {
             panic!("Index is before the origin.");
         }
 
-        self.end = self.end.max(index + 1);
         let actual_idx = (index - self.origin) as usize;
-        if actual_idx >= self.elements.len() {
-            self.index_mut_resize(actual_idx);
+        if index >= self.end {
+            self.end = index + 1;
+            if actual_idx >= self.elements.len() {
+                self.index_mut_resize(actual_idx);
+            }
         }
 
         &mut self.elements[actual_idx]
