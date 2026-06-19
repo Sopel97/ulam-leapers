@@ -3,6 +3,7 @@ name = "ulam-leapers"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/Sopel97/ulam-leapers"
+description = "Simulator for generalizations of https://oeis.org/A392177."
 license = "The Unlicense"
 license-file = "LICENSE"
 include = ["/assets", "/src", "/docs/uls/README.md", "/docs/uls/uls.ksy", "/docs/uls/uls.svg", "LICENSE", "README.md", "Cargo.toml"]
