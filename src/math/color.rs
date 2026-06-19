@@ -33,7 +33,7 @@ impl Color32Accumulator {
     }
 
     pub fn average_to_srgb(&self, count: usize) -> Color32 {
-        Color32::from_rgba_unmultiplied(
+        Color32::from_rgba_premultiplied(
             LINEAR16_TO_SRGB8[(self.r / count as u64) as usize],
             LINEAR16_TO_SRGB8[(self.g / count as u64) as usize],
             LINEAR16_TO_SRGB8[(self.b / count as u64) as usize],
@@ -42,7 +42,7 @@ impl Color32Accumulator {
     }
 
     pub fn average_to_srgb_pow2_count(&self, count: Pow2) -> Color32 {
-        Color32::from_rgba_unmultiplied(
+        Color32::from_rgba_premultiplied(
             LINEAR16_TO_SRGB8[div_floor(self.r, count) as usize],
             LINEAR16_TO_SRGB8[div_floor(self.g, count) as usize],
             LINEAR16_TO_SRGB8[div_floor(self.b, count) as usize],
@@ -87,3 +87,81 @@ pub static LINEAR16_TO_SRGB8: LazyLock<[u8; 65536]> = LazyLock::new(|| {
         srgb8 as u8
     })
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RED: Color32 = Color32::from_rgba_premultiplied(255, 0, 0, 255);
+    const GREEN: Color32 = Color32::from_rgba_premultiplied(0, 255, 0, 255);
+    const BLUE: Color32 = Color32::from_rgba_premultiplied(0, 0, 255, 255);
+    const BLACK: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 255);
+    const TRANSPARENT: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 0);
+
+    const SRGB_MIDPOINT: u8 = 188;
+    const ALPHA_MIDPOINT: u8 = 127;
+
+    #[test]
+    fn lookup_table_has_correct_boundary_values() {
+        assert_eq!(SRGB8_TO_LINEAR16[0], 0);
+        assert_eq!(SRGB8_TO_LINEAR16[u8::MAX as usize], u16::MAX);
+        assert_eq!(LINEAR16_TO_SRGB8[0], 0);
+        assert_eq!(LINEAR16_TO_SRGB8[u16::MAX as usize], u8::MAX);
+    }
+
+    #[test]
+    fn test_r_gamma_corrected() {
+        let mut acc = Color32Accumulator::zero();
+        acc += Color32Accumulator::from_srgb(RED);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        acc += Color32Accumulator::from_srgb(RED);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        let col = acc.average_to_srgb(4);
+        assert_eq!(col.r(), SRGB_MIDPOINT);
+        assert_eq!(col.g(), 0);
+        assert_eq!(col.b(), 0);
+        assert_eq!(col.a(), 255);
+    }
+
+    #[test]
+    fn test_g_gamma_corrected() {
+        let mut acc = Color32Accumulator::zero();
+        acc += Color32Accumulator::from_srgb(GREEN);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        acc += Color32Accumulator::from_srgb(GREEN);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        let col = acc.average_to_srgb(4);
+        assert_eq!(col.r(), 0);
+        assert_eq!(col.g(), SRGB_MIDPOINT);
+        assert_eq!(col.b(), 0);
+        assert_eq!(col.a(), 255);
+    }
+
+    #[test]
+    fn test_b_gamma_corrected() {
+        let mut acc = Color32Accumulator::zero();
+        acc += Color32Accumulator::from_srgb(BLUE);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        acc += Color32Accumulator::from_srgb(BLUE);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        let col = acc.average_to_srgb(4);
+        assert_eq!(col.r(), 0);
+        assert_eq!(col.g(), 0);
+        assert_eq!(col.b(), SRGB_MIDPOINT);
+        assert_eq!(col.a(), 255);
+    }
+
+    #[test]
+    fn test_a_not_gamma_corrected() {
+        let mut acc = Color32Accumulator::zero();
+        acc += Color32Accumulator::from_srgb(TRANSPARENT);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        acc += Color32Accumulator::from_srgb(TRANSPARENT);
+        acc += Color32Accumulator::from_srgb(BLACK);
+        let col = acc.average_to_srgb(4);
+        assert_eq!(col.r(), 0);
+        assert_eq!(col.g(), 0);
+        assert_eq!(col.b(), 0);
+        assert_eq!(col.a(), ALPHA_MIDPOINT);
+    }
+}
