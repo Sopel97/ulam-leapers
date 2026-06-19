@@ -9,9 +9,10 @@ a 2-dimensional grid representation.
 
 The scope of this project:
 
-- a library crate providing necessary infrastructure for creating, running, saving, and loading
+- a library crate **ulam-leapers** providing necessary infrastructure for creating, running, saving, and loading
 simulations of such mathematical constructs, with generous constraints on the 
 number of players, pieces, and player relations.
 - a binary crate with an [egui](https://github.com/emilk/egui) GUI application
-allowing easy creation and visualization of simulations
-- a specification for a persistent binary format [ULS](docs/uls) used to store simulations 
+**Ulam Leapers Explorer** allowing easy creation and visualization of simulations
+- a specification for a persistent binary format [ULS](docs/uls) used to store simulations
+
