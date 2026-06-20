@@ -397,13 +397,16 @@ impl GridRenderer {
         let job = move |ct: CancellationToken| {
             let mut mipmaps = MipmapStorageType::new();
 
-            let sampler = FrozenGridSampler::new_with_minification(
+            let mut sampler = FrozenGridSampler::new_with_minification(
                 grid_ref.as_ref(),
                 grid_bounds,
                 lowest_minification,
                 default_color,
                 collector,
             );
+            // This is a long-running task, and it may interfere with other sampling jobs,
+            // don't rely on rayon to properly load-balance this (it usually doesn't)
+            sampler.use_dedicated_thread_pool(rayon::current_num_threads());
             let master_mipmap = sampler.par_sample_cancellable(ct.clone(), progress_callback);
             if master_mipmap.is_none() {
                 return Err(Canceled);

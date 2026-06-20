@@ -9,6 +9,7 @@ use crate::math::rect::GridRect;
 use crate::util::blit::{Blit2D, blit_array2d_unchecked};
 use crate::util::cache::{CacheEnabled, LockStepCache};
 use crate::util::cancel::{Canceled, CancellationToken};
+use rayon::ThreadPool;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -123,6 +124,7 @@ where
     minification: Pow2,
     default_value: TCollector::OutputType,
     collector: TCollector,
+    thread_pool: Option<rayon::ThreadPool>,
 }
 
 impl<'a, T, TCollector> CacheEnabled for FrozenGridSampler<'a, T, TCollector>
@@ -155,6 +157,7 @@ where
             minification: Pow2::try_from(1).unwrap(),
             default_value,
             collector,
+            thread_pool: None,
         }
     }
 
@@ -183,6 +186,26 @@ where
             minification,
             default_value,
             collector,
+            thread_pool: None,
+        }
+    }
+
+    pub fn use_dedicated_thread_pool(&mut self, thread_count: usize) {
+        self.thread_pool = Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(thread_count)
+                .build()
+                .unwrap(),
+        );
+    }
+
+    fn with_pool<R>(pool: Option<&ThreadPool>, f: impl FnOnce() -> R + Send) -> R
+    where
+        R: Send,
+    {
+        match pool {
+            Some(pool) => pool.install(f),
+            None => f(),
         }
     }
 
@@ -281,69 +304,71 @@ where
         &self,
         cache: &<Self as CacheEnabled>::CacheType,
     ) -> Array2D<TCollector::OutputType> {
-        rayon::scope(|s| {
-            let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
+        Self::with_pool(self.thread_pool.as_ref(), || {
+            rayon::scope(|s| {
+                let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
-            s.spawn(|_| {
-                self.grid
-                    .chunker()
-                    .origins_of_intersecting_chunks(&self.region)
-                    .into_par_iter()
-                    .flat_map(|origin| self.grid.get_chunk_at(&origin))
-                    .for_each(|compressed_chunk| {
-                        let bounds = compressed_chunk.bounds();
+                s.spawn(|_| {
+                    self.grid
+                        .chunker()
+                        .origins_of_intersecting_chunks(&self.region)
+                        .into_par_iter()
+                        .flat_map(|origin| self.grid.get_chunk_at(&origin))
+                        .for_each(|compressed_chunk| {
+                            let bounds = compressed_chunk.bounds();
 
-                        // With the cache it's better if we do the whole chunk, because it's
-                        // easier to reuse the result in the future.
-                        let whole_chunk_result = cache.get_or_compute(
-                            (compressed_chunk.origin(), self.minification),
-                            || {
-                                let chunk = compressed_chunk.decompress();
+                            // With the cache it's better if we do the whole chunk, because it's
+                            // easier to reuse the result in the future.
+                            let whole_chunk_result = cache.get_or_compute(
+                                (compressed_chunk.origin(), self.minification),
+                                || {
+                                    let chunk = compressed_chunk.decompress();
 
-                                // SAFETY: We are explicitly using the chunk's bounds.
-                                let whole_chunk_result =
-                                    unsafe { self.collect_subregion(&chunk, *bounds) };
+                                    // SAFETY: We are explicitly using the chunk's bounds.
+                                    let whole_chunk_result =
+                                        unsafe { self.collect_subregion(&chunk, *bounds) };
 
-                                let cost = whole_chunk_result.width()
-                                    * whole_chunk_result.height()
-                                    * size_of::<TCollector::OutputType>();
-                                (whole_chunk_result, cost)
-                            },
-                        );
+                                    let cost = whole_chunk_result.width()
+                                        * whole_chunk_result.height()
+                                        * size_of::<TCollector::OutputType>();
+                                    (whole_chunk_result, cost)
+                                },
+                            );
 
-                        // Now figure out how much of the whole chunk we actually need and blit that.
-                        let subregion = compressed_chunk
-                            .bounds()
-                            .intersection(&self.region)
-                            .expect("Chunker should have returned only intersecting chunks.");
+                            // Now figure out how much of the whole chunk we actually need and blit that.
+                            let subregion = compressed_chunk
+                                .bounds()
+                                .intersection(&self.region)
+                                .expect("Chunker should have returned only intersecting chunks.");
 
-                        assert!(subregion.is_aligned_to_pow2(self.minification));
+                            assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                        let dst = (subregion.start - self.region.start)
-                            .map_coords(|c| pow2::div_floor(c, self.minification));
-                        let src = (subregion.start - bounds.start)
-                            .map_coords(|c| pow2::div_floor(c, self.minification));
-                        let size = subregion
-                            .extent()
-                            .map_coords(|c| pow2::div_floor(c, self.minification));
+                            let dst = (subregion.start - self.region.start)
+                                .map_coords(|c| pow2::div_floor(c, self.minification));
+                            let src = (subregion.start - bounds.start)
+                                .map_coords(|c| pow2::div_floor(c, self.minification));
+                            let size = subregion
+                                .extent()
+                                .map_coords(|c| pow2::div_floor(c, self.minification));
 
-                        tx.send((
-                            Arc::clone(&whole_chunk_result),
-                            Blit2D {
-                                src_x: src.x as usize,
-                                src_y: src.y as usize,
-                                dst_x: dst.x as usize,
-                                dst_y: dst.y as usize,
-                                width: size.x as usize,
-                                height: size.y as usize,
-                            },
-                        ))
-                        .unwrap();
-                    });
-                drop(tx);
-            });
+                            tx.send((
+                                Arc::clone(&whole_chunk_result),
+                                Blit2D {
+                                    src_x: src.x as usize,
+                                    src_y: src.y as usize,
+                                    dst_x: dst.x as usize,
+                                    dst_y: dst.y as usize,
+                                    width: size.x as usize,
+                                    height: size.y as usize,
+                                },
+                            ))
+                            .unwrap();
+                        });
+                    drop(tx);
+                });
 
-            self.assemble_result(rx)
+                self.assemble_result(rx)
+            })
         })
     }
 
@@ -355,75 +380,78 @@ where
     where
         C: Fn(SamplerProgress) + Send + Sync,
     {
-        rayon::scope(|s| {
-            let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
+        Self::with_pool(self.thread_pool.as_ref(), || {
+            rayon::scope(|s| {
+                let (tx, rx) = mpsc::channel::<(Arc<Array2D<TCollector::OutputType>>, Blit2D)>();
 
-            s.spawn(|_| {
-                let chunks_to_process = self
-                    .grid
-                    .chunker()
-                    .origins_of_intersecting_chunks(&self.region);
+                s.spawn(|_| {
+                    let chunks_to_process = self
+                        .grid
+                        .chunker()
+                        .origins_of_intersecting_chunks(&self.region);
 
-                let num_chunks_to_process = chunks_to_process.len();
-                let num_finished_chunks = AtomicUsize::new(0);
+                    let num_chunks_to_process = chunks_to_process.len();
+                    let num_finished_chunks = AtomicUsize::new(0);
 
-                let _res = chunks_to_process
-                    .into_par_iter()
-                    .flat_map(|origin| self.grid.get_chunk_at(&origin))
-                    .try_for_each(|compressed_chunk| {
-                        if cancellation_token.is_canceled() {
-                            return Err(Canceled);
-                        }
+                    let _res = chunks_to_process
+                        .into_par_iter()
+                        .flat_map(|origin| self.grid.get_chunk_at(&origin))
+                        .try_for_each(|compressed_chunk| {
+                            if cancellation_token.is_canceled() {
+                                return Err(Canceled);
+                            }
 
-                        let subregion = compressed_chunk
-                            .bounds()
-                            .intersection(&self.region)
-                            .expect("Chunker should have returned only intersecting chunks.");
+                            let subregion = compressed_chunk
+                                .bounds()
+                                .intersection(&self.region)
+                                .expect("Chunker should have returned only intersecting chunks.");
 
-                        assert!(subregion.is_aligned_to_pow2(self.minification));
+                            assert!(subregion.is_aligned_to_pow2(self.minification));
 
-                        let chunk = compressed_chunk.decompress();
+                            let chunk = compressed_chunk.decompress();
 
-                        // SAFETY: The subregion is an intersection of chunk bounds with another
-                        //         rectangle, so we know that subregion is contained within chunk bounds.
-                        let subregion_result = unsafe { self.collect_subregion(&chunk, subregion) };
+                            // SAFETY: The subregion is an intersection of chunk bounds with another
+                            //         rectangle, so we know that subregion is contained within chunk bounds.
+                            let subregion_result =
+                                unsafe { self.collect_subregion(&chunk, subregion) };
 
-                        let dst = (subregion.start - self.region.start)
-                            .map_coords(|c| pow2::div_floor(c, self.minification));
-                        let width = subregion_result.width();
-                        let height = subregion_result.height();
+                            let dst = (subregion.start - self.region.start)
+                                .map_coords(|c| pow2::div_floor(c, self.minification));
+                            let width = subregion_result.width();
+                            let height = subregion_result.height();
 
-                        tx.send((
-                            Arc::new(subregion_result),
-                            Blit2D {
-                                src_x: 0,
-                                src_y: 0,
-                                dst_x: dst.x as usize,
-                                dst_y: dst.y as usize,
-                                width,
-                                height,
-                            },
-                        ))
-                        .unwrap();
+                            tx.send((
+                                Arc::new(subregion_result),
+                                Blit2D {
+                                    src_x: 0,
+                                    src_y: 0,
+                                    dst_x: dst.x as usize,
+                                    dst_y: dst.y as usize,
+                                    width,
+                                    height,
+                                },
+                            ))
+                            .unwrap();
 
-                        progress_callback(SamplerProgress {
-                            done: num_finished_chunks.fetch_add(1, Ordering::Relaxed) as u64,
-                            total: num_chunks_to_process as u64,
+                            progress_callback(SamplerProgress {
+                                done: num_finished_chunks.fetch_add(1, Ordering::Relaxed) as u64,
+                                total: num_chunks_to_process as u64,
+                            });
+
+                            Ok(())
                         });
 
-                        Ok(())
-                    });
+                    drop(tx);
+                });
 
-                drop(tx);
-            });
+                let res = self.assemble_result(rx);
 
-            let res = self.assemble_result(rx);
-
-            if cancellation_token.is_canceled() {
-                None
-            } else {
-                Some(res)
-            }
+                if cancellation_token.is_canceled() {
+                    None
+                } else {
+                    Some(res)
+                }
+            })
         })
     }
 
