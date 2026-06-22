@@ -17,8 +17,8 @@ use crate::gui::widgets::simulation_info::show_finalized_simulation_info_ui;
 use crate::gui::widgets::widget::StatefulWidget;
 use eframe::egui;
 use eframe::egui::{
-    Align2, Button, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense, Stroke,
-    StrokeKind, Ui, Vec2, vec2,
+    Align2, Button, ColorImage, Context, Key, KeyboardShortcut, Modifiers, Painter, Rect, Sense,
+    Stroke, StrokeKind, Ui, Vec2, vec2,
 };
 use eframe::emath::pos2;
 use eframe::epaint::Color32;
@@ -835,6 +835,19 @@ impl GridExplorer {
         ui.checkbox(&mut self.are_overlays_enabled, "Overlays");
     }
 
+    fn flip_image_vertical_in_place(image: &mut ColorImage) {
+        let [width, height] = image.size;
+
+        for y in 0..height / 2 {
+            let top = y * width;
+            let bottom = (height - 1 - y) * width;
+
+            for x in 0..width {
+                image.pixels.swap(top + x, bottom + x);
+            }
+        }
+    }
+
     fn show_screenshots_ui(&mut self, ui: &mut Ui) {
         let zoom_range = self.zoom_range();
 
@@ -865,9 +878,10 @@ impl GridExplorer {
                 self.camera.with_zoom(self.zoom_pow2_png),
                 GridRect::with_size(GridPoint::zero(), s, s),
             );
-            let image = self
+            let mut image = self
                 .grid_renderer
                 .render_to_rgba_image(canvas.world_rect(), canvas.zoom());
+            Self::flip_image_vertical_in_place(&mut image);
 
             let file = File::create(path).unwrap();
             let w = BufWriter::new(file);
