@@ -3,8 +3,9 @@ use crate::gui::grid_render::canvas::{GridCamera, GridCanvas};
 use crate::gui::grid_render::render::{
     GridRender, GridRenderer, MipmapGenerationProgress, default_player_colors,
 };
+use crate::gui::simulation_creator::SimulationCreator;
 use crate::gui::simulation_resumer::SimulationResumer;
-use crate::gui::subwindow::SubwindowResult::{Keep, Replace};
+use crate::gui::subwindow::SubwindowResult::{Keep, Replace, Spawn};
 use crate::gui::subwindow::{Subwindow, SubwindowResult};
 use crate::gui::util::{
     ContextOrUi, format_zoom_slider_text, make_player_name, scroll_delta_in_ui,
@@ -193,6 +194,7 @@ pub struct GridExplorer {
     is_delta_time_safe_for_movement: bool,
 
     submit_to_resumer: bool,
+    spawn_new_creator_like_this: bool,
 }
 
 impl Subwindow for GridExplorer {
@@ -241,7 +243,16 @@ impl Subwindow for GridExplorer {
             }
         });
 
-        if self.submit_to_resumer {
+        if self.spawn_new_creator_like_this {
+            self.spawn_new_creator_like_this = false;
+            match SimulationCreator::with_players(self.finalized_simulation.players()) {
+                Ok(creator) => Spawn((self, vec![Box::new(creator)])),
+                Err(err) => {
+                    eprintln!("Error spawning simulation creator: {}", err);
+                    Keep(self)
+                }
+            }
+        } else if self.submit_to_resumer {
             let GridExplorer {
                 finalized_simulation,
                 grid_renderer,
@@ -294,6 +305,7 @@ impl GridExplorer {
             is_delta_time_safe_for_movement: false,
 
             submit_to_resumer: false,
+            spawn_new_creator_like_this: false,
         }
     }
 
@@ -901,6 +913,10 @@ impl GridExplorer {
 
         if ui.button("Resume simulation").clicked() {
             self.submit_to_resumer = true;
+        }
+
+        if ui.button("New simulation like this").clicked() {
+            self.spawn_new_creator_like_this = true;
         }
 
         self.show_save_ui(ui);
