@@ -38,11 +38,21 @@ The interface is very simple, so the demo below should be self-sufficient.
 
 Some small simulation file samples are available [here](./docs/uls/samples)
 
+Configure the simulation:
+
 ![](./assets/gui_creator.png)
+
+Run the simulation:
 
 ![](./assets/gui_simulation.png)
 
+Explore the result:
+
 ![](./assets/gui_explorer.png)
+
+In-memory compression enables gargantuan simulations
+
+![](./assets/gui_explorer_large.png)
 
 ## Technical details
 
